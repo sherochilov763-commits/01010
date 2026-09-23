@@ -152,6 +152,15 @@ export async function fetchTelegramUserStatus() {
   return data;
 }
 
+export async function fetchTelegramChats() {
+  const res = await fetch(`${API_BASE}/telegram-user/chats`, { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `fetch failed: ${res.status}`);
+  }
+  return data.chats || [];
+}
+
 export async function connectTelegramUser() {
   const res = await fetch(`${API_BASE}/telegram-user/connect`, { method: "POST", headers: authHeaders() });
   const data = await res.json().catch(() => ({}));

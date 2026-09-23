@@ -603,6 +603,17 @@ app.get("/api/telegram-user/status", requireAuth, (req, res) => {
   res.json(telegramUserbot.getStatus());
 });
 
+app.get("/api/telegram-user/chats", requireAuth, (req, res) => {
+  const row = getStmt.get("uvix:telegramMessages");
+  const allMessages = row ? JSON.parse(row.value) : {};
+  const chats = Object.entries(allMessages).map(([chatId, msgs]) => {
+    const last = msgs[msgs.length - 1];
+    return { chatId, lastText: last?.text || "", lastDate: last?.date || null };
+  });
+  chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
+  res.json({ chats });
+});
+
 app.post("/api/telegram-user/connect", requireAuth, async (req, res) => {
   const row = getStmt.get("uvix:settings");
   const settings = row ? JSON.parse(row.value) : {};

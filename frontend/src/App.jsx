@@ -4,13 +4,13 @@ import {
   ResponsiveContainer, Legend, CartesianGrid,
 } from "recharts";
 import * as XLSX from "xlsx";
-import { apiGet, apiSet, authListEmployees, authLogin, authLoginByName, authLogout, authResetAdminPin, sendBackupNow, requestPinReset, confirmPinReset, uploadPhotos, deletePhoto, fetchTelegramUserStatus, connectTelegramUser, disconnectTelegramUser, fetchTelegramMessages, sendTelegramUserMessage } from "./storage.js";
+import { apiGet, apiSet, authListEmployees, authLogin, authLoginByName, authLogout, authResetAdminPin, sendBackupNow, requestPinReset, confirmPinReset, uploadPhotos, deletePhoto, fetchTelegramUserStatus, connectTelegramUser, disconnectTelegramUser, fetchTelegramMessages, sendTelegramUserMessage, fetchTelegramChats } from "./storage.js";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, ListChecks, FileBarChart2,
   FolderTree, Users, Settings, Plus, Search, Download, Printer, Trash2,
   Pencil, X, LogOut, Wallet, CreditCard, Banknote, ChevronDown, Lock,
   ShieldCheck, ClipboardList, AlertTriangle, Package, Eye, Landmark, Upload,
-  Users2, Phone, ArrowRight, ArrowLeft,
+  Users2, Phone, ArrowRight, ArrowLeft, MessageCircle, Send, Check, CheckCheck,
 } from "lucide-react";
 
 function hexToRgb(hex) {
@@ -102,6 +102,7 @@ const NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "orders", label: "Buyurtmalar", icon: Package },
   { key: "crm", label: "CRM", icon: Users2 },
+  { key: "chats", label: "Chatlar", icon: MessageCircle },
   { key: "expense", label: "Rasxod", icon: TrendingDown },
   { key: "operations", label: "Operatsiyalar", icon: ListChecks },
   { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true },
@@ -861,6 +862,14 @@ export default function App() {
                 onCreateOrderFromLead={createOrderFromLead}
                 onFetchTelegramMessages={fetchTelegramMessages}
                 onSendTelegramMessage={sendTelegramUserMessage}
+              />
+            )}
+            {view === "chats" && (
+              <ChatsView
+                leads={leads}
+                onFetchChats={fetchTelegramChats}
+                onFetchMessages={fetchTelegramMessages}
+                onSendMessage={sendTelegramUserMessage}
               />
             )}
             {view === "expense" && (
@@ -2863,6 +2872,178 @@ function CRMView({ leads, orders, employees, currentUser, isAdmin, onSaveLead, o
           onSendMessage={onSendTelegramMessage}
         />
       )}
+    </div>
+  );
+}
+
+const TG_BLUE = "#0088CC";
+const TG_BLUE_LIGHT = "#E7F3FF";
+
+function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage }) {
+  const [chats, setChats] = useState([]);
+  const [loadingChats, setLoadingChats] = useState(true);
+  const [selectedChatId, setSelectedChatId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    onFetchChats().then((list) => { setChats(list); setLoadingChats(false); }).catch(() => setLoadingChats(false));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedChatId) return;
+    setLoadingMessages(true);
+    onFetchMessages(selectedChatId).then(setMessages).catch(() => setMessages([])).finally(() => setLoadingMessages(false));
+  }, [selectedChatId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  function leadForChat(chatId) {
+    return (leads || []).find((l) => l.telegramChatId === chatId);
+  }
+
+  async function send() {
+    if (!text.trim() || !selectedChatId) return;
+    setSending(true);
+    setError("");
+    const outgoing = text.trim();
+    setText("");
+    try {
+      await onSendMessage(selectedChatId, outgoing);
+      setMessages((prev) => [...prev, { id: uid(), text: outgoing, out: true, date: new Date().toISOString() }]);
+      setChats((prev) => {
+        const updated = prev.map((c) => (c.chatId === selectedChatId ? { ...c, lastText: outgoing, lastDate: new Date().toISOString() } : c));
+        return updated.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
+      });
+    } catch (e) {
+      setError(e?.message || "Yuborilmadi");
+      setText(outgoing);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const selectedLead = selectedChatId ? leadForChat(selectedChatId) : null;
+
+  return (
+    <div style={{ display: "flex", height: "calc(100vh - 140px)", minHeight: 480, borderRadius: 16, overflow: "hidden", border: `1px solid ${THEME.border}`, background: THEME.card }}>
+      <div style={{ width: 320, flexShrink: 0, borderRight: `1px solid ${THEME.border}`, display: "flex", flexDirection: "column", background: THEME.card }}>
+        <div style={{ padding: "16px 18px", background: "#17212B", color: "#fff" }}>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>Chatlar</div>
+          <div style={{ fontSize: 11.5, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>{chats.length} ta suhbat</div>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {loadingChats ? (
+            <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 30 }}>Yuklanmoqda...</div>
+          ) : chats.length === 0 ? (
+            <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 30, padding: "0 20px" }}>
+              Hali suhbat yo'q. Telegram orqali mijozdan xabar kelganda shu yerda paydo bo'ladi.
+            </div>
+          ) : (
+            chats.map((chat) => {
+              const lead = leadForChat(chat.chatId);
+              const name = lead?.customer || "Noma'lum";
+              const isSelected = selectedChatId === chat.chatId;
+              return (
+                <div
+                  key={chat.chatId}
+                  onClick={() => setSelectedChatId(chat.chatId)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer",
+                    background: isSelected ? TG_BLUE_LIGHT : "transparent",
+                    borderBottom: `1px solid ${THEME.border}`,
+                  }}
+                >
+                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: TG_BLUE, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>
+                    {name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                      {chat.lastDate && <div style={{ fontSize: 10.5, color: THEME.muted, flexShrink: 0, marginLeft: 6 }}>{new Date(chat.lastDate).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</div>}
+                    </div>
+                    <div style={{ fontSize: 12, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chat.lastText}</div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#F0F2F5" }}>
+        {!selectedChatId ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: THEME.muted, fontSize: 13.5 }}>
+            Suhbatni tanlang
+          </div>
+        ) : (
+          <>
+            <div style={{ padding: "14px 20px", background: TG_BLUE, color: "#fff", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700 }}>
+                {(selectedLead?.customer || "?").slice(0, 1).toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontSize: 14.5, fontWeight: 700 }}>{selectedLead?.customer || "Noma'lum"}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.75)" }}>
+                  {[selectedLead?.phone, selectedLead?.telegramUsername ? `@${selectedLead.telegramUsername}` : null].filter(Boolean).join(" · ") || "Telegram"}
+                </div>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+              {loadingMessages ? (
+                <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 20 }}>Yuklanmoqda...</div>
+              ) : messages.length === 0 ? (
+                <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 20 }}>Hali xabar yo'q</div>
+              ) : (
+                messages.map((m) => (
+                  <div key={m.id} style={{ alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: "68%" }}>
+                    <div style={{
+                      background: m.out ? TG_BLUE : "#fff",
+                      color: m.out ? "#fff" : THEME.text,
+                      padding: "8px 12px", borderRadius: 14,
+                      borderBottomRightRadius: m.out ? 4 : 14, borderBottomLeftRadius: m.out ? 14 : 4,
+                      fontSize: 13.5, wordBreak: "break-word",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
+                    }}>
+                      {m.text}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 3, justifyContent: m.out ? "flex-end" : "flex-start" }}>
+                      <span style={{ fontSize: 10, color: THEME.muted }}>
+                        {new Date(m.date).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      {m.out && <CheckCheck size={12} color={TG_BLUE} />}
+                    </div>
+                  </div>
+                ))
+              )}
+              <div ref={bottomRef} />
+            </div>
+            {error && <div style={{ color: THEME.rose, fontSize: 11.5, padding: "0 18px" }}>{error}</div>}
+            <div style={{ display: "flex", gap: 8, padding: 14, background: THEME.card, borderTop: `1px solid ${THEME.border}` }}>
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+                placeholder="Xabar yozing..."
+                style={{ flex: 1, border: `1px solid ${THEME.border}`, borderRadius: 20, padding: "10px 16px", fontSize: 13.5, outline: "none" }}
+              />
+              <button
+                onClick={send}
+                disabled={sending || !text.trim()}
+                style={{ width: 40, height: 40, borderRadius: "50%", background: TG_BLUE, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: sending || !text.trim() ? "default" : "pointer", opacity: sending || !text.trim() ? 0.5 : 1, flexShrink: 0 }}
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
