@@ -46,10 +46,29 @@ async function connectFromSettings(settings, onNewMessage) {
         const msg = update.message;
         if (!msg || msg.out) return; // ozimiz yuborgan xabarni ozimiz qayta ishlamaymiz
         const sender = await msg.getSender();
-        const fromName = sender ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.username || "Noma'lum" : "Noma'lum";
+        const fullName = sender ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") : "";
+        const username = sender?.username ? `@${sender.username}` : "";
+        const phone = sender?.phone ? `+${sender.phone}` : "";
+        const fromName = fullName || username || phone || "Noma'lum";
         const chatId = String(msg.chatId || sender?.id || "");
+
+        // Xabar matnini aniqlaymiz — agar rasm/video/fayl bo'lsa, mos belgi qo'shamiz
+        let text = msg.message || "";
+        if (msg.media) {
+          const mediaLabel = msg.photo ? "📷 Rasm" : msg.video ? "🎥 Video" : msg.voice ? "🎤 Ovozli xabar" : msg.document ? "📎 Fayl" : "📎 Media";
+          text = text ? `${mediaLabel}: ${text}` : mediaLabel;
+        }
+        if (!text) text = "[Bo'sh xabar]";
+
         if (onNewMessageCallback) {
-          onNewMessageCallback({ chatId, fromName, text: msg.message || "", date: new Date((msg.date || Date.now() / 1000) * 1000).toISOString() });
+          onNewMessageCallback({
+            chatId,
+            fromName,
+            username: sender?.username || "",
+            phone: sender?.phone || "",
+            text,
+            date: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
+          });
         }
       } catch (e) {
         console.error("Telegram xabarni qayta ishlashda xato:", e.message);

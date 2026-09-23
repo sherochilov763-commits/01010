@@ -561,7 +561,7 @@ app.get("*", (req, res, next) => {
 });
 
 // ==================== Telegram shaxsiy akkaunt (CRM chat) ====================
-function handleIncomingTelegramMessage({ chatId, fromName, text, date }) {
+function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text, date }) {
   try {
     // Xabarni saqlaymiz
     const row = getStmt.get("uvix:telegramMessages");
@@ -570,7 +570,9 @@ function handleIncomingTelegramMessage({ chatId, fromName, text, date }) {
     allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, out: false, date });
     upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
 
-    // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz
+    // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz.
+    // Mavjud bo'lsa ham, agar telefon/username hali bo'sh bo'lsa — endi kelgan
+    // ma'lumot bilan to'ldiramiz (masalan birinchi xabarda faqat ism, keyin telefon aniqlanishi mumkin).
     const leadsRow = getStmt.get("uvix:leads");
     const leads = leadsRow ? JSON.parse(leadsRow.value) : [];
     const existing = leads.find((l) => l.telegramChatId === String(chatId));
@@ -578,14 +580,15 @@ function handleIncomingTelegramMessage({ chatId, fromName, text, date }) {
       leads.unshift({
         id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
         customer: fromName,
-        phone: "",
+        phone: phone ? `+${phone}` : "",
         source: "Telegram",
         estimatedValue: 0,
         manager: "",
-        notes: "",
+        notes: username ? `Telegram: @${username}` : "",
         stage: "new",
         orderId: null,
         telegramChatId: String(chatId),
+        telegramUsername: username || "",
         createdBy: "Telegram (avtomatik)",
         createdAt: new Date().toISOString(),
       });

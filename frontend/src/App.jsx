@@ -2636,9 +2636,20 @@ function LeadChatModal({ lead, onClose, onFetchMessages, onSendMessage }) {
     }
   }
 
+  const subtitle = [lead.phone, lead.telegramUsername ? `@${lead.telegramUsername}` : null].filter(Boolean).join(" · ");
+
   return (
-    <Modal title={`Chat — ${lead.customer}`} onClose={onClose} width={480}>
-      <div style={{ display: "flex", flexDirection: "column", height: 420 }}>
+    <Modal
+      title={
+        <div>
+          <div>{lead.customer}</div>
+          {subtitle && <div style={{ fontSize: 11.5, fontWeight: 500, color: THEME.muted, marginTop: 2 }}>{subtitle}</div>}
+        </div>
+      }
+      onClose={onClose}
+      width={640}
+    >
+      <div style={{ display: "flex", flexDirection: "column", height: 560 }}>
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "4px 4px 12px" }}>
           {loading ? (
             <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 20 }}>Yuklanmoqda...</div>
