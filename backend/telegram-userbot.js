@@ -46,11 +46,14 @@ async function connectFromSettings(settings, onNewMessage) {
         const msg = update.message;
         if (!msg || msg.out) return; // ozimiz yuborgan xabarni ozimiz qayta ishlamaymiz
         const sender = await msg.getSender();
-        const fullName = sender ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") : "";
-        const username = sender?.username ? `@${sender.username}` : "";
-        const phone = sender?.phone ? `+${sender.phone}` : "";
-        const fromName = fullName || username || phone || "Noma'lum";
         const chatId = String(msg.chatId || sender?.id || "");
+        const fullName = sender ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") : "";
+        const title = sender?.title || ""; // guruh/kanal nomi (foydalanuvchida bo'lmaydi)
+        const usernameTag = sender?.username ? `@${sender.username}` : "";
+        const phoneTag = sender?.phone ? `+${sender.phone}` : "";
+        // Hech narsa aniqlanmasa ham, kamida chatId'ni korsatamiz — shunda bir nechta
+        // "Noma'lum" birlashib ketmaydi, har biri o'zining ID'si bilan ajralib turadi.
+        const fromName = fullName || title || usernameTag || phoneTag || `Noma'lum (${chatId})`;
 
         // Xabar matnini aniqlaymiz — agar rasm/video/fayl bo'lsa, mos belgi qo'shamiz
         let text = msg.message || "";

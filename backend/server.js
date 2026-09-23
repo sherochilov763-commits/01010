@@ -571,8 +571,9 @@ function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text
     upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
 
     // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz.
-    // Mavjud bo'lsa ham, agar telefon/username hali bo'sh bo'lsa — endi kelgan
-    // ma'lumot bilan to'ldiramiz (masalan birinchi xabarda faqat ism, keyin telefon aniqlanishi mumkin).
+    // Mavjud bo'lsa ham, agar ism hali "Noma'lum" bo'lsa yoki telefon/username hali
+    // bo'sh bo'lsa — endi kelgan yaxshiroq ma'lumot bilan to'ldiramiz (masalan birinchi
+    // xabarda ism aniqlanmagan, keyingi xabarda aniqlangan bo'lishi mumkin).
     const leadsRow = getStmt.get("uvix:leads");
     const leads = leadsRow ? JSON.parse(leadsRow.value) : [];
     const existing = leads.find((l) => l.telegramChatId === String(chatId));
@@ -593,6 +594,22 @@ function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text
         createdAt: new Date().toISOString(),
       });
       upsertStmt.run("uvix:leads", JSON.stringify(leads));
+    } else {
+      let changed = false;
+      if ((!existing.customer || existing.customer.startsWith("Noma'lum")) && fromName && !fromName.startsWith("Noma'lum")) {
+        existing.customer = fromName;
+        changed = true;
+      }
+      if (!existing.phone && phone) {
+        existing.phone = `+${phone}`;
+        changed = true;
+      }
+      if (!existing.telegramUsername && username) {
+        existing.telegramUsername = username;
+        if (!existing.notes) existing.notes = `Telegram: @${username}`;
+        changed = true;
+      }
+      if (changed) upsertStmt.run("uvix:leads", JSON.stringify(leads));
     }
   } catch (e) {
     console.error("Kiruvchi Telegram xabarini saqlashda xato:", e.message);
