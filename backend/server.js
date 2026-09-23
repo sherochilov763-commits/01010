@@ -8,6 +8,7 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const XLSX = require("xlsx");
 const nodemailer = require("nodemailer");
+const telegramUserbot = require("./telegram-userbot");
 const multer = require("multer");
 const db = require("./db");
 
@@ -559,8 +560,98 @@ app.get("*", (req, res, next) => {
   });
 });
 
+// ==================== Telegram shaxsiy akkaunt (CRM chat) ====================
+function handleIncomingTelegramMessage({ chatId, fromName, text, date }) {
+  try {
+    // Xabarni saqlaymiz
+    const row = getStmt.get("uvix:telegramMessages");
+    const allMessages = row ? JSON.parse(row.value) : {};
+    if (!allMessages[chatId]) allMessages[chatId] = [];
+    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, out: false, date });
+    upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
+
+    // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz
+    const leadsRow = getStmt.get("uvix:leads");
+    const leads = leadsRow ? JSON.parse(leadsRow.value) : [];
+    const existing = leads.find((l) => l.telegramChatId === String(chatId));
+    if (!existing) {
+      leads.unshift({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+        customer: fromName,
+        phone: "",
+        source: "Telegram",
+        estimatedValue: 0,
+        manager: "",
+        notes: "",
+        stage: "new",
+        orderId: null,
+        telegramChatId: String(chatId),
+        createdBy: "Telegram (avtomatik)",
+        createdAt: new Date().toISOString(),
+      });
+      upsertStmt.run("uvix:leads", JSON.stringify(leads));
+    }
+  } catch (e) {
+    console.error("Kiruvchi Telegram xabarini saqlashda xato:", e.message);
+  }
+}
+
+app.get("/api/telegram-user/status", requireAuth, (req, res) => {
+  res.json(telegramUserbot.getStatus());
+});
+
+app.post("/api/telegram-user/connect", requireAuth, async (req, res) => {
+  const row = getStmt.get("uvix:settings");
+  const settings = row ? JSON.parse(row.value) : {};
+  const result = await telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage);
+  if (result.ok) res.json({ ok: true });
+  else res.status(400).json({ error: "connect_failed", message: result.error });
+});
+
+app.post("/api/telegram-user/disconnect", requireAuth, async (req, res) => {
+  await telegramUserbot.disconnect();
+  res.json({ ok: true });
+});
+
+app.get("/api/telegram-user/messages/:chatId", requireAuth, (req, res) => {
+  const row = getStmt.get("uvix:telegramMessages");
+  const allMessages = row ? JSON.parse(row.value) : {};
+  res.json({ messages: allMessages[req.params.chatId] || [] });
+});
+
+app.post("/api/telegram-user/send", requireAuth, async (req, res) => {
+  const { chatId, text } = req.body || {};
+  if (!chatId || !text) return res.status(400).json({ error: "missing_fields" });
+  try {
+    await telegramUserbot.sendMessage(chatId, text);
+    const row = getStmt.get("uvix:telegramMessages");
+    const allMessages = row ? JSON.parse(row.value) : {};
+    if (!allMessages[chatId]) allMessages[chatId] = [];
+    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, out: true, date: new Date().toISOString() });
+    upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "send_failed", message: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`UVIX backend http://localhost:${PORT} da ishga tushdi`);
   console.log(`Baza fayli: ${path.join(__dirname, "uvix.db")}`);
   console.log(`Autentifikatsiya: YOQILGAN (barcha /api/kv/* yo'llari token talab qiladi)`);
+
+  // Agar Telegram shaxsiy akkaunt sozlamalari saqlangan bo'lsa, server ishga tushganda
+  // avtomatik ulanishga harakat qilamiz (qo'lda qayta ulash shart bo'lmasligi uchun)
+  try {
+    const row = getStmt.get("uvix:settings");
+    const settings = row ? JSON.parse(row.value) : {};
+    if (settings?.telegramUserApiId && settings?.telegramUserApiHash && settings?.telegramUserSession) {
+      telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage).then((r) => {
+        if (r.ok) console.log("Telegram shaxsiy akkaunt: ulandi");
+        else console.log("Telegram shaxsiy akkaunt: ulanmadi —", r.error);
+      });
+    }
+  } catch (e) {
+    console.error("Telegram avto-ulanish xatosi:", e.message);
+  }
 });

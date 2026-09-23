@@ -143,6 +143,56 @@ export async function deletePhoto(filename) {
   return true;
 }
 
+export async function fetchTelegramUserStatus() {
+  const res = await fetch(`${API_BASE}/telegram-user/status`, { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `status failed: ${res.status}`);
+  }
+  return data;
+}
+
+export async function connectTelegramUser() {
+  const res = await fetch(`${API_BASE}/telegram-user/connect`, { method: "POST", headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `connect failed: ${res.status}`);
+  }
+  return data;
+}
+
+export async function disconnectTelegramUser() {
+  const res = await fetch(`${API_BASE}/telegram-user/disconnect`, { method: "POST", headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `disconnect failed: ${res.status}`);
+  }
+  return data;
+}
+
+export async function fetchTelegramMessages(chatId) {
+  const res = await fetch(`${API_BASE}/telegram-user/messages/${encodeURIComponent(chatId)}`, { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `fetch failed: ${res.status}`);
+  }
+  return data.messages || [];
+}
+
+export async function sendTelegramUserMessage(chatId, text) {
+  const res = await fetch(`${API_BASE}/telegram-user/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ chatId, text }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `send failed: ${res.status}`);
+  }
+  return data;
+}
+
+
 export async function authResetAdminPin() {
   const res = await fetch(`${API_BASE}/auth/reset-admin-pin`, { method: "POST" });
   const data = await res.json().catch(() => ({}));

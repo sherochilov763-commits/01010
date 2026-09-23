@@ -4,12 +4,13 @@ import {
   ResponsiveContainer, Legend, CartesianGrid,
 } from "recharts";
 import * as XLSX from "xlsx";
-import { apiGet, apiSet, authListEmployees, authLogin, authLoginByName, authLogout, authResetAdminPin, sendBackupNow, requestPinReset, confirmPinReset, uploadPhotos, deletePhoto } from "./storage.js";
+import { apiGet, apiSet, authListEmployees, authLogin, authLoginByName, authLogout, authResetAdminPin, sendBackupNow, requestPinReset, confirmPinReset, uploadPhotos, deletePhoto, fetchTelegramUserStatus, connectTelegramUser, disconnectTelegramUser, fetchTelegramMessages, sendTelegramUserMessage } from "./storage.js";
 import {
   LayoutDashboard, TrendingUp, TrendingDown, ListChecks, FileBarChart2,
   FolderTree, Users, Settings, Plus, Search, Download, Printer, Trash2,
   Pencil, X, LogOut, Wallet, CreditCard, Banknote, ChevronDown, Lock,
   ShieldCheck, ClipboardList, AlertTriangle, Package, Eye, Landmark, Upload,
+  Users2, Phone, ArrowRight, ArrowLeft,
 } from "lucide-react";
 
 function hexToRgb(hex) {
@@ -90,9 +91,17 @@ const DEFAULT_CATEGORIES = {
 };
 
 
+const LEAD_STAGES = [
+  { key: "new", label: "Yangi lid", color: "#7C5CFC", bg: "#EFE9FE" },
+  { key: "negotiation", label: "Muzokara", color: "#D97706", bg: "#FEF3C7" },
+  { key: "won", label: "Yopilgan", color: "#0F9D58", bg: "#E3F6EC" },
+  { key: "lost", label: "Yo'qotilgan", color: "#E53E5A", bg: "#FCE4E9" },
+];
+
 const NAV = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "orders", label: "Buyurtmalar", icon: Package },
+  { key: "crm", label: "CRM", icon: Users2 },
   { key: "expense", label: "Rasxod", icon: TrendingDown },
   { key: "operations", label: "Operatsiyalar", icon: ListChecks },
   { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true },
@@ -330,6 +339,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [transactions, setTransactions] = useState([]); // faqat rasxod (chiqim)
   const [orders, setOrders] = useState([]); // buyurtmalar (har birida payments[])
+  const [leads, setLeads] = useState([]); // CRM — savdo voronkasi lidlari
+  const [pendingLeadForOrder, setPendingLeadForOrder] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -402,6 +413,7 @@ export default function App() {
       }
 
       const log = await storageGet("uvix:audit", true, []);
+      const leadsData = await storageGet("uvix:leads", true, []);
       let cats = await storageGet("uvix:categories", true, null);
       if (!cats || Object.keys(cats).length === 0) {
         cats = DEFAULT_CATEGORIES;
@@ -423,6 +435,7 @@ export default function App() {
       setTransactions(tx);
       setOrders(ords);
       setAuditLog(log);
+      setLeads(leadsData);
       setCategories(cats);
       setSettings(sett);
       setAppearance(appr);
@@ -452,6 +465,10 @@ export default function App() {
   async function persistOrders(next) {
     setOrders(next);
     await storageSet("uvix:orders", true, next);
+  }
+  async function persistLeads(next) {
+    setLeads(next);
+    await storageSet("uvix:leads", true, next);
   }
   async function persistEmployees(next) {
     setEmployees(next);
@@ -591,6 +608,42 @@ export default function App() {
     persistOrders(next);
     addLog(`Buyurtma tiklandi: ${order.orderNumber}`);
     showToast("Tiklandi");
+  }
+  // ==================== CRM (savdo voronkasi) ====================
+  function saveLead(lead, isEdit) {
+    let next;
+    if (isEdit) {
+      next = leads.map((l) => (l.id === lead.id ? lead : l));
+      addLog(`Lid tahrirlandi: ${lead.customer}`);
+    } else {
+      lead.createdBy = currentUser.name;
+      lead.createdAt = new Date().toISOString();
+      next = [lead, ...leads];
+      addLog(`Yangi lid qo'shildi: ${lead.customer}`);
+    }
+    persistLeads(next);
+    showToast(isEdit ? "Yangilandi" : "Saqlandi");
+  }
+  function deleteLead(lead) {
+    const next = leads.filter((l) => l.id !== lead.id);
+    persistLeads(next);
+    addLog(`Lid o'chirildi: ${lead.customer}`);
+    showToast("O'chirildi");
+  }
+  function moveLead(lead, newStage) {
+    const next = leads.map((l) => (l.id === lead.id ? { ...l, stage: newStage } : l));
+    persistLeads(next);
+    addLog(`Lid bosqichi o'zgardi: ${lead.customer} -> ${LEAD_STAGES.find((s) => s.key === newStage)?.label}`);
+  }
+  function createOrderFromLead(lead) {
+    setPendingLeadForOrder(lead);
+    setView("orders");
+  }
+  function linkOrderToLead(lead, order) {
+    const next = leads.map((l) => (l.id === lead.id ? { ...l, orderId: order.id } : l));
+    persistLeads(next);
+    setPendingLeadForOrder(null);
+    addLog(`Lid buyurtmaga bog'landi: ${lead.customer} -> ${order.orderNumber}`);
   }
   function permanentlyDeleteOrder(order) {
     const next = orders.filter((o) => o.id !== order.id);
@@ -791,6 +844,23 @@ export default function App() {
                 onDeletePayment={deletePayment}
                 onUploadPhotos={uploadPhotos}
                 onDeletePhoto={deletePhoto}
+                pendingLead={pendingLeadForOrder}
+                onOrderLinkedToLead={linkOrderToLead}
+              />
+            )}
+            {view === "crm" && (
+              <CRMView
+                leads={leads}
+                orders={orders}
+                employees={employees}
+                currentUser={currentUser}
+                isAdmin={isAdmin}
+                onSaveLead={saveLead}
+                onDeleteLead={deleteLead}
+                onMoveLead={moveLead}
+                onCreateOrderFromLead={createOrderFromLead}
+                onFetchTelegramMessages={fetchTelegramMessages}
+                onSendTelegramMessage={sendTelegramUserMessage}
               />
             )}
             {view === "expense" && (
@@ -863,6 +933,9 @@ export default function App() {
                   addLog("Barcha buyurtma va operatsiyalar tozalandi");
                 }}
                 onSendBackupNow={sendBackupNow}
+                onConnectTelegramUser={connectTelegramUser}
+                onDisconnectTelegramUser={disconnectTelegramUser}
+                onFetchTelegramUserStatus={fetchTelegramUserStatus}
               />
             )}
           </div>
@@ -1232,9 +1305,9 @@ function Topbar({ user, view, onLogout, onMenuClick }) {
 }
 
 /* ---------------- SHARED UI ---------------- */
-function Card({ children, style, className, onClick }) {
+function Card({ children, style, className, onClick, ...rest }) {
   return (
-    <div className={`uvix-card ${className || ""}`} onClick={onClick} style={{ background: THEME.card, border: `1px solid ${THEME.borderSoft}`, boxShadow: THEME.shadowSm, borderRadius: THEME.radius, padding: 18, ...style }}>
+    <div className={`uvix-card ${className || ""}`} onClick={onClick} style={{ background: THEME.card, border: `1px solid ${THEME.borderSoft}`, boxShadow: THEME.shadowSm, borderRadius: THEME.radius, padding: 18, ...style }} {...rest}>
       {children}
     </div>
   );
@@ -2185,11 +2258,15 @@ function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onSaveSett
 }
 
 /* ---------------- ORDERS VIEW ---------------- */
-function OrdersView({ orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto }) {
+function OrdersView({ orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onOrderLinkedToLead }) {
   const [modal, setModal] = useState(null); // {edit?}
   const [confirmDel, setConfirmDel] = useState(null);
   const [paymentsFor, setPaymentsFor] = useState(null); // order object
   const [search, setSearch] = useState(initialFilter?.search || "");
+
+  useEffect(() => {
+    if (pendingLead) setModal({ prefillCustomer: pendingLead.customer });
+  }, [pendingLead]);
   const [onlyDebt, setOnlyDebt] = useState(!!initialFilter?.onlyDebt);
   const [importErrors, setImportErrors] = useState(null);
   const fileInputRef = useRef(null);
@@ -2423,9 +2500,14 @@ function OrdersView({ orders, allOrders, transactions, currentUser, isAdmin, cat
           transactions={transactions}
           onAddSubcategory={onAddSubcategory}
           onClose={() => setModal(null)}
-          onSave={(order, linkedExpenseTx) => { onSaveOrder(order, !!modal.edit, linkedExpenseTx); setModal(null); }}
+          onSave={(order, linkedExpenseTx) => {
+            onSaveOrder(order, !!modal.edit, linkedExpenseTx);
+            if (pendingLead) onOrderLinkedToLead(pendingLead, order);
+            setModal(null);
+          }}
           onUploadPhotos={onUploadPhotos}
           onDeletePhoto={onDeletePhoto}
+          prefillCustomer={modal.prefillCustomer}
         />
       )}
       {paymentsFor && (
@@ -2454,6 +2536,326 @@ function getIconBtn() {
 }
 
 /* ---------------- PAYMENTS MODAL ---------------- */
+function LeadForm({ initial, employees, onClose, onSave }) {
+  const isEdit = !!initial;
+  const managerNames = employees ? employees.map((e) => e.name) : [];
+  const [customer, setCustomer] = useState(initial?.customer || "");
+  const [phone, setPhone] = useState(initial?.phone || "");
+  const [source, setSource] = useState(initial?.source || "");
+  const [estimatedValueStr, setEstimatedValueStr] = useState(initial?.estimatedValue != null ? fmt(initial.estimatedValue) : "");
+  const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
+  const [notes, setNotes] = useState(initial?.notes || "");
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (!customer.trim()) return setError("Mijoz ismini kiriting");
+    const lead = {
+      id: initial?.id || uid(),
+      customer: customer.trim(),
+      phone: phone.trim(),
+      source: source.trim(),
+      estimatedValue: parseInt(estimatedValueStr.replace(/\s/g, ""), 10) || 0,
+      manager,
+      notes: notes.trim(),
+      stage: initial?.stage || "new",
+      orderId: initial?.orderId || null,
+      createdBy: initial?.createdBy,
+      createdAt: initial?.createdAt,
+    };
+    onSave(lead, isEdit);
+  }
+
+  return (
+    <Modal title={isEdit ? "Lidni tahrirlash" : "Yangi lid"} onClose={onClose} width={440}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <Field label="Mijoz ismi">
+          <input value={customer} onChange={(e) => setCustomer(e.target.value)} style={getInputStyle()} placeholder="Mijoz yoki kompaniya nomi" autoFocus />
+        </Field>
+        <Field label="Telefon">
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} style={getInputStyle()} placeholder="+998 90 123 45 67" />
+        </Field>
+        <Field label="Manba (qayerdan kelgan)">
+          <input value={source} onChange={(e) => setSource(e.target.value)} style={getInputStyle()} placeholder="Instagram, tavsiya, qo'ng'iroq..." />
+        </Field>
+        <Field label="Taxminiy summa (so'm)">
+          <input value={estimatedValueStr} onChange={(e) => setEstimatedValueStr(fmt(parseInt(e.target.value.replace(/\D/g, ""), 10) || 0))} style={getInputStyle()} placeholder="0" inputMode="numeric" />
+        </Field>
+        <Field label="Mas'ul menejer">
+          <select value={manager} onChange={(e) => setManager(e.target.value)} style={getInputStyle()}>
+            {managerNames.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </Field>
+        <Field label="Izoh">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...getInputStyle(), resize: "vertical" }} placeholder="Qo'shimcha ma'lumot (ixtiyoriy)" />
+        </Field>
+        {error && <div style={{ color: THEME.rose, fontSize: 12.5 }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <Button variant="ghost" onClick={onClose}>Bekor qilish</Button>
+          <Button onClick={submit}>Saqlash</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function LeadChatModal({ lead, onClose, onFetchMessages, onSendMessage }) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    onFetchMessages(lead.telegramChatId)
+      .then((msgs) => { if (!cancelled) setMessages(msgs); })
+      .catch((e) => { if (!cancelled) setError(e?.message || "Xabarlarni yuklab bo'lmadi"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [lead.telegramChatId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function send() {
+    if (!text.trim()) return;
+    setSending(true);
+    setError("");
+    const outgoing = text.trim();
+    setText("");
+    try {
+      await onSendMessage(lead.telegramChatId, outgoing);
+      setMessages((prev) => [...prev, { id: uid(), text: outgoing, out: true, date: new Date().toISOString() }]);
+    } catch (e) {
+      setError(e?.message || "Yuborilmadi");
+      setText(outgoing);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Modal title={`Chat — ${lead.customer}`} onClose={onClose} width={480}>
+      <div style={{ display: "flex", flexDirection: "column", height: 420 }}>
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "4px 4px 12px" }}>
+          {loading ? (
+            <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 20 }}>Yuklanmoqda...</div>
+          ) : messages.length === 0 ? (
+            <div style={{ textAlign: "center", color: THEME.muted, fontSize: 12.5, marginTop: 20 }}>Hali xabar yo'q</div>
+          ) : (
+            messages.map((m) => (
+              <div key={m.id} style={{ alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: "78%" }}>
+                <div style={{
+                  background: m.out ? THEME.violet : THEME.surface,
+                  color: m.out ? "#fff" : THEME.text,
+                  padding: "8px 12px", borderRadius: 14,
+                  borderBottomRightRadius: m.out ? 4 : 14, borderBottomLeftRadius: m.out ? 14 : 4,
+                  fontSize: 13, wordBreak: "break-word",
+                }}>
+                  {m.text}
+                </div>
+                <div style={{ fontSize: 10, color: THEME.muted, marginTop: 2, textAlign: m.out ? "right" : "left" }}>
+                  {new Date(m.date).toLocaleString("uz-UZ", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}
+                </div>
+              </div>
+            ))
+          )}
+          <div ref={bottomRef} />
+        </div>
+        {error && <div style={{ color: THEME.rose, fontSize: 11.5, marginBottom: 6 }}>{error}</div>}
+        <div style={{ display: "flex", gap: 8, borderTop: `1px solid ${THEME.border}`, paddingTop: 10 }}>
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+            placeholder="Xabar yozing..."
+            style={{ ...getInputStyle(), flex: 1 }}
+          />
+          <Button onClick={send} disabled={sending || !text.trim()}>{sending ? "..." : "Yuborish"}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function CRMView({ leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage }) {
+  const [modal, setModal] = useState(null); // null | true (new) | lead (edit)
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [chatFor, setChatFor] = useState(null);
+  const [draggedLeadId, setDraggedLeadId] = useState(null);
+  const [dragOverStage, setDragOverStage] = useState(null);
+
+  const leadsByStage = useMemo(() => {
+    const map = {};
+    LEAD_STAGES.forEach((s) => (map[s.key] = []));
+    (leads || []).forEach((l) => {
+      if (map[l.stage]) map[l.stage].push(l);
+      else map.new.push(l);
+    });
+    return map;
+  }, [leads]);
+
+  function saveLead(lead, isEdit) {
+    onSaveLead(lead, isEdit);
+    setModal(null);
+  }
+  function stageIndex(key) {
+    return LEAD_STAGES.findIndex((s) => s.key === key);
+  }
+  function handleDragStart(e, lead) {
+    setDraggedLeadId(lead.id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", lead.id);
+  }
+  function handleDragEnd() {
+    setDraggedLeadId(null);
+    setDragOverStage(null);
+  }
+  function handleColumnDragOver(e, stageKey) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverStage !== stageKey) setDragOverStage(stageKey);
+  }
+  function handleColumnDrop(e, stageKey) {
+    e.preventDefault();
+    const leadId = e.dataTransfer.getData("text/plain") || draggedLeadId;
+    const lead = (leads || []).find((l) => l.id === leadId);
+    if (lead && lead.stage !== stageKey) onMoveLead(lead, stageKey);
+    setDraggedLeadId(null);
+    setDragOverStage(null);
+  }
+  function moveStage(lead, dir) {
+    const idx = stageIndex(lead.stage);
+    const nextIdx = idx + dir;
+    if (nextIdx < 0 || nextIdx >= LEAD_STAGES.length) return;
+    onMoveLead(lead, LEAD_STAGES[nextIdx].key);
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ fontSize: 13, color: THEME.muted }}>Savdo voronkasi — lidlarni bosqichlar bo'yicha kuzating</div>
+        <Button onClick={() => setModal(true)}><Plus size={14} /> Yangi lid</Button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(240px, 1fr))", gap: 14, overflowX: "auto" }} className="uvix-scroll">
+        {LEAD_STAGES.map((stage) => (
+          <div
+            key={stage.key}
+            onDragOver={(e) => handleColumnDragOver(e, stage.key)}
+            onDragLeave={() => setDragOverStage((prev) => (prev === stage.key ? null : prev))}
+            onDrop={(e) => handleColumnDrop(e, stage.key)}
+            style={{
+              borderRadius: 14,
+              transition: "background-color 0.15s ease",
+              background: dragOverStage === stage.key ? THEME.violetSoft : "transparent",
+              padding: dragOverStage === stage.key ? 6 : 0,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>{stage.label}</span>
+              <span style={{ fontSize: 11, color: THEME.muted, background: THEME.surface, padding: "1px 8px", borderRadius: 20 }}>{leadsByStage[stage.key].length}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 60 }}>
+              {leadsByStage[stage.key].length === 0 ? (
+                <div style={{ fontSize: 11.5, color: THEME.muted, padding: "16px 0", textAlign: "center", border: `1.5px dashed ${THEME.border}`, borderRadius: 12 }}>Bo'sh</div>
+              ) : (
+                leadsByStage[stage.key].map((lead) => {
+                  const idx = stageIndex(lead.stage);
+                  const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
+                  return (
+                    <Card
+                      key={lead.id}
+                      className="uvix-dash-card"
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, lead)}
+                      onDragEnd={handleDragEnd}
+                      style={{
+                        padding: 12, display: "flex", flexDirection: "column", gap: 6,
+                        cursor: "grab", opacity: draggedLeadId === lead.id ? 0.4 : 1,
+                        transition: "opacity 0.15s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
+                        <button onClick={() => setConfirmDel(lead)} style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 2 }}><X size={13} color={THEME.muted} /></button>
+                      </div>
+                      {lead.phone && (
+                        <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 4 }}><Phone size={11} /> {lead.phone}</div>
+                      )}
+                      {lead.estimatedValue > 0 && (
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: THEME.violet }}>{money(lead.estimatedValue)}</div>
+                      )}
+                      {lead.manager && <div style={{ fontSize: 11, color: THEME.muted }}>Menejer: {lead.manager}</div>}
+                      {lead.source && <div style={{ fontSize: 11, color: THEME.muted }}>Manba: {lead.source}</div>}
+                      {lead.notes && <div style={{ fontSize: 11, color: THEME.muted, fontStyle: "italic" }}>{lead.notes}</div>}
+
+                      {lead.telegramChatId && onFetchTelegramMessages && (
+                        <Button variant="ghost" onClick={() => setChatFor(lead)} style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 2 }}>
+                          💬 Telegram chat
+                        </Button>
+                      )}
+
+                      {linkedOrder ? (
+                        <div style={{ fontSize: 11, color: THEME.green, fontWeight: 700, background: THEME.greenBg, padding: "3px 8px", borderRadius: 8, marginTop: 2 }}>
+                          ✓ Buyurtma: {linkedOrder.orderNumber}
+                        </div>
+                      ) : (
+                        lead.stage === "won" && (
+                          <Button onClick={() => onCreateOrderFromLead(lead)} style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 2 }}>
+                            <Package size={12} /> Buyurtma yaratish
+                          </Button>
+                        )
+                      )}
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, borderTop: `1px dashed ${THEME.border}`, paddingTop: 6 }}>
+                        <button onClick={() => moveStage(lead, -1)} disabled={idx === 0} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.3 : 1, padding: 2 }}>
+                          <ArrowLeft size={14} color={THEME.text} />
+                        </button>
+                        <button onClick={() => setModal(lead)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: THEME.violet, fontWeight: 700 }}>Tahrirlash</button>
+                        <button onClick={() => moveStage(lead, 1)} disabled={idx === LEAD_STAGES.length - 1} style={{ background: "none", border: "none", cursor: idx === LEAD_STAGES.length - 1 ? "default" : "pointer", opacity: idx === LEAD_STAGES.length - 1 ? 0.3 : 1, padding: 2 }}>
+                          <ArrowRight size={14} color={THEME.text} />
+                        </button>
+                      </div>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {modal && (
+        <LeadForm
+          initial={modal === true ? null : modal}
+          employees={employees}
+          onClose={() => setModal(null)}
+          onSave={saveLead}
+        />
+      )}
+      {confirmDel && (
+        <ConfirmDialog
+          message={`"${confirmDel.customer}" lidini o'chirmoqchimisiz?`}
+          onCancel={() => setConfirmDel(null)}
+          onConfirm={() => { onDeleteLead(confirmDel); setConfirmDel(null); }}
+        />
+      )}
+      {chatFor && (
+        <LeadChatModal
+          lead={chatFor}
+          onClose={() => setChatFor(null)}
+          onFetchMessages={onFetchTelegramMessages}
+          onSendMessage={onSendTelegramMessage}
+        />
+      )}
+    </div>
+  );
+}
+
 function PaymentsModal({ order, transactions, currentUser, isAdmin, onClose, onAddPayment, onDeletePayment }) {
   const [date, setDate] = useState(todayStr());
   const [lines, setLines] = useState([{ id: uid(), methodType: "naqd", amountStr: "" }]);
@@ -2590,7 +2992,7 @@ function PaymentsModal({ order, transactions, currentUser, isAdmin, onClose, onA
 }
 
 /* ---------------- ORDER FORM ---------------- */
-function OrderForm({ initial, currentUser, categories, employees, settings, allOrders, transactions, onAddSubcategory, onClose, onSave, onUploadPhotos, onDeletePhoto }) {
+function OrderForm({ initial, currentUser, categories, employees, settings, allOrders, transactions, onAddSubcategory, onClose, onSave, onUploadPhotos, onDeletePhoto, prefillCustomer }) {
   const isEdit = !!initial;
   const [orderId] = useState(() => initial?.id || uid());
   const [photos, setPhotos] = useState(initial?.photos || []);
@@ -2641,7 +3043,7 @@ function OrderForm({ initial, currentUser, categories, employees, settings, allO
   }
 
   const [date, setDate] = useState(initial?.date || todayStr());
-  const [customer, setCustomer] = useState(initial?.customer || "");
+  const [customer, setCustomer] = useState(initial?.customer || prefillCustomer || "");
   const [bizLine, setBizLine] = useState(initial?.subcategory || BIZ_LINES[0]);
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
 
@@ -4505,7 +4907,7 @@ function DashboardConstructorSection({ settings, onSaveSettings }) {
     </Card>
   );
 }
-function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow }) {
+function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
   const [pin, setPin] = useState("");
   const [msg, setMsg] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -4530,6 +4932,42 @@ function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, setti
   function saveGmail() {
     onSaveSettings({ ...settings, gmailUser: gmailUser.trim(), gmailAppPassword: gmailAppPassword.trim() });
     setGmailMsg("Saqlandi");
+  }
+
+  const [tgUserApiId, setTgUserApiId] = useState(settings?.telegramUserApiId || "");
+  const [tgUserApiHash, setTgUserApiHash] = useState(settings?.telegramUserApiHash || "");
+  const [tgUserSession, setTgUserSession] = useState(settings?.telegramUserSession || "");
+  const [tgUserMsg, setTgUserMsg] = useState("");
+  const [tgUserStatus, setTgUserStatus] = useState(null);
+  const [tgUserConnecting, setTgUserConnecting] = useState(false);
+
+  useEffect(() => {
+    if (onFetchTelegramUserStatus) {
+      onFetchTelegramUserStatus().then(setTgUserStatus).catch(() => setTgUserStatus({ status: "error", message: "Holatni bilib bo'lmadi" }));
+    }
+  }, []);
+
+  function saveTelegramUser() {
+    onSaveSettings({ ...settings, telegramUserApiId: tgUserApiId.trim(), telegramUserApiHash: tgUserApiHash.trim(), telegramUserSession: tgUserSession.trim() });
+    setTgUserMsg("Saqlandi");
+  }
+  async function connectTelegramUser() {
+    setTgUserConnecting(true);
+    setTgUserMsg("");
+    try {
+      await onConnectTelegramUser();
+      const status = await onFetchTelegramUserStatus();
+      setTgUserStatus(status);
+      setTgUserMsg(status.status === "connected" ? "Muvaffaqiyatli ulandi!" : "Ulanmadi");
+    } catch (e) {
+      setTgUserMsg(e?.message || "Ulanishda xato");
+    } finally {
+      setTgUserConnecting(false);
+    }
+  }
+  async function disconnectTelegramUser() {
+    await onDisconnectTelegramUser();
+    setTgUserStatus({ status: "disconnected" });
   }
 
   async function unlockTelegram() {
@@ -4753,6 +5191,45 @@ function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, setti
                 </div>
               </div>
             </div>
+            {onConnectTelegramUser && (
+              <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 14, paddingTop: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, color: THEME.rose }}>Telegram shaxsiy akkaunt (CRM chat) — ⚠ tavakkalchilik</div>
+                <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 10 }}>
+                  Bu — shaxsiy Telegram akkauntingizni CRM'ga ulaydi (mijozlar bilan to'g'ridan-to'g'ri chat).
+                  <b style={{ color: THEME.rose }}> Bu Telegram qoidalariga norasmiy yondashuv — akkauntingiz bloklanish xavfi bor.</b> Session
+                  string'ni <code>setup-telegram.js</code> skripti orqali (backend papkasida, kompyuteringizda "node setup-telegram.js"
+                  buyrug'i bilan) bir marta yaratasiz.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <Field label="API ID">
+                    <input value={tgUserApiId} onChange={(e) => setTgUserApiId(e.target.value)} style={getInputStyle()} placeholder="my.telegram.org dan olingan raqam" />
+                  </Field>
+                  <Field label="API Hash">
+                    <input value={tgUserApiHash} onChange={(e) => setTgUserApiHash(e.target.value)} style={getInputStyle()} placeholder="my.telegram.org dan olingan kod" type="password" />
+                  </Field>
+                  <Field label="Session String">
+                    <textarea value={tgUserSession} onChange={(e) => setTgUserSession(e.target.value)} rows={2} style={{ ...getInputStyle(), resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="setup-telegram.js skriptidan olingan uzun matn" />
+                  </Field>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button onClick={saveTelegramUser}>Saqlash</Button>
+                    <Button variant="ghost" onClick={connectTelegramUser} disabled={tgUserConnecting}>
+                      {tgUserConnecting ? "Ulanmoqda..." : "Ulash"}
+                    </Button>
+                    {tgUserStatus?.status === "connected" && (
+                      <Button variant="ghost" onClick={disconnectTelegramUser}>Uzish</Button>
+                    )}
+                  </div>
+                  {tgUserMsg && <div style={{ fontSize: 12, color: tgUserMsg.includes("xato") || tgUserMsg.includes("Ulanmadi") ? THEME.rose : THEME.green }}>{tgUserMsg}</div>}
+                  <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6 }}>
+                    Holat:
+                    {tgUserStatus?.status === "connected" && <Badge color={THEME.green} bg={THEME.greenBg}>Ulangan</Badge>}
+                    {tgUserStatus?.status === "connecting" && <Badge color={THEME.amber} bg={"#FEF3C7"}>Ulanmoqda...</Badge>}
+                    {tgUserStatus?.status === "disconnected" && <Badge color={THEME.muted} bg={THEME.surface}>Ulanmagan</Badge>}
+                    {tgUserStatus?.status === "error" && <Badge color={THEME.rose} bg={THEME.roseBg}>{tgUserStatus.message || "Xato"}</Badge>}
+                  </div>
+                </div>
+              </div>
+            )}
               </>
             )}
           </Card>
