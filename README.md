@@ -177,3 +177,103 @@ ketadi:
 Shu manzilni istalgan qurilmada (kompyuter, iPhone, Android) ochib
 ishlatishingiz mumkin — standart **Administrator / 0000** bilan kirasiz,
 so'ng PIN'ni albatta o'zgartiring (Sozlamalar → Profil).
+
+---
+
+## 🔒 1-bosqich: xavfsizlik yangilanishi (2026-09)
+
+**Yopilgan teshiklar:**
+- `POST /api/auth/reset-admin-pin` olib tashlandi (internetdagi har kim admin PIN'ini 0000 ga qaytara olardi). Endi faqat server konsolidan: `node backend/reset-admin-pin.js [yangiPIN]`
+- Oddiy xodim endi o'zini admin qila olmaydi, boshqalarning PIN'ini o'zgartira olmaydi — faqat o'z PIN'ini
+- PIN hash'lari brauzerga umuman yuborilmaydi
+- Telegram token, Gmail parol, Telegram sessiya — faqat admin ko'radi
+- Backup yuborish, Telegram ulash/uzish, KV o'chirish — faqat admin
+- Xodim o'chirilsa yoki roli o'zgarsa — darhol kuchga kiradi (token 12 soat kutmaydi)
+- Oxirgi administratorni o'chirib bo'lmaydi
+- PIN tiklash kodi: kriptografik tasodifiy, 5 ta xato urinishdan keyin bekor bo'ladi
+- JWT kaliti doimiy diskda (`/data/uvix.secret`) — deploy'dan keyin hamma chiqib ketmaydi
+- CORS standart holatda yopiq, xavfsizlik header'lari qo'shildi
+
+**Yangi (ixtiyoriy) environment o'zgaruvchilari:**
+- `JWT_SECRET` — o'zingiz bergan kalit (bo'lmasa avtomatik yaratiladi)
+- `CORS_ORIGIN` — frontend boshqa domenda bo'lsa, masalan `https://uvix.uz`
+
+---
+
+## 🔑 Yangi kirish tizimi (2026-09)
+
+- **Xodim kartochkalari** — ism yozish o'rniga avatar bosiladi (6 tadan ko'p xodim bo'lsa qidiruv chiqadi)
+- **PIN klaviatura** — ekrandagi katta tugmalar, jismoniy klaviatura ham ishlaydi, xato bo'lsa silkinish + tebranish
+- **Face ID / Touch ID / barmoq izi** (WebAuthn passkey) — PIN bilan birinchi kirishdan keyin taklif qilinadi, Sozlamalar → "Face ID bilan kirish" bo'limidan ham boshqariladi
+- Login cheklovi endi IP + xodim bo'yicha — bir ofisdagi xodimlar bir-birini bloklamaydi
+
+**Talablar:** Face ID faqat **HTTPS** orqali ishlaydi (Railway domeni HTTPS — muammo yo'q) yoki `localhost`da.
+
+**Ixtiyoriy env:** agar domen almashsa yoki bir nechta domen bo'lsa:
+- `WEBAUTHN_RP_ID` — masalan `uvix.uz`
+- `WEBAUTHN_ORIGIN` — masalan `https://uvix.uz`
+
+⚠️ Face ID kalitlari domenga bog'langan: `*.up.railway.app` dan o'z domeningizga o'tsangiz, xodimlar Face ID'ni qaytadan yoqishi kerak bo'ladi.
+
+---
+
+## 🗂️ Frontend tuzilishi (2-bosqich: App.jsx bo'lindi)
+
+Oldin hamma narsa bitta 5 300+ qatorli `App.jsx` faylida edi. Endi:
+
+```
+frontend/src/
+  App.jsx                  asosiy holat (state) va sahifalar orasida o'tish (~640 qator)
+  main.jsx                 kirish nuqtasi
+  storage.js               backend API bilan ishlash
+  theme.js                 ranglar, mavzu (THEME, setTheme, buildTheme)
+  constants.js             menyu, kategoriyalar, to'lov turlari, dashboard vidjetlari
+  lib/
+    format.js              summa, sana formatlash, uid
+    finance.js             buyurtma qarzi, moliyaviy hisob-kitoblar, davrlar
+    excel.js               Excel eksport
+    kv.js                  storageGet / storageSet
+  components/
+    ui.jsx                 Card, Button, Modal, Field, Badge, Pagination...
+    Layout.jsx             Sidebar, Topbar
+  auth/                    kirish ekrani, Face ID
+  views/
+    Dashboard.jsx
+    orders/                OrdersView, OrderForm, PaymentsModal
+    crm/                   CRMView (lidlar), ChatsView (Telegram)
+    expenses/              ExpenseView, TransactionForm
+    OperationsView.jsx, ReportView.jsx, CategoriesView.jsx, EmployeesView.jsx
+    settings/              SettingsView, AppearanceSection, TrashSection, DashboardConstructorSection
+```
+
+**Mavzu (THEME) haqida:** rangni o'zgartirish uchun `THEME = ...` emas, `setTheme(buildTheme(...))` ishlating —
+ES modullarda import qilingan o'zgaruvchini to'g'ridan-to'g'ri qayta yozib bo'lmaydi.
+
+---
+
+## 🎨 Yangi dizayn (2026-09)
+
+- **Tungi** (standart) — qorong'i premium uslub, kirish ekrani bilan bir xil. **Tiniq** — yorug', sokin uslub. Almashtirish: Sozlamalar → Ko'rinish → Rejim
+- **Pastki menyu (telefonda):** Asosiy · Buyurtma · **+** · Rasxod · Yana. "+" tugmasi yangi buyurtma yoki rasxod formasini to'g'ridan-to'g'ri ochadi, "Yana" esa to'liq menyuni
+- **Buyurtmalar (telefonda):** qidiruv, filtr tugmasi (Excel amallari shu yerda) va "Hammasi / Qarzdorlar / To'langan" tanlovi
+- Shriftlar: Onest (matn), Unbounded (Tungi rejimda katta raqamlar)
+- Qattiq yozilgan oq/och ranglar (20+ joy) mavzu ranglariga o'tkazildi — ikkala rejimda ham to'g'ri ko'rinadi
+
+Eslatma: agar kimdir oldin Sozlamalarda "Light" rejimni saqlagan bo'lsa, ilova Tiniq rejimda ochiladi — Tungi'ga o'tish uchun Sozlamalardan tanlang.
+
+---
+
+## 🎨🖨️ Dizayner va Pechatchi (2026-09)
+
+**Yangi rollar:** Xodimlar → Xodim qo'shish → Rol: *Dizayner* yoki *Pechatchi*.
+
+**Jarayon:**
+1. Menejer CRM'da lidni **Jarayonda (Dizayn)** ga o'tkazadi → oyna ochiladi: mas'ul dizayner, ish nomi, format, fayl turi, muddat, izoh (va ixtiyoriy — pechatchini oldindan tayinlash)
+2. Dizayner tizimga kirib **Mening vazifalarim** doskasini ko'radi (Yangi → Jarayonda → Tugallangan) va "Boshlash" / "Tugallandi" bosadi
+3. Dizayn tugagach ish **avtomatik** "Jarayonda (Pechatchi)"ga o'tadi va pechatchiga tushadi (oldindan tayinlanmagan bo'lsa — CRM kartochkasida qizil "Pechatchi tayinlang" chiqadi)
+4. Pechatchi "Tugallandi" bosganda lid **Yopilgan**ga o'tadi
+5. Har bir qadam o'zgarishlar tarixiga yoziladi; CRM ochiq bo'lsa holat har 20 soniyada yangilanadi
+
+**Xavfsizlik (server darajasida):** dizayner/pechatchi faqat `/api/tasks` orqali o'z vazifalarini oladi — summa, to'lov, qarz, telefon raqami ularga yuborilmaydi. Buyurtmalar, tranzaksiyalar, lidlar, Telegram va tarixga kirish 403 bilan yopiq. Menejerning eskirgan nusxasi ishchilar kiritgan holatni bosib keta olmaydi.
+
+Fayllar: `backend/tasks.js`, `frontend/src/views/tasks/WorkerApp.jsx`, `frontend/src/views/crm/TaskAssignModal.jsx`

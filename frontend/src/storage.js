@@ -161,6 +161,19 @@ export async function fetchTelegramChats() {
   return data.chats || [];
 }
 
+export async function markTelegramChatRead(chatId) {
+  const res = await fetch(`${API_BASE}/telegram-user/mark-read`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ chatId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message || data.error || `mark-read failed: ${res.status}`);
+  }
+  return data;
+}
+
 export async function connectTelegramUser() {
   const res = await fetch(`${API_BASE}/telegram-user/connect`, { method: "POST", headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
@@ -202,16 +215,6 @@ export async function sendTelegramUserMessage(chatId, text) {
 }
 
 
-export async function authResetAdminPin() {
-  const res = await fetch(`${API_BASE}/auth/reset-admin-pin`, { method: "POST" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.message || data.error || `reset failed: ${res.status}`);
-    throw err;
-  }
-  return data;
-}
-
 export function authLogout() {
   clearToken();
 }
@@ -241,4 +244,23 @@ export async function apiDelete(key) {
   if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
   if (!res.ok) throw new Error(`DELETE ${key} failed: ${res.status}`);
   return res.json();
+}
+
+// ---- Dizayner / Pechatchi vazifalari ----
+export async function fetchTasks() {
+  const res = await fetch(`${API_BASE}/tasks`, { headers: authHeaders() });
+  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Vazifalarni olib bo'lmadi");
+  return data.tasks || [];
+}
+export async function setTaskStatus(leadId, kind, status) {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(leadId)}/${kind}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ status }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Holatni o'zgartirib bo'lmadi");
+  return data.task;
 }

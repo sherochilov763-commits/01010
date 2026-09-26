@@ -2,6 +2,8 @@
 // qabul qiladigan va yuboradigan modul. MTProto (teleproto) orqali ishlaydi —
 // bu Bot API emas, balki haqiqiy foydalanuvchi sessiyasi.
 
+const path = require("path");
+const crypto = require("crypto");
 const { TelegramClient } = require("teleproto");
 const { StringSession } = require("teleproto/sessions");
 
@@ -9,6 +11,11 @@ let client = null;
 let connecting = false;
 let lastError = null;
 let onNewMessageCallback = null;
+let mediaDir = null; // rasmlar saqlanadigan papka (server.js tomonidan beriladi)
+
+function setMediaDir(dir) {
+  mediaDir = dir;
+}
 
 function isConnected() {
   return !!client && client.connected;
@@ -57,11 +64,27 @@ async function connectFromSettings(settings, onNewMessage) {
 
         // Xabar matnini aniqlaymiz — agar rasm/video/fayl bo'lsa, mos belgi qo'shamiz
         let text = msg.message || "";
+        let mediaUrl = null;
+        let mediaType = null;
         if (msg.media) {
+          if (msg.photo && mediaDir) {
+            // Rasmning o'zini yuklab olamiz — shunda CRM'da haqiqiy rasm korinadi
+            try {
+              const buffer = await client.downloadMedia(msg, {});
+              if (buffer) {
+                const filename = `${crypto.randomBytes(12).toString("hex")}.jpg`;
+                require("fs").writeFileSync(path.join(mediaDir, filename), buffer);
+                mediaUrl = `/api/photos/${filename}`;
+                mediaType = "photo";
+              }
+            } catch (e) {
+              console.error("Rasmni yuklab olishda xato:", e.message);
+            }
+          }
           const mediaLabel = msg.photo ? "📷 Rasm" : msg.video ? "🎥 Video" : msg.voice ? "🎤 Ovozli xabar" : msg.document ? "📎 Fayl" : "📎 Media";
-          text = text ? `${mediaLabel}: ${text}` : mediaLabel;
+          text = text ? `${mediaLabel}: ${text}` : (mediaUrl ? text : mediaLabel);
         }
-        if (!text) text = "[Bo'sh xabar]";
+        if (!text && !mediaUrl) text = "[Bo'sh xabar]";
 
         if (onNewMessageCallback) {
           onNewMessageCallback({
@@ -70,6 +93,8 @@ async function connectFromSettings(settings, onNewMessage) {
             username: sender?.username || "",
             phone: sender?.phone || "",
             text,
+            mediaUrl,
+            mediaType,
             date: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
           });
         }
@@ -117,4 +142,4 @@ async function getRecentMessages(chatId, limit = 30) {
     .reverse();
 }
 
-module.exports = { connectFromSettings, disconnect, sendMessage, getRecentMessages, getStatus, isConnected };
+module.exports = { connectFromSettings, disconnect, sendMessage, getRecentMessages, getStatus, isConnected, setMediaDir };

@@ -11,6 +11,7 @@ const nodemailer = require("nodemailer");
 const telegramUserbot = require("./telegram-userbot");
 const multer = require("multer");
 const db = require("./db");
+const { registerTaskRoutes, mergeLeadTaskState } = require("./tasks");
 
 // ==================== Rasm (foto hisobot) saqlash ====================
 // Rasmlar bazaning o'zi bilan bir joyda (doimiy diskda) saqlanadi — Railway'da
@@ -18,6 +19,7 @@ const db = require("./db");
 // tushirilganda ham rasmlar yo'qolmaydi.
 const UPLOADS_DIR = path.join(path.dirname(db.DB_PATH), "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+telegramUserbot.setMediaDir(UPLOADS_DIR);
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -38,14 +40,27 @@ const upload = multer({
 const PORT = process.env.PORT || 4000;
 const app = express();
 
-app.use(cors());
+// CORS — standart holatda o'chiq (frontend shu serverning o'zidan beriladi).
+// Frontend boshqa domenda bo'lsa: CORS_ORIGIN="https://a.uz,https://b.uz"
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || "").split(",").map((s) => s.trim()).filter(Boolean);
+if (CORS_ORIGINS.length) app.use(cors({ origin: CORS_ORIGINS }));
+
+app.set("trust proxy", 1); // Railway/Nginx ortida haqiqiy IP'ni olish uchun (rate limit to'g'ri ishlashi uchun)
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "same-origin");
+  next();
+});
 app.use(express.json({ limit: "5mb" }));
 
 // ---- JWT sekret kaliti — birinchi ishga tushirilganda yaratiladi va faylga saqlanadi
 // (server qayta ishga tushirilganda ham eski tokenlar amal qilishda davom etishi uchun) ----
-const SECRET_PATH = path.join(__dirname, "uvix.secret");
-let JWT_SECRET;
-try {
+// Ustuvorlik: JWT_SECRET env o'zgaruvchisi → doimiy diskdagi fayl (DB bilan bir joyda).
+const SECRET_PATH = path.join(path.dirname(db.DB_PATH), "uvix.secret");
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) try {
   JWT_SECRET = fs.readFileSync(SECRET_PATH, "utf8").trim();
   if (!JWT_SECRET) throw new Error("empty");
 } catch {
@@ -53,6 +68,11 @@ try {
   fs.writeFileSync(SECRET_PATH, JWT_SECRET, { mode: 0o600 });
 }
 const TOKEN_TTL = "12h";
+function issueToken(employee) {
+  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
+  return { token, employee: { id: employee.id, name: employee.name, role: employee.role } };
+}
+let passkeyApi = null; // pastda, requireAuth'dan keyin ulanadi
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
@@ -103,6 +123,9 @@ if (readEmployees().length === 0) {
 const loginAttempts = new Map(); // ip -> { count, resetAt }
 const MAX_ATTEMPTS = 8;
 const WINDOW_MS = 10 * 60 * 1000; // 10 daqiqa
+function clearRateLimit(key) {
+  loginAttempts.delete(key);
+}
 function checkRateLimit(ip) {
   const now = Date.now();
   const rec = loginAttempts.get(ip);
@@ -119,7 +142,8 @@ function checkRateLimit(ip) {
 // Faqat ism/rolni qaytaradi (PIN hech qachon qaytarilmaydi) — Kirish ekranida ro'yxat uchun
 app.get("/api/auth/employees", (req, res) => {
   const list = readEmployees();
-  res.json({ employees: list.map((e) => ({ id: e.id, name: e.name, role: e.role })) });
+  const withPasskey = passkeyApi ? passkeyApi.employeeIdsWithPasskey() : new Set();
+  res.json({ employees: list.map((e) => ({ id: e.id, name: e.name, role: e.role, hasPasskey: withPasskey.has(e.id) })) });
 });
 
 // Birinchi administratorni yaratish — FAQAT hali birorta xodim bo'lmaganda ishlaydi
@@ -146,18 +170,8 @@ app.post("/api/auth/bootstrap", (req, res) => {
   res.json({ token, employee: { id: employee.id, name: employee.name, role: employee.role } });
 });
 
-// Kirish imkoni yo'qolganda — birinchi (eng qadimgi) administrator PIN'ini "0000"ga qaytaradi.
-// Kompyuterga jismoniy/tarmoq orqali kirish huquqi bo'lgan kishi uchun mo'ljallangan zaxira yechim.
-app.post("/api/auth/reset-admin-pin", (req, res) => {
-  const employees = readEmployees();
-  const admin = employees.find((e) => e.role === "admin");
-  if (!admin) {
-    return res.status(404).json({ error: "no_admin_found" });
-  }
-  admin.pin = bcrypt.hashSync("0000", 10);
-  writeEmployees(employees);
-  res.json({ ok: true, name: admin.name, message: "PIN '0000'ga qaytarildi" });
-});
+// Admin PIN'ini tiklash endi faqat server konsolidan: `node reset-admin-pin.js`
+// (avval bu ochiq API edi — internetdagi har kim admin PIN'ini 0000 ga qaytara olardi).
 
 // ==================== Email orqali PIN tiklash ====================
 const pinResetAttempts = new Map(); // ip -> { count, resetAt }
@@ -205,9 +219,9 @@ app.post("/api/auth/forgot-pin", async (req, res) => {
   if (!employee) {
     return res.json({ ok: true });
   }
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = String(crypto.randomInt(100000, 1000000));
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify({ code, expiresAt }));
+  upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify({ code, expiresAt, attempts: 0 }));
   try {
     await sendResetEmail(employee.email, code, employee.name);
     res.json({ ok: true });
@@ -219,6 +233,10 @@ app.post("/api/auth/forgot-pin", async (req, res) => {
 
 // 2-qadam: kod va yangi PIN tasdiqlanadi
 app.post("/api/auth/reset-pin-with-code", (req, res) => {
+  const ip = req.ip || "unknown";
+  if (!checkPinResetRateLimit(ip)) {
+    return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
+  }
   const { email, code, newPin } = req.body || {};
   if (!email || !code || !newPin) return res.status(400).json({ error: "missing_fields" });
   if (!/^\d{4,6}$/.test(String(newPin))) return res.status(400).json({ error: "invalid_pin" });
@@ -228,7 +246,13 @@ app.post("/api/auth/reset-pin-with-code", (req, res) => {
   const row = getStmt.get(`uvix:pinReset:${employee.id}`);
   if (!row) return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
   const record = JSON.parse(row.value);
-  if (record.code !== String(code) || Date.now() > record.expiresAt) {
+  const codeOk = typeof record.code === "string" && String(code).length === record.code.length &&
+    crypto.timingSafeEqual(Buffer.from(String(code)), Buffer.from(record.code));
+  if (!codeOk || Date.now() > record.expiresAt) {
+    // 5 ta noto'g'ri urinishdan keyin kod butunlay bekor qilinadi
+    record.attempts = (record.attempts || 0) + 1;
+    if (record.attempts >= 5 || Date.now() > record.expiresAt) deleteStmt.run(`uvix:pinReset:${employee.id}`);
+    else upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify(record));
     return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
   }
   employee.pin = bcrypt.hashSync(String(newPin), 10);
@@ -239,11 +263,12 @@ app.post("/api/auth/reset-pin-with-code", (req, res) => {
 
 // Kirish — PIN tekshiriladi, muvaffaqiyatli bo'lsa token beriladi
 app.post("/api/auth/login", (req, res) => {
-  const ip = req.ip || req.connection?.remoteAddress || "unknown";
-  if (!checkRateLimit(ip)) {
+  const { employeeId, name, pin } = req.body || {};
+  // Cheklov IP + xodim bo'yicha: bir ofisdagi (bitta IP) xodimlar bir-birini bloklab qo'ymaydi
+  const limitKey = `${req.ip || "unknown"}:${employeeId || String(name || "").toLowerCase()}`;
+  if (!checkRateLimit(limitKey)) {
     return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
   }
-  const { employeeId, name, pin } = req.body || {};
   if ((!employeeId && !name) || !pin) {
     return res.status(400).json({ error: "missing_fields" });
   }
@@ -259,8 +284,8 @@ app.post("/api/auth/login", (req, res) => {
     employee.pin = bcrypt.hashSync(String(pin), 10);
     writeEmployees(employees);
   }
-  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
-  res.json({ token, employee: { id: employee.id, name: employee.name, role: employee.role } });
+  clearRateLimit(limitKey);
+  res.json(issueToken(employee));
 });
 
 // ==================== Middleware — bundan pastdagi HAMMA yo'l token talab qiladi ====================
@@ -268,17 +293,74 @@ function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: "no_token" });
+  let payload;
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
     return res.status(401).json({ error: "invalid_token" });
   }
+  // Rolni tokendan emas, bazadagi JORIY holatdan olamiz: xodim o'chirilsa yoki
+  // admin huquqi olib tashlansa — bu darhol kuchga kiradi (12 soat kutmasdan).
+  const employee = readEmployees().find((e) => e.id === payload.sub);
+  if (!employee) return res.status(401).json({ error: "invalid_token" });
+  req.user = { sub: employee.id, id: employee.id, name: employee.name, role: employee.role };
+  next();
+}
+// Dizayner va Pechatchi — faqat o'z vazifalarini ko'radigan "ishchi" rollar (pul ma'lumotlarisiz)
+const WORKER_ROLES = new Set(["designer", "printer"]);
+const isWorker = (user) => WORKER_ROLES.has(user?.role);
+// Ishchi rollar o'qishi/yozishi mumkin bo'lgan KV kalitlari (qolgani — 403)
+const WORKER_READ_KEYS = new Set(["uvix:employees", "uvix:appearance", "uvix:settings"]);
+const WORKER_WRITE_KEYS = new Set(["uvix:employees"]); // faqat o'z PIN'ini o'zgartirish uchun
+function requireStaff(req, res, next) {
+  if (isWorker(req.user)) return res.status(403).json({ error: "forbidden", message: "Bu bo'lim sizning rolingiz uchun yopiq" });
+  next();
+}
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== "admin") return res.status(403).json({ error: "forbidden", message: "Faqat administrator uchun" });
+  next();
 }
 app.use("/api/kv", requireAuth);
 
+// ==================== Face ID / barmoq izi (passkey) ====================
+passkeyApi = require("./passkeys")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, issueToken,
+  rateLimit: (key) => checkRateLimit(`passkey:${key}`),
+});
+
+// ==================== Dizayner / Pechatchi vazifalari ====================
+registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker });
+
+// ==================== KV kirish huquqlari ====================
+// Sozlamalardagi maxfiy maydonlar — faqat admin ko'radi/o'zgartiradi
+const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
+// Oddiy xodim yozishi mumkin bo'lgan kalitlar (qolganlari — faqat admin)
+const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
+// Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
+function isInternalKey(key) {
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys";
+}
+function sanitizeEmployeesForClient(list, user) {
+  // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
+  const isAdmin = !user || user.role === "admin";
+  return list.map(({ pin, ...rest }) => {
+    if (!isAdmin && rest.id !== user.id) delete rest.email;
+    return rest;
+  });
+}
+function sanitizeSettingsForClient(settings, isAdmin, user) {
+  if (isWorker(user) && settings && typeof settings === "object") {
+    // Ishchilarga faqat ko'rinishga oid sozlamalar (kurs, summa formatlari va h.k. emas)
+    return {};
+  }
+  if (isAdmin || !settings || typeof settings !== "object") return settings;
+  const copy = { ...settings };
+  SECRET_SETTING_FIELDS.forEach((f) => delete copy[f]);
+  return copy;
+}
+
 // ==================== Foto hisobot (buyurtma rasmlari) ====================
-app.post("/api/photos/upload", requireAuth, (req, res) => {
+app.post("/api/photos/upload", requireAuth, requireStaff, (req, res) => {
   upload.array("photos", 10)(req, res, (err) => {
     if (err) return res.status(400).json({ error: "upload_failed", message: err.message });
     const files = req.files || [];
@@ -306,7 +388,7 @@ app.get("/api/photos/:filename", (req, res) => {
   res.sendFile(filePath);
 });
 
-app.delete("/api/photos/:filename", requireAuth, (req, res) => {
+app.delete("/api/photos/:filename", requireAuth, requireStaff, (req, res) => {
   const filename = req.params.filename.replace(/[^a-zA-Z0-9.]/g, "");
   const filePath = path.join(UPLOADS_DIR, filename);
   if (filePath.startsWith(UPLOADS_DIR) && fs.existsSync(filePath)) {
@@ -316,8 +398,20 @@ app.delete("/api/photos/:filename", requireAuth, (req, res) => {
 });
 
 app.get("/api/kv/:key", (req, res) => {
-  const row = getStmt.get(req.params.key);
+  const key = req.params.key;
+  if (isInternalKey(key)) return res.status(403).json({ error: "forbidden" });
+  if (isWorker(req.user) && !WORKER_READ_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
+  const row = getStmt.get(key);
   if (!row) return res.status(404).json({ error: "not_found" });
+  const isAdmin = req.user.role === "admin";
+  if (key === "uvix:employees") {
+    return res.json({ key, value: JSON.stringify(sanitizeEmployeesForClient(readEmployees(), req.user)) });
+  }
+  if (key === "uvix:settings") {
+    try {
+      return res.json({ key, value: JSON.stringify(sanitizeSettingsForClient(JSON.parse(row.value), isAdmin, req.user)) });
+    } catch { /* buzilgan JSON — pastda xom holda qaytaramiz */ }
+  }
   res.json({ key: row.key, value: row.value });
 });
 
@@ -491,32 +585,95 @@ function notifyExpensesDiff(oldValue, newValue) {
   }
 }
 
+// Xodimlar ro'yxatini saqlash — server tomonda qat'iy tekshiruv bilan.
+// Admin: qo'shish/o'chirish/rol/PIN o'zgartirishi mumkin (lekin oxirgi adminni o'chira olmaydi).
+// Oddiy xodim: faqat O'ZINING PIN'ini o'zgartira oladi, qolgan hamma narsa e'tiborsiz qoldiriladi.
+function mergeEmployees(incoming, user) {
+  const existing = readEmployees();
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const isAdmin = user.role === "admin";
+  const validPin = (p) => typeof p === "string" && /^\d{4,6}$/.test(p);
+
+  if (!isAdmin) {
+    const mine = incoming.find((e) => e && e.id === user.id);
+    const result = existing.map((e) => {
+      if (e.id === user.id && mine && validPin(mine.pin) && !pinMatches(mine.pin, e.pin)) {
+        return { ...e, pin: bcrypt.hashSync(mine.pin, 10) };
+      }
+      return e;
+    });
+    return { list: result };
+  }
+
+  const result = [];
+  const seen = new Set();
+  for (const e of incoming) {
+    if (!e || typeof e.id !== "string" || seen.has(e.id)) continue;
+    seen.add(e.id);
+    const old = byId.get(e.id);
+    const name = String(e.name || old?.name || "").trim();
+    if (!name) continue;
+    const role = e.role === "admin" ? "admin" : (typeof e.role === "string" ? e.role : old?.role || "operator");
+    let pin = old?.pin;
+    if (validPin(e.pin) && !(old && pinMatches(e.pin, old.pin))) pin = bcrypt.hashSync(e.pin, 10);
+    if (!pin) return { error: "Yangi xodim uchun 4-6 xonali PIN kerak" };
+    // Yuborilmagan maydonlar (masalan email) eskisidan saqlanadi — tasodifan o'chib ketmasligi uchun
+    const { pin: _ignored, hasPasskey: _hp, ...rest } = e;
+    const { pin: _oldPin, ...oldRest } = old || {};
+    result.push({ ...oldRest, ...rest, name, role, pin });
+  }
+  if (!result.some((e) => e.role === "admin")) return { error: "Kamida bitta administrator qolishi shart" };
+  return { list: result };
+}
+
 app.put("/api/kv/:key", (req, res) => {
+  const key = req.params.key;
   const { value } = req.body || {};
   if (typeof value !== "string") {
     return res.status(400).json({ error: "value_must_be_string" });
   }
-  if (req.params.key.length > 200) {
+  if (key.length > 200) {
     return res.status(400).json({ error: "key_too_long" });
   }
-  const oldRow = getStmt.get(req.params.key);
+  if (isInternalKey(key)) return res.status(403).json({ error: "forbidden" });
+  const isAdmin = req.user.role === "admin";
+  if (isWorker(req.user) && !WORKER_WRITE_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
+  if (!isAdmin && !USER_WRITABLE_KEYS.has(key)) {
+    return res.status(403).json({ error: "forbidden", message: "Faqat administrator uchun" });
+  }
+  const oldRow = getStmt.get(key);
   const oldValue = oldRow ? oldRow.value : null;
-  // Xodimlar ro'yxati yozilganda — hali hash qilinmagan PIN'larni shaffof ravishda hash qilamiz
-  if (req.params.key === "uvix:employees") {
+
+  if (key === "uvix:employees") {
+    let list;
+    try { list = JSON.parse(value); } catch { return res.status(400).json({ error: "invalid_json" }); }
+    if (!Array.isArray(list)) return res.status(400).json({ error: "must_be_array" });
+    const merged = mergeEmployees(list, req.user);
+    if (merged.error) return res.status(400).json({ error: "invalid_employees", message: merged.error });
+    writeEmployees(merged.list);
+    passkeyApi.removeForMissingEmployees(new Set(merged.list.map((e) => e.id)));
+    return res.json({ key, value: JSON.stringify(sanitizeEmployeesForClient(merged.list, req.user)) });
+  }
+
+  if (key === "uvix:settings" && !isAdmin) {
+    // Oddiy xodim maxfiy maydonlarni ko'rmaydi va o'zgartira olmaydi — eskisini saqlab qolamiz
+    let next;
+    try { next = JSON.parse(value); } catch { return res.status(400).json({ error: "invalid_json" }); }
+    const prev = oldValue ? JSON.parse(oldValue) : {};
+    SECRET_SETTING_FIELDS.forEach((f) => {
+      if (f in prev) next[f] = prev[f]; else delete next[f];
+    });
+    upsertStmt.run(key, JSON.stringify(next));
+    return res.json({ key, value: JSON.stringify(sanitizeSettingsForClient(next, false)) });
+  }
+
+  if (key === "uvix:leads") {
+    // Dizayner/pechatchi vazifa holatini o'zgartirgan bo'lsa, menejerning eskirgan nusxasi uni bosib ketmasin
     try {
-      const list = JSON.parse(value);
-      if (Array.isArray(list)) {
-        list.forEach((e) => {
-          if (e && typeof e.pin === "string" && !isHashed(e.pin) && /^\d{4,6}$/.test(e.pin)) {
-            e.pin = bcrypt.hashSync(e.pin, 10);
-          }
-        });
-        upsertStmt.run(req.params.key, JSON.stringify(list));
-        return res.json({ key: req.params.key, value: JSON.stringify(list) });
-      }
-    } catch {
-      // JSON emas yoki massiv emas — oddiy holatda davom etamiz
-    }
+      const merged = mergeLeadTaskState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []);
+      upsertStmt.run(key, JSON.stringify(merged));
+      return res.json({ key, value: JSON.stringify(merged) });
+    } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
   upsertStmt.run(req.params.key, value);
   res.json({ key: req.params.key, value });
@@ -530,7 +687,8 @@ app.put("/api/kv/:key", (req, res) => {
 });
 
 
-app.delete("/api/kv/:key", (req, res) => {
+app.delete("/api/kv/:key", requireAdmin, (req, res) => {
+  if (isInternalKey(req.params.key) || req.params.key === "uvix:employees") return res.status(403).json({ error: "forbidden" });
   deleteStmt.run(req.params.key);
   res.json({ key: req.params.key, deleted: true });
 });
@@ -538,11 +696,12 @@ app.delete("/api/kv/:key", (req, res) => {
 app.get("/api/kv", (req, res) => {
   const prefix = req.query.prefix || "";
   const rows = listStmt.all(`${prefix}%`);
-  res.json({ keys: rows.map((r) => r.key) });
+  const keys = rows.map((r) => r.key).filter((k) => !isInternalKey(k) && (!isWorker(req.user) || WORKER_READ_KEYS.has(k)));
+  res.json({ keys });
 });
 
 // Qo'lda "Hoziroq yubor" — Sozlamalar sahifasidagi tugma shu yerni chaqiradi (faqat tizimga kirgan foydalanuvchi uchun)
-app.post("/api/backup/send-now", requireAuth, (req, res) => {
+app.post("/api/backup/send-now", requireAuth, requireAdmin, (req, res) => {
   const cfg = getTelegramConfig();
   if (!cfg) return res.status(400).json({ error: "telegram_not_configured" });
   runDailyBackup()
@@ -561,13 +720,13 @@ app.get("*", (req, res, next) => {
 });
 
 // ==================== Telegram shaxsiy akkaunt (CRM chat) ====================
-function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text, date }) {
+function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text, mediaUrl, mediaType, date }) {
   try {
     // Xabarni saqlaymiz
     const row = getStmt.get("uvix:telegramMessages");
     const allMessages = row ? JSON.parse(row.value) : {};
     if (!allMessages[chatId]) allMessages[chatId] = [];
-    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, out: false, date });
+    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, mediaUrl: mediaUrl || null, mediaType: mediaType || null, out: false, date });
     upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
 
     // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz.
@@ -616,22 +775,36 @@ function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text
   }
 }
 
-app.get("/api/telegram-user/status", requireAuth, (req, res) => {
+app.get("/api/telegram-user/status", requireAuth, requireStaff, (req, res) => {
   res.json(telegramUserbot.getStatus());
 });
 
-app.get("/api/telegram-user/chats", requireAuth, (req, res) => {
+app.get("/api/telegram-user/chats", requireAuth, requireStaff, (req, res) => {
   const row = getStmt.get("uvix:telegramMessages");
   const allMessages = row ? JSON.parse(row.value) : {};
+  const seenRow = getStmt.get("uvix:telegramLastSeen");
+  const lastSeen = seenRow ? JSON.parse(seenRow.value) : {};
   const chats = Object.entries(allMessages).map(([chatId, msgs]) => {
     const last = msgs[msgs.length - 1];
-    return { chatId, lastText: last?.text || "", lastDate: last?.date || null };
+    const lastIncoming = [...msgs].reverse().find((m) => !m.out);
+    const unread = !!(lastIncoming && (!lastSeen[chatId] || new Date(lastIncoming.date) > new Date(lastSeen[chatId])));
+    return { chatId, lastText: last?.text || "", lastDate: last?.date || null, unread };
   });
   chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
   res.json({ chats });
 });
 
-app.post("/api/telegram-user/connect", requireAuth, async (req, res) => {
+app.post("/api/telegram-user/mark-read", requireAuth, requireStaff, (req, res) => {
+  const { chatId } = req.body || {};
+  if (!chatId) return res.status(400).json({ error: "missing_chatId" });
+  const seenRow = getStmt.get("uvix:telegramLastSeen");
+  const lastSeen = seenRow ? JSON.parse(seenRow.value) : {};
+  lastSeen[chatId] = new Date().toISOString();
+  upsertStmt.run("uvix:telegramLastSeen", JSON.stringify(lastSeen));
+  res.json({ ok: true });
+});
+
+app.post("/api/telegram-user/connect", requireAuth, requireAdmin, async (req, res) => {
   const row = getStmt.get("uvix:settings");
   const settings = row ? JSON.parse(row.value) : {};
   const result = await telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage);
@@ -639,18 +812,18 @@ app.post("/api/telegram-user/connect", requireAuth, async (req, res) => {
   else res.status(400).json({ error: "connect_failed", message: result.error });
 });
 
-app.post("/api/telegram-user/disconnect", requireAuth, async (req, res) => {
+app.post("/api/telegram-user/disconnect", requireAuth, requireAdmin, async (req, res) => {
   await telegramUserbot.disconnect();
   res.json({ ok: true });
 });
 
-app.get("/api/telegram-user/messages/:chatId", requireAuth, (req, res) => {
+app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, (req, res) => {
   const row = getStmt.get("uvix:telegramMessages");
   const allMessages = row ? JSON.parse(row.value) : {};
   res.json({ messages: allMessages[req.params.chatId] || [] });
 });
 
-app.post("/api/telegram-user/send", requireAuth, async (req, res) => {
+app.post("/api/telegram-user/send", requireAuth, requireStaff, async (req, res) => {
   const { chatId, text } = req.body || {};
   if (!chatId || !text) return res.status(400).json({ error: "missing_fields" });
   try {
@@ -668,7 +841,7 @@ app.post("/api/telegram-user/send", requireAuth, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`UVIX backend http://localhost:${PORT} da ishga tushdi`);
-  console.log(`Baza fayli: ${path.join(__dirname, "uvix.db")}`);
+  console.log(`Baza fayli: ${db.DB_PATH}`);
   console.log(`Autentifikatsiya: YOQILGAN (barcha /api/kv/* yo'llari token talab qiladi)`);
 
   // Agar Telegram shaxsiy akkaunt sozlamalari saqlangan bo'lsa, server ishga tushganda
