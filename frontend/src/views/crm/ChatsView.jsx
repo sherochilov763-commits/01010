@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCheck, Info, Search, Send, X } from "lucide-react";
+import { ArrowLeft, Info, Search, X } from "lucide-react";
 import { useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
-import { refreshTelegramNames } from "../../storage.js";
+import { reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
+import { CHAT_CSS, Composer, MessageList } from "./ChatConversation.jsx";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
@@ -18,22 +19,37 @@ export const TG_DARK_MUTED = "#6D7F91";
 export const TG_OUT_BUBBLE = "#2B5278";
 export const TG_IN_BUBBLE = "#182533";
 
-export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage, onMarkRead, onMoveLead }) {
+export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage, onMarkRead, onMoveLead, initialChatId, onInitialChatHandled }) {
   const [chats, setChats] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedChatId, setSelectedChatId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [replyTo, setReplyTo] = useState(null);
+  const lastCountRef = useRef(0);
   const bottomRef = useRef(null);
+  const openedFromCrm = useRef(false); // CRM'dan kelinganmi — telefonda "orqaga" to'g'ri CRM'ga qaytarsin
+  // CRM'dan "Chat" bosib kelinganda — shu mijoz suhbatini darhol ochamiz
+  useEffect(() => {
+    if (!initialChatId) return;
+    openedFromCrm.current = true;
+    setSelectedChatId(String(initialChatId));
+    onInitialChatHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialChatId]);
   const isMobile = useIsMobile();
   const [infoOpen, setInfoOpen] = useState(false);
   function closeChat() { setSelectedChatId(null); setInfoOpen(false); }
   // Telefonda: "orqaga" avval mijoz ma'lumotini, keyin suhbatni yopadi — bo'limdan chiqmaydi
-  useBackToClose(isMobile && !!selectedChatId, closeChat);
+  useBackToClose(isMobile && !!selectedChatId, () => {
+    closeChat();
+    if (openedFromCrm.current) {
+      openedFromCrm.current = false;
+      window.history.back(); // Chatlar ro'yxatida to'xtamasdan, kelgan joyga (CRM) qaytamiz
+    }
+  });
   useBackToClose(isMobile && infoOpen, () => setInfoOpen(false));
 
   useEffect(() => {
@@ -50,16 +66,25 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
 
   useEffect(() => {
     if (!selectedChatId) return;
+    setReplyTo(null);
+    lastCountRef.current = 0;
     setLoadingMessages(true);
     onFetchMessages(selectedChatId).then(setMessages).catch(() => setMessages([])).finally(() => setLoadingMessages(false));
+    // Ochiq suhbatni har 5 soniyada yangilaymiz — mijozning javobi sahifani yangilamasdan chiqadi
+    const t = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      onFetchMessages(selectedChatId).then((list) => setMessages((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))).catch(() => {});
+    }, 5000);
     if (onMarkRead) {
       onMarkRead(selectedChatId);
       setChats((prev) => prev.map((c) => (c.chatId === selectedChatId ? { ...c, unread: false } : c)));
     }
+    return () => clearInterval(t);
   }, [selectedChatId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messages.length > lastCountRef.current) bottomRef.current?.scrollIntoView({ behavior: lastCountRef.current ? "smooth" : "auto" });
+    lastCountRef.current = messages.length;
   }, [messages]);
 
   function leadForChat(chatId) {
@@ -75,24 +100,45 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
     });
   }, [chats, search, leads]);
 
-  async function send() {
-    if (!text.trim() || !selectedChatId) return;
-    setSending(true);
-    setError("");
-    const outgoing = text.trim();
-    setText("");
+  // Yuborilgan xabarni ro'yxatga va suhbatlar ro'yxatidagi oxirgi matnga qo'shamiz
+  function appendOutgoing(message, preview) {
+    setMessages((prev) => [...prev, message]);
+    setReplyTo(null);
+    setChats((prev) => {
+      const now = new Date().toISOString();
+      const exists = prev.some((c) => c.chatId === selectedChatId);
+      const updated = exists
+        ? prev.map((c) => (c.chatId === selectedChatId ? { ...c, lastText: preview, lastDate: now } : c))
+        : [{ chatId: selectedChatId, lastText: preview, lastDate: now, unread: false }, ...prev];
+      return updated.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
+    });
+  }
+  const replyId = () => replyTo?.tgId || undefined;
+  async function handleSendText(t) {
+    const data = await onSendMessage(selectedChatId, t, replyId());
+    appendOutgoing(data?.message || { id: uid(), text: t, out: true, date: new Date().toISOString() }, t);
+  }
+  async function handleSendFile(kind, file, caption) {
+    const m = await sendTelegramMedia(selectedChatId, kind, file, { caption, replyToTgId: replyId() });
+    const preview = kind === "photo" ? (caption ? `📷 ${caption}` : "📷 Rasm") : kind === "video" ? (caption ? `🎥 ${caption}` : "🎥 Video") : `📎 ${file.name}`;
+    appendOutgoing(m, preview);
+  }
+  async function handleSendVoice(blob, filename) {
+    const m = await sendTelegramMedia(selectedChatId, "voice", blob, { filename, replyToTgId: replyId() });
+    appendOutgoing(m, "🎤 Ovozli xabar");
+  }
+  async function handleSendLocation(lat, lng) {
+    const m = await sendTelegramLocation(selectedChatId, lat, lng, replyId());
+    appendOutgoing(m, "📍 Joylashuv");
+  }
+  async function handleReact(m, emoji) {
+    const prev = m.myReaction || null;
+    setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, myReaction: emoji } : x)));
     try {
-      await onSendMessage(selectedChatId, outgoing);
-      setMessages((prev) => [...prev, { id: uid(), text: outgoing, out: true, date: new Date().toISOString() }]);
-      setChats((prev) => {
-        const updated = prev.map((c) => (c.chatId === selectedChatId ? { ...c, lastText: outgoing, lastDate: new Date().toISOString() } : c));
-        return updated.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
-      });
+      await reactTelegramMessage(selectedChatId, m.id, emoji);
     } catch (e) {
-      setError(e?.message || "Yuborilmadi");
-      setText(outgoing);
-    } finally {
-      setSending(false);
+      setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, myReaction: prev } : x)));
+      setError(e.message);
     }
   }
 
@@ -177,7 +223,7 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
           <>
             <div style={{ padding: isMobile ? "8px 10px" : "14px 20px", background: TG_DARK_SIDEBAR, color: "#fff", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${TG_DARK_BORDER}` }}>
               {isMobile && (
-                <button type="button" onClick={closeChat} aria-label="Suhbatlar ro'yxatiga qaytish"
+                <button type="button" onClick={() => window.history.back()} aria-label={openedFromCrm.current ? "CRM'ga qaytish" : "Suhbatlar ro'yxatiga qaytish"}
                   style={{ width: 44, height: 44, border: 0, background: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
                   <ArrowLeft size={22} />
                 </button>
@@ -198,60 +244,32 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
                 </button>
               )}
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-              {loadingMessages ? (
-                <div style={{ textAlign: "center", color: TG_DARK_MUTED, fontSize: 12.5, marginTop: 20 }}>Yuklanmoqda...</div>
-              ) : messages.length === 0 ? (
-                <div style={{ textAlign: "center", color: TG_DARK_MUTED, fontSize: 12.5, marginTop: 20 }}>Hali xabar yo'q</div>
-              ) : (
-                messages.map((m) => (
-                  <div key={m.id} style={{ alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: isMobile ? "82%" : "62%" }}>
-                    {m.mediaUrl ? (
-                      <div style={{ borderRadius: 12, overflow: "hidden", border: `1px solid ${TG_DARK_BORDER}` }}>
-                        <img src={m.mediaUrl} alt="" style={{ display: "block", maxWidth: 280, maxHeight: 320, width: "100%", objectFit: "cover" }} />
-                        {m.text && !m.text.startsWith("📷") && (
-                          <div style={{ background: m.out ? TG_OUT_BUBBLE : TG_IN_BUBBLE, color: TG_DARK_TEXT, padding: "6px 10px", fontSize: 13 }}>{m.text}</div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{
-                        background: m.out ? TG_OUT_BUBBLE : TG_IN_BUBBLE,
-                        color: TG_DARK_TEXT,
-                        padding: "8px 12px", borderRadius: 14,
-                        borderBottomRightRadius: m.out ? 4 : 14, borderBottomLeftRadius: m.out ? 14 : 4,
-                        fontSize: 13.5, wordBreak: "break-word",
-                      }}>
-                        {m.text}
-                      </div>
-                    )}
-                    <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 3, justifyContent: m.out ? "flex-end" : "flex-start" }}>
-                      <span style={{ fontSize: 10, color: TG_DARK_MUTED }}>
-                        {new Date(m.date).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      {m.out && <CheckCheck size={12} color={TG_BLUE} />}
-                    </div>
-                  </div>
-                ))
-              )}
+            <style>{CHAT_CSS}</style>
+            <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "14px 10px" : 18, display: "flex", flexDirection: "column", gap: 8 }}>
+              <MessageList
+                messages={messages}
+                loading={loadingMessages}
+                isMobile={isMobile}
+                customerName={selectedLead?.customer || "Mijoz"}
+                onReply={(m) => setReplyTo(m)}
+                onReact={handleReact}
+              />
               <div ref={bottomRef} />
             </div>
-            {error && <div style={{ color: THEME.rose, fontSize: 11.5, padding: "0 18px" }}>{error}</div>}
-            <div style={{ display: "flex", gap: 8, padding: 14, background: TG_DARK_SIDEBAR, borderTop: `1px solid ${TG_DARK_BORDER}` }}>
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
-                placeholder="Xabar yozing..."
-                style={{ flex: 1, minWidth: 0, background: TG_DARK_HOVER, border: "none", borderRadius: 20, padding: "10px 16px", fontSize: isMobile ? 16 : 13.5, outline: "none", color: TG_DARK_TEXT }}
-              />
-              <button
-                onClick={send}
-                disabled={sending || !text.trim()}
-                style={{ width: 40, height: 40, borderRadius: "50%", background: TG_BLUE, border: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: sending || !text.trim() ? "default" : "pointer", opacity: sending || !text.trim() ? 0.5 : 1, flexShrink: 0 }}
-              >
-                <Send size={16} />
-              </button>
-            </div>
+            {error && (
+              <div role="alert" onClick={() => setError("")} style={{ color: "#FF9EA1", background: "rgba(229,72,77,0.12)", fontSize: 12.5, padding: "8px 18px", cursor: "pointer" }}>{error}</div>
+            )}
+            <Composer
+              key={selectedChatId}
+              isMobile={isMobile}
+              customerName={selectedLead?.customer || "Mijoz"}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
+              onSendText={handleSendText}
+              onSendFile={handleSendFile}
+              onSendVoice={handleSendVoice}
+              onSendLocation={handleSendLocation}
+            />
           </>
         )}
       </div>

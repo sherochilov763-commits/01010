@@ -385,6 +385,16 @@ app.get("/api/photos/:filename", (req, res) => {
   if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: "not_found" });
   }
+  // Faqat rasm/video/ovoz/PDF brauzerda ochiladi. Qolgan hamma narsa (HTML, SVG, exe, zip...) —
+  // faqat yuklab olinadi: mijoz yuborgan zararli fayl sahifamiz ichida ishga tushib ketmasligi uchun.
+  const ext = path.extname(filename).toLowerCase();
+  const INLINE = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".m4a", ".ogg", ".mp3", ".pdf"]);
+  const wantName = typeof req.query.name === "string" ? req.query.name.replace(/[\r\n"\\/]/g, "").slice(0, 150) : "";
+  if (!INLINE.has(ext) || req.query.dl) {
+    res.setHeader("Content-Type", INLINE.has(ext) ? (ext === ".pdf" ? "application/pdf" : "application/octet-stream") : "application/octet-stream");
+    return res.download(filePath, wantName || filename);
+  }
+  res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox");
   res.sendFile(filePath);
 });
 
@@ -720,13 +730,20 @@ app.get("*", (req, res, next) => {
 });
 
 // ==================== Telegram shaxsiy akkaunt (CRM chat) ====================
-function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text, mediaUrl, mediaType, date }) {
+function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text, mediaUrl, mediaUrlAlt, mediaType, fileName, fileSize, lat, lng, tgId, replyToTgId, date }) {
   try {
     // Xabarni saqlaymiz
     const row = getStmt.get("uvix:telegramMessages");
     const allMessages = row ? JSON.parse(row.value) : {};
     if (!allMessages[chatId]) allMessages[chatId] = [];
-    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, mediaUrl: mediaUrl || null, mediaType: mediaType || null, out: false, date });
+    allMessages[chatId].push({
+      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      text, mediaUrl: mediaUrl || null, mediaUrlAlt: mediaUrlAlt || null, mediaType: mediaType || null,
+      fileName: fileName || null, fileSize: fileSize || null,
+      lat: lat ?? null, lng: lng ?? null,
+      tgId: tgId ?? null, replyToTgId: replyToTgId ?? null,
+      out: false, date,
+    });
     upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
 
     // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz.
@@ -825,7 +842,7 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, (req, res) => {
     const last = msgs[msgs.length - 1];
     const lastIncoming = [...msgs].reverse().find((m) => !m.out);
     const unread = !!(lastIncoming && (!lastSeen[chatId] || new Date(lastIncoming.date) > new Date(lastSeen[chatId])));
-    return { chatId, lastText: last?.text || "", lastDate: last?.date || null, unread };
+    return { chatId, lastText: previewText(last), lastDate: last?.date || null, unread };
   });
   chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
   res.json({ chats });
@@ -861,19 +878,146 @@ app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, (req, 
   res.json({ messages: allMessages[req.params.chatId] || [] });
 });
 
+// ---- Chatdan yuborish: matn, rasm, ovozli xabar, joylashuv, reaksiya ----
+const tgAudio = require("./audio");
+function previewText(m) {
+  if (!m) return "";
+  if (m.mediaType === "photo") return m.text ? `📷 ${m.text}` : "📷 Rasm";
+  if (m.mediaType === "voice") return "🎤 Ovozli xabar";
+  if (m.mediaType === "location") return "📍 Joylashuv";
+  if (m.mediaType === "video") return m.text ? `🎥 ${m.text}` : "🎥 Video";
+  if (m.mediaType === "document") return `📎 ${m.fileName || "Hujjat"}`;
+  return m.text || "";
+}
+function storeOutgoing(chatId, msg) {
+  const row = getStmt.get("uvix:telegramMessages");
+  const all = row ? JSON.parse(row.value) : {};
+  if (!all[chatId]) all[chatId] = [];
+  const full = { id: crypto.randomUUID(), out: true, date: new Date().toISOString(), text: "", mediaUrl: null, mediaType: null, ...msg };
+  all[chatId].push(full);
+  upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
+  return full;
+}
+const validChatId = (v) => typeof v === "string" || typeof v === "number" ? String(v).length > 0 && String(v).length < 64 : false;
+const replyOpt = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+
 app.post("/api/telegram-user/send", requireAuth, requireStaff, async (req, res) => {
-  const { chatId, text } = req.body || {};
-  if (!chatId || !text) return res.status(400).json({ error: "missing_fields" });
+  const { chatId, text, replyToTgId } = req.body || {};
+  if (!validChatId(chatId) || !text || typeof text !== "string") return res.status(400).json({ error: "missing_fields" });
   try {
-    await telegramUserbot.sendMessage(chatId, text);
-    const row = getStmt.get("uvix:telegramMessages");
-    const allMessages = row ? JSON.parse(row.value) : {};
-    if (!allMessages[chatId]) allMessages[chatId] = [];
-    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, out: true, date: new Date().toISOString() });
-    upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
-    res.json({ ok: true });
+    const { tgId } = await telegramUserbot.sendMessage(chatId, text, { replyTo: replyOpt(replyToTgId) });
+    const message = storeOutgoing(String(chatId), { text, tgId, replyToTgId: replyOpt(replyToTgId) || null });
+    res.json({ ok: true, message });
   } catch (e) {
     res.status(500).json({ error: "send_failed", message: e.message });
+  }
+});
+
+// Rasm yoki ovozli xabar (multipart: file, chatId, kind=photo|voice, caption, replyToTgId)
+const chatUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^a-z0-9.]/g, "");
+      cb(null, `${crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024, files: 1 }, // video/hujjat 50 MB gacha (rasm va ovoz — 15 MB, pastda tekshiriladi)
+});
+app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) => {
+  chatUpload.single("file")(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: "upload_failed", message: err.message });
+    const f = req.file;
+    const { chatId, kind, caption, replyToTgId } = req.body || {};
+    if (!f || !validChatId(chatId) || !["photo", "video", "document", "voice"].includes(kind)) {
+      if (f) fs.unlink(f.path, () => {});
+      return res.status(400).json({ error: "missing_fields" });
+    }
+    const cleanup = [];
+    try {
+      const replyTo = replyOpt(replyToTgId);
+      // Brauzer fayl nomini latin1 qilib yuboradi — o'zbekcha/ruscha nomlar buzilmasligi uchun tiklaymiz
+      const originalName = Buffer.from(f.originalname || "fayl", "latin1").toString("utf8").replace(/[\r\n\\/]/g, "_").slice(0, 150);
+      if ((kind === "photo" || kind === "voice") && f.size > 15 * 1024 * 1024) throw new Error("Fayl 15 MB dan katta");
+      if (kind === "video") {
+        if (!f.mimetype.startsWith("video/")) throw new Error("Video fayli kutilgan edi");
+        const { tgId } = await telegramUserbot.sendVideo(chatId, f.path, { caption, replyTo });
+        const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "video", mediaUrl: `/api/photos/${f.filename}`, fileName: originalName, fileSize: f.size, tgId, replyToTgId: replyTo || null });
+        return res.json({ ok: true, message });
+      }
+      if (kind === "document") {
+        const { tgId } = await telegramUserbot.sendDocument(chatId, f.path, { fileName: originalName, caption, replyTo });
+        const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "document", mediaUrl: `/api/photos/${f.filename}`, fileName: originalName, fileSize: f.size, tgId, replyToTgId: replyTo || null });
+        return res.json({ ok: true, message });
+      }
+      if (kind === "photo") {
+        if (!f.mimetype.startsWith("image/")) throw new Error("Rasm fayli kutilgan edi");
+        const { tgId } = await telegramUserbot.sendPhoto(chatId, f.path, { caption, replyTo });
+        const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "photo", mediaUrl: `/api/photos/${f.filename}`, tgId, replyToTgId: replyTo || null });
+        return res.json({ ok: true, message });
+      }
+      // Ovoz: Telegram uchun OGG/Opus, CRM'da ijro uchun M4A
+      const base = path.join(UPLOADS_DIR, path.parse(f.filename).name);
+      let sendPath = f.path;
+      const ogg = await tgAudio.toTelegramVoice(f.path, `${base}.ogg`).catch((e) => { console.error("Ovozni o'girishda xato:", e.message); return null; });
+      if (ogg) sendPath = ogg; // OGG'ni o'chirmaymiz — CRM'da ham ijro uchun ishlatiladi
+      const duration = tgAudio.probeDuration(sendPath);
+      const { tgId } = await telegramUserbot.sendVoice(chatId, sendPath, { replyTo, duration });
+      // Ikki format: M4A (iPhone Safari) + OGG/asl yozuv (qolgan brauzerlar)
+      const m4a = await tgAudio.toPlayableM4a(f.path, `${base}.m4a`).catch(() => null);
+      const altName = ogg ? path.basename(ogg) : f.filename;
+      if (ogg) cleanup.push(f.path);
+      const message = storeOutgoing(String(chatId), {
+        mediaType: "voice",
+        mediaUrl: `/api/photos/${m4a ? path.basename(m4a) : altName}`,
+        mediaUrlAlt: m4a ? `/api/photos/${altName}` : null,
+        duration, tgId, replyToTgId: replyTo || null,
+      });
+      res.json({ ok: true, message });
+    } catch (e) {
+      fs.unlink(f.path, () => {});
+      res.status(500).json({ error: "send_failed", message: e.message });
+    } finally {
+      cleanup.forEach((p) => fs.unlink(p, () => {}));
+    }
+  });
+});
+
+app.post("/api/telegram-user/send-location", requireAuth, requireStaff, async (req, res) => {
+  const { chatId, lat, lng, replyToTgId } = req.body || {};
+  const la = Number(lat), lo = Number(lng);
+  if (!validChatId(chatId) || !Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) {
+    return res.status(400).json({ error: "bad_location", message: "Joylashuv noto'g'ri" });
+  }
+  try {
+    const { tgId } = await telegramUserbot.sendLocation(chatId, la, lo, { replyTo: replyOpt(replyToTgId) });
+    const message = storeOutgoing(String(chatId), { mediaType: "location", lat: la, lng: lo, tgId, replyToTgId: replyOpt(replyToTgId) || null });
+    res.json({ ok: true, message });
+  } catch (e) {
+    res.status(500).json({ error: "send_failed", message: e.message });
+  }
+});
+
+// Reaksiya: emoji — qo'yish, null — olib tashlash
+const ALLOWED_REACTIONS = new Set(["👍", "❤", "🔥", "😁", "😢", "🙏", "👌"]);
+app.post("/api/telegram-user/react", requireAuth, requireStaff, async (req, res) => {
+  const { chatId, messageId, emoji } = req.body || {};
+  if (!validChatId(chatId) || !messageId || (emoji && !ALLOWED_REACTIONS.has(emoji))) return res.status(400).json({ error: "bad_request" });
+  const row = getStmt.get("uvix:telegramMessages");
+  const all = row ? JSON.parse(row.value) : {};
+  const msg = (all[chatId] || []).find((m) => m.id === messageId);
+  if (!msg) return res.status(404).json({ error: "not_found" });
+  if (!msg.tgId) return res.status(409).json({ error: "no_tg_id", message: "Bu eski xabarga reaksiya qo'yib bo'lmaydi" });
+  try {
+    await telegramUserbot.sendReaction(chatId, msg.tgId, emoji || null);
+    // Yangidan o'qib yozamiz (oraliqda yangi xabar kelgan bo'lishi mumkin)
+    const fresh = JSON.parse(getStmt.get("uvix:telegramMessages").value);
+    const target = (fresh[chatId] || []).find((m) => m.id === messageId);
+    if (target) target.myReaction = emoji || null;
+    upsertStmt.run("uvix:telegramMessages", JSON.stringify(fresh));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "react_failed", message: e.message });
   }
 });
 

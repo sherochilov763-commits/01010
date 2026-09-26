@@ -302,3 +302,24 @@ Fayl: `frontend/src/lib/history.js` (`useHistoryView`, `useBackToClose`)
 - Ulanganda (va Chatlar sahifasi ochilganda) eski "Noma'lum" lidlarga ism, username, telefon avtomatik yoziladi
 - Qo'lda: `POST /api/telegram-user/refresh-names`
 - Telegram cheklovlariga rioya: bir xil ID uchun daqiqasiga ko'pi bilan 1 qayta urinish
+
+---
+
+## 💬 Chat: reaksiya, javob, rasm, ovozli xabar, joylashuv (2026-09)
+
+**Xabar ustiga bosish** (telefonda — tegish) → menyu: 👍 ❤ 🔥 😁 😢 🙏 👌 reaksiyalar, "Javob berish", "Nusxa olish" (rasmda — "Rasmni ko'rish"). Kompyuterda kursor olib borilganda ↩ va 😊 tezkor tugmalari ham chiqadi.
+
+**Yozish paneli:** 📎 → "Foto yoki video" (oldindan ko'rish + izoh), "Hujjat" (istalgan fayl, asl nomi bilan, siqilmasdan) yoki "Joylashuvim" (GPS). Matn bo'sh bo'lsa — 🎤 ovozli xabar (5 daqiqagacha).
+Cheklovlar: rasm — 15 MB, video va hujjat — 50 MB. Mijozdan kelgan 50 MB dan katta fayllar faqat nomi/hajmi bilan ko'rsatiladi.
+**Xavfsizlik:** faqat rasm, video, ovoz va PDF brauzerda ochiladi; boshqa fayllar (HTML, SVG, EXE, ZIP...) faqat yuklab olinadi.
+
+**Telegram tomonida:** reaksiya — haqiqiy Telegram reaksiyasi; javob — haqiqiy "reply"; ovoz — OGG/Opus "voice" (to'lqinli); joylashuv — Telegram geo-nuqta.
+
+**Kiruvchi:** mijozning rasmlari, ovozli xabarlari (CRM'da tinglanadi), joylashuvi ("Xaritada ochish") va javoblari (iqtibos bilan) ko'rinadi. Ochiq suhbat har 5 soniyada yangilanadi.
+
+**Talablar:**
+- `ffmpeg` — ovoz formatlarini o'girish uchun (`nixpacks.toml`da qo'shilgan; Railway o'zi o'rnatadi). Bo'lmasa ovoz audio-fayl sifatida ketadi.
+- Mikrofon va joylashuv faqat **HTTPS**da ishlaydi (Railway domeni — HTTPS).
+- Reaksiya va javob faqat shu yangilanishdan keyin kelgan xabarlarga ishlaydi (eski xabarlarda Telegram ID saqlanmagan).
+
+Fayllar: `backend/audio.js`, `backend/telegram-userbot.js`, `backend/server.js` (send-media, send-location, react), `frontend/src/views/crm/ChatConversation.jsx`

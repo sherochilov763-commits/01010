@@ -39,6 +39,7 @@ export default function App() {
   const [navFilter, setNavFilter] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useBackToClose(sidebarOpen, () => setSidebarOpen(false));
+  const [openChatId, setOpenChatId] = useState(null); // CRM → Chatlar: ochiladigan suhbat
   const [quickAdd, setQuickAdd] = useState(null); // {kind: "order"|"expense", n} — pastki "+" tugmasidan
 
   function navigateWithFilter(targetView, filter) {
@@ -606,6 +607,7 @@ export default function App() {
             )}
             {view === "crm" && (
               <CRMView
+                onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onAssignTask={(lead, kind) => setTaskAssign({ lead, kind })}
                 leads={leads}
                 orders={orders}
@@ -628,6 +630,8 @@ export default function App() {
                 onSendMessage={sendTelegramUserMessage}
                 onMarkRead={markTelegramChatRead}
                 onMoveLead={moveLead}
+                initialChatId={openChatId}
+                onInitialChatHandled={() => setOpenChatId(null)}
               />
             )}
             {view === "expense" && (

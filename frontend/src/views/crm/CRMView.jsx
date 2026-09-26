@@ -162,10 +162,12 @@ export function LeadChatModal({ lead, onClose, onFetchMessages, onSendMessage })
   );
 }
 
-export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask }) {
+export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
   const [modal, setModal] = useState(null); // null | true (new) | lead (edit)
   const [confirmDel, setConfirmDel] = useState(null);
   const [chatFor, setChatFor] = useState(null);
+  // Chat tugmasi: Chatlar bo'limiga o'tib, shu mijoz suhbatini ochadi
+  const openChat = (lead) => (onOpenChat ? onOpenChat(lead) : setChatFor(lead));
   const [draggedLeadId, setDraggedLeadId] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
   const isMobile = useIsMobile();
@@ -233,7 +235,7 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
           onEdit={(lead) => setModal(lead)}
           onDelete={(lead) => setConfirmDel(lead)}
           onMove={(lead, key) => onMoveLead(lead, key)}
-          onChat={onFetchTelegramMessages ? (lead) => setChatFor(lead) : null}
+          onChat={onFetchTelegramMessages || onOpenChat ? openChat : null}
           onCreateOrder={onCreateOrderFromLead}
           employees={employees}
           onAssignTask={onAssignTask}
@@ -296,7 +298,7 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
                       </div>
 
                       {lead.telegramChatId && onFetchTelegramMessages && (
-                        <Button variant="ghost" onClick={() => setChatFor(lead)} style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 2 }}>
+                        <Button variant="ghost" onClick={() => openChat(lead)} style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 2 }}>
                           💬 Telegram chat
                         </Button>
                       )}

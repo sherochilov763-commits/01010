@@ -4,7 +4,9 @@
 
 const path = require("path");
 const crypto = require("crypto");
-const { TelegramClient } = require("teleproto");
+const fs = require("fs");
+const { TelegramClient, Api } = require("teleproto");
+const audio = require("./audio");
 const { StringSession } = require("teleproto/sessions");
 
 let client = null;
@@ -12,6 +14,7 @@ let connecting = false;
 let lastError = null;
 let onNewMessageCallback = null;
 let mediaDir = null; // rasmlar saqlanadigan papka (server.js tomonidan beriladi)
+const MAX_DOWNLOAD = 50 * 1024 * 1024; // mijozdan kelgan video/hujjatni 50 MB gacha saqlaymiz
 
 function setMediaDir(dir) {
   mediaDir = dir;
@@ -129,29 +132,85 @@ async function connectFromSettings(settings, onNewMessage) {
         // "Noma'lum" birlashib ketmaydi, har biri o'zining ID'si bilan ajralib turadi.
         const { name: fromName } = describeEntity(sender, chatId);
 
-        // Xabar matnini aniqlaymiz — agar rasm/video/fayl bo'lsa, mos belgi qo'shamiz
+        // Xabar matnini aniqlaymiz — rasm, ovoz va lokatsiya CRM'ning o'zida ko'rinadi/eshitiladi
         let text = msg.message || "";
         let mediaUrl = null;
+        let mediaUrlAlt = null;
         let mediaType = null;
+        let fileName = null;
+        let fileSize = null;
+        let lat = null;
+        let lng = null;
         if (msg.media) {
-          if (msg.photo && mediaDir) {
-            // Rasmning o'zini yuklab olamiz — shunda CRM'da haqiqiy rasm korinadi
+          const geo = msg.media.geo;
+          if (geo && typeof geo.lat === "number") {
+            lat = geo.lat;
+            lng = geo.long;
+            mediaType = "location";
+          } else if (msg.photo && mediaDir) {
             try {
               const buffer = await client.downloadMedia(msg, {});
               if (buffer) {
                 const filename = `${crypto.randomBytes(12).toString("hex")}.jpg`;
-                require("fs").writeFileSync(path.join(mediaDir, filename), buffer);
+                fs.writeFileSync(path.join(mediaDir, filename), buffer);
                 mediaUrl = `/api/photos/${filename}`;
                 mediaType = "photo";
               }
             } catch (e) {
               console.error("Rasmni yuklab olishda xato:", e.message);
             }
+          } else if ((msg.video || msg.videoNote || msg.gif || (msg.document && !msg.voice && !msg.sticker)) && mediaDir) {
+            // Video yoki hujjat — 50 MB gacha yuklab olamiz, kattasi faqat nomi bilan ko'rsatiladi
+            const doc = msg.document || msg.video;
+            const size = Number(doc?.size?.toString?.() ?? doc?.size ?? 0);
+            const isVideo = !!(msg.video || msg.videoNote || msg.gif);
+            const nameAttr = (doc?.attributes || []).find((a) => a.className === "DocumentAttributeFilename");
+            fileName = nameAttr?.fileName || (isVideo ? "video.mp4" : "fayl");
+            fileSize = size || null;
+            mediaType = isVideo ? "video" : "document";
+            if (size && size <= MAX_DOWNLOAD) {
+              try {
+                const buffer = await client.downloadMedia(msg, {});
+                if (buffer) {
+                  let ext = (path.extname(fileName) || (isVideo ? ".mp4" : "")).toLowerCase().replace(/[^a-z0-9.]/g, "").slice(0, 10);
+                  if (isVideo && ![".mp4", ".webm", ".mov"].includes(ext)) ext = ".mp4";
+                  const filename = `${crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`;
+                  fs.writeFileSync(path.join(mediaDir, filename), buffer);
+                  mediaUrl = `/api/photos/${filename}`;
+                }
+              } catch (e) {
+                console.error("Faylni yuklab olishda xato:", e.message);
+              }
+            }
+          } else if (msg.voice && mediaDir) {
+            try {
+              const buffer = await client.downloadMedia(msg, {});
+              if (buffer) {
+                const id = crypto.randomBytes(12).toString("hex");
+                const oggPath = path.join(mediaDir, `${id}.ogg`);
+                fs.writeFileSync(oggPath, buffer);
+                // Ikki format: M4A (iPhone Safari) va OGG (qolgan brauzerlar) — brauzer o'zi tanlaydi
+                mediaUrl = `/api/photos/${id}.ogg`;
+                try {
+                  if (await audio.toPlayableM4a(oggPath, path.join(mediaDir, `${id}.m4a`))) {
+                    mediaUrlAlt = mediaUrl;
+                    mediaUrl = `/api/photos/${id}.m4a`;
+                  }
+                } catch (e) {
+                  console.error("Ovozni o'girishda xato:", e.message);
+                }
+                mediaType = "voice";
+              }
+            } catch (e) {
+              console.error("Ovozli xabarni yuklab olishda xato:", e.message);
+            }
           }
-          const mediaLabel = msg.photo ? "📷 Rasm" : msg.video ? "🎥 Video" : msg.voice ? "🎤 Ovozli xabar" : msg.document ? "📎 Fayl" : "📎 Media";
-          text = text ? `${mediaLabel}: ${text}` : (mediaUrl ? text : mediaLabel);
+          if (!mediaType) {
+            const mediaLabel = msg.photo ? "📷 Rasm" : msg.video ? "🎥 Video" : msg.voice ? "🎤 Ovozli xabar" : msg.document ? "📎 Fayl" : "📎 Media";
+            text = text ? `${mediaLabel}: ${text}` : mediaLabel;
+          }
         }
-        if (!text && !mediaUrl) text = "[Bo'sh xabar]";
+        if (!text && !mediaUrl && !mediaType) text = "[Bo'sh xabar]";
 
         if (onNewMessageCallback) {
           onNewMessageCallback({
@@ -161,7 +220,14 @@ async function connectFromSettings(settings, onNewMessage) {
             phone: sender?.phone || "",
             text,
             mediaUrl,
+            mediaUrlAlt,
             mediaType,
+            fileName,
+            fileSize,
+            lat,
+            lng,
+            tgId: msg.id,
+            replyToTgId: msg.replyTo?.replyToMsgId || null,
             date: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
           });
         }
@@ -191,9 +257,76 @@ async function disconnect() {
   }
 }
 
-async function sendMessage(chatId, text) {
+function peerOf(chatId) {
+  return isNaN(Number(chatId)) ? chatId : Number(chatId);
+}
+function requireConnected() {
   if (!isConnected()) throw new Error("Telegram akkauntga ulanmagan");
-  await client.sendMessage(chatId, { message: text });
+}
+
+// Matnli xabar. Telegram'dagi xabar ID'sini qaytaradi (reaksiya va javob uchun kerak)
+async function sendMessage(chatId, text, { replyTo } = {}) {
+  requireConnected();
+  const sent = await client.sendMessage(peerOf(chatId), { message: text, replyTo: replyTo || undefined });
+  return { tgId: sent?.id ?? null };
+}
+
+async function sendPhoto(chatId, filePath, { caption, replyTo } = {}) {
+  requireConnected();
+  const sent = await client.sendFile(peerOf(chatId), { file: filePath, caption: caption || "", forceDocument: false, replyTo: replyTo || undefined });
+  return { tgId: sent?.id ?? null };
+}
+
+// Ovozli xabar: OGG/Opus bo'lsa — haqiqiy "voice" (to'lqinli), aks holda audio-fayl
+async function sendVoice(chatId, filePath, { replyTo, duration } = {}) {
+  requireConnected();
+  const isOgg = filePath.endsWith(".ogg");
+  const sent = await client.sendFile(peerOf(chatId), {
+    file: filePath,
+    voiceNote: isOgg,
+    attributes: isOgg ? [new Api.DocumentAttributeAudio({ voice: true, duration: duration || 0 })] : undefined,
+    replyTo: replyTo || undefined,
+  });
+  return { tgId: sent?.id ?? null };
+}
+
+async function sendVideo(chatId, filePath, { caption, replyTo } = {}) {
+  requireConnected();
+  const sent = await client.sendFile(peerOf(chatId), { file: filePath, caption: caption || "", supportsStreaming: true, replyTo: replyTo || undefined });
+  return { tgId: sent?.id ?? null };
+}
+
+// Hujjat: asl nomi bilan, siqilmasdan (rasm bo'lsa ham "fayl" sifatida ketadi — Telegram'dagidek)
+async function sendDocument(chatId, filePath, { fileName, caption, replyTo } = {}) {
+  requireConnected();
+  const sent = await client.sendFile(peerOf(chatId), {
+    file: filePath,
+    caption: caption || "",
+    forceDocument: true,
+    attributes: fileName ? [new Api.DocumentAttributeFilename({ fileName })] : undefined,
+    replyTo: replyTo || undefined,
+  });
+  return { tgId: sent?.id ?? null };
+}
+
+async function sendLocation(chatId, lat, lng, { replyTo } = {}) {
+  requireConnected();
+  const sent = await client.sendMessage(peerOf(chatId), {
+    message: "",
+    file: new Api.InputMediaGeoPoint({ geoPoint: new Api.InputGeoPoint({ lat, long: lng }) }),
+    replyTo: replyTo || undefined,
+  });
+  return { tgId: sent?.id ?? null };
+}
+
+// Reaksiya qo'yish (emoji) yoki olib tashlash (emoji = null)
+async function sendReaction(chatId, tgId, emoji) {
+  requireConnected();
+  await client.invoke(new Api.messages.SendReaction({
+    peer: peerOf(chatId),
+    msgId: Number(tgId),
+    reaction: emoji ? [new Api.ReactionEmoji({ emoticon: emoji })] : [],
+  }));
 }
 
 async function getRecentMessages(chatId, limit = 30) {
@@ -209,4 +342,4 @@ async function getRecentMessages(chatId, limit = 30) {
     .reverse();
 }
 
-module.exports = { connectFromSettings, disconnect, sendMessage, getRecentMessages, getStatus, isConnected, setMediaDir, resolveChatNames };
+module.exports = { connectFromSettings, disconnect, sendMessage, sendPhoto, sendVideo, sendDocument, sendVoice, sendLocation, sendReaction, getRecentMessages, getStatus, isConnected, setMediaDir, resolveChatNames };

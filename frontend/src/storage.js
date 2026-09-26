@@ -201,11 +201,11 @@ export async function fetchTelegramMessages(chatId) {
   return data.messages || [];
 }
 
-export async function sendTelegramUserMessage(chatId, text) {
+export async function sendTelegramUserMessage(chatId, text, replyToTgId) {
   const res = await fetch(`${API_BASE}/telegram-user/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ chatId, text }),
+    body: JSON.stringify({ chatId, text, replyToTgId: replyToTgId || undefined }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -271,4 +271,38 @@ export async function refreshTelegramNames() {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || "Ismlarni yangilab bo'lmadi");
   return data;
+}
+
+// ---- Chat: rasm, ovozli xabar, joylashuv, reaksiya ----
+async function tgJson(res, fallback) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || fallback);
+  return data;
+}
+// kind: "photo" | "voice"; file: File yoki Blob
+export async function sendTelegramMedia(chatId, kind, file, { caption, replyToTgId, filename } = {}) {
+  const form = new FormData();
+  form.append("chatId", chatId);
+  form.append("kind", kind);
+  if (caption) form.append("caption", caption);
+  if (replyToTgId) form.append("replyToTgId", String(replyToTgId));
+  form.append("file", file, filename || file.name || (kind === "voice" ? "voice.webm" : "photo.jpg"));
+  const res = await fetch(`${API_BASE}/telegram-user/send-media`, { method: "POST", headers: authHeaders(), body: form });
+  return (await tgJson(res, kind === "voice" ? "Ovozli xabar yuborilmadi" : "Rasm yuborilmadi")).message;
+}
+export async function sendTelegramLocation(chatId, lat, lng, replyToTgId) {
+  const res = await fetch(`${API_BASE}/telegram-user/send-location`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ chatId, lat, lng, replyToTgId: replyToTgId || undefined }),
+  });
+  return (await tgJson(res, "Joylashuv yuborilmadi")).message;
+}
+export async function reactTelegramMessage(chatId, messageId, emoji) {
+  const res = await fetch(`${API_BASE}/telegram-user/react`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ chatId, messageId, emoji: emoji || null }),
+  });
+  return tgJson(res, "Reaksiya qo'yib bo'lmadi");
 }
