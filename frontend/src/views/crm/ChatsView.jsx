@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CheckCheck, Info, Search, Send, X } from "lucide-react";
 import { useIsMobile } from "../../components/ui.jsx";
+import { useBackToClose } from "../../lib/history.js";
+import { refreshTelegramNames } from "../../storage.js";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
@@ -30,9 +32,20 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
   const isMobile = useIsMobile();
   const [infoOpen, setInfoOpen] = useState(false);
   function closeChat() { setSelectedChatId(null); setInfoOpen(false); }
+  // Telefonda: "orqaga" avval mijoz ma'lumotini, keyin suhbatni yopadi — bo'limdan chiqmaydi
+  useBackToClose(isMobile && !!selectedChatId, closeChat);
+  useBackToClose(isMobile && infoOpen, () => setInfoOpen(false));
 
   useEffect(() => {
     onFetchChats().then((list) => { setChats(list); setLoadingChats(false); }).catch(() => setLoadingChats(false));
+  }, []);
+
+  // "Noma'lum (ID)" bo'lib qolgan mijozlar bo'lsa — ismlarini Telegram'dan qayta so'raymiz
+  useEffect(() => {
+    if ((leads || []).some((l) => l.telegramChatId && (l.customer || "").startsWith("Noma'lum"))) {
+      refreshTelegramNames().catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

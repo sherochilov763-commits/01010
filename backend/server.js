@@ -775,6 +775,43 @@ function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text
   }
 }
 
+// "Noma'lum (ID)" bo'lib qolgan lidlarga Telegram'dan haqiqiy ism, username va telefonni yozadi
+async function repairUnknownTelegramNames() {
+  if (!telegramUserbot.isConnected()) return { fixed: 0 };
+  const leadsRow = getStmt.get("uvix:leads");
+  const leads = leadsRow ? JSON.parse(leadsRow.value) : [];
+  const targets = leads.filter((l) => l.telegramChatId && (!l.customer || l.customer.startsWith("Noma'lum") || !l.telegramUsername || !l.phone));
+  if (!targets.length) return { fixed: 0 };
+  const names = await telegramUserbot.resolveChatNames([...new Set(targets.map((l) => String(l.telegramChatId)))]);
+  // Oraliqda boshqa o'zgarish bo'lgan bo'lishi mumkin — yangidan o'qib, faqat kerakli maydonlarni yozamiz
+  const freshRow = getStmt.get("uvix:leads");
+  const fresh = freshRow ? JSON.parse(freshRow.value) : [];
+  let fixed = 0;
+  for (const l of fresh) {
+    const info = l.telegramChatId && names[String(l.telegramChatId)];
+    if (!info) continue;
+    let changed = false;
+    if (!l.customer || l.customer.startsWith("Noma'lum")) { l.customer = info.name; changed = true; }
+    if (!l.telegramUsername && info.username) {
+      l.telegramUsername = info.username;
+      if (!l.notes) l.notes = `Telegram: @${info.username}`;
+      changed = true;
+    }
+    if (!l.phone && info.phone) { l.phone = `+${info.phone}`; changed = true; }
+    if (changed) fixed++;
+  }
+  if (fixed) upsertStmt.run("uvix:leads", JSON.stringify(fresh));
+  return { fixed };
+}
+
+app.post("/api/telegram-user/refresh-names", requireAuth, requireStaff, async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await repairUnknownTelegramNames()) });
+  } catch (e) {
+    res.status(500).json({ error: "refresh_failed", message: e.message });
+  }
+});
+
 app.get("/api/telegram-user/status", requireAuth, requireStaff, (req, res) => {
   res.json(telegramUserbot.getStatus());
 });
@@ -808,6 +845,7 @@ app.post("/api/telegram-user/connect", requireAuth, requireAdmin, async (req, re
   const row = getStmt.get("uvix:settings");
   const settings = row ? JSON.parse(row.value) : {};
   const result = await telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage);
+  if (result.ok) repairUnknownTelegramNames().catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
   if (result.ok) res.json({ ok: true });
   else res.status(400).json({ error: "connect_failed", message: result.error });
 });
@@ -851,7 +889,12 @@ app.listen(PORT, () => {
     const settings = row ? JSON.parse(row.value) : {};
     if (settings?.telegramUserApiId && settings?.telegramUserApiHash && settings?.telegramUserSession) {
       telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage).then((r) => {
-        if (r.ok) console.log("Telegram shaxsiy akkaunt: ulandi");
+        if (r.ok) {
+          console.log("Telegram shaxsiy akkaunt: ulandi");
+          repairUnknownTelegramNames()
+            .then((x) => x.fixed && console.log(`Telegram: ${x.fixed} ta "Noma'lum" mijozning ismi tiklandi`))
+            .catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
+        }
         else console.log("Telegram shaxsiy akkaunt: ulanmadi —", r.error);
       });
     }

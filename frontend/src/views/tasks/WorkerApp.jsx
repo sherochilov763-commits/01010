@@ -1,12 +1,13 @@
 // WorkerApp.jsx — Dizayner va Pechatchi uchun alohida ekran: faqat o'z vazifalari, pulsiz.
 // Tuzilma: Yangi → Jarayonda → Tugallangan. "Tugallandi" bosilganda dizayn ishi avtomatik pechatchiga o'tadi.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarClock, Check, ChevronLeft, FileImage, LayoutGrid, List, Loader2, LogOut, Play, Printer, RefreshCw, RotateCcw, Search } from "lucide-react";
+import { ArrowLeft, CalendarClock, Check, FileImage, LayoutGrid, List, Loader2, LogOut, Play, Printer, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { roleLabel } from "../../constants.js";
 import { THEME } from "../../theme.js";
 import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
+import { useHistoryView } from "../../lib/history.js";
 import PasskeySection from "../../auth/PasskeySection.jsx";
 import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
 
@@ -30,7 +31,8 @@ function isOverdue(t) {
 
 export function WorkerApp({ currentUser, onLogout }) {
   const isMobile = useIsMobile();
-  const [screen, setScreen] = useState("tasks"); // tasks | settings
+  // tasks | settings — tarix orqali, telefonning "orqaga" harakati ham ishlaydi
+  const { view: screen, go: goScreen, back: goBack } = useHistoryView("tasks", true);
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -100,8 +102,8 @@ export function WorkerApp({ currentUser, onLogout }) {
       <header style={{ position: "sticky", top: 0, zIndex: 20, background: THEME.card, borderBottom: `1px solid ${THEME.border}`, paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "10px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           {screen === "settings" ? (
-            <button type="button" onClick={() => setScreen("tasks")} style={{ display: "flex", alignItems: "center", gap: 6, border: 0, background: "none", color: THEME.text, fontSize: 15, fontWeight: 600, cursor: "pointer", minHeight: 44, padding: 0 }}>
-              <ChevronLeft size={20} /> Vazifalar
+            <button type="button" onClick={goBack} aria-label="Orqaga" style={{ display: "flex", alignItems: "center", gap: 6, border: 0, background: "none", color: THEME.text, fontSize: 15, fontWeight: 600, cursor: "pointer", minHeight: 44, padding: 0 }}>
+              <ArrowLeft size={20} /> Vazifalar
             </button>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -114,7 +116,7 @@ export function WorkerApp({ currentUser, onLogout }) {
             <div style={{ fontSize: 14, fontWeight: 700 }}>{currentUser.name}</div>
             <div style={{ fontSize: 12, color: THEME.muted }}>{roleLabel(currentUser.role)}</div>
           </div>
-          <button type="button" onClick={() => setScreen(screen === "settings" ? "tasks" : "settings")} aria-label="Sozlamalar"
+          <button type="button" onClick={() => (screen === "settings" ? goBack() : goScreen("settings"))} aria-label="Sozlamalar"
             style={{ width: 44, height: 44, borderRadius: "50%", border: 0, cursor: "pointer", fontWeight: 700, fontSize: 14, color: avatarColor(currentUser.id), background: `${avatarColor(currentUser.id)}26` }}>
             {initials(currentUser.name)}
           </button>

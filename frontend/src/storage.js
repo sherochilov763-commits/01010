@@ -264,3 +264,11 @@ export async function setTaskStatus(leadId, kind, status) {
   if (!res.ok) throw new Error(data.message || "Holatni o'zgartirib bo'lmadi");
   return data.task;
 }
+
+// "Noma'lum" Telegram mijozlarining ismini Telegram'dan qayta so'rash
+export async function refreshTelegramNames() {
+  const res = await fetch(`${API_BASE}/telegram-user/refresh-names`, { method: "POST", headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Ismlarni yangilab bo'lmadi");
+  return data;
+}

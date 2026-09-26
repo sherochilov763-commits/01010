@@ -9,6 +9,7 @@ import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } 
 import { generateOrderNumber } from "./lib/finance.js";
 import { money, paymentTypeLabel, uid } from "./lib/format.js";
 import { storageGet, storageSet } from "./lib/kv.js";
+import { useBackToClose, useHistoryView } from "./lib/history.js";
 import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme } from "./theme.js";
 import { CategoriesView } from "./views/CategoriesView.jsx";
 import { Dashboard } from "./views/Dashboard.jsx";
@@ -33,9 +34,11 @@ export default function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
   const [currentUser, setCurrentUser] = useState(null);
-  const [view, setView] = useState("dashboard");
+  // Bo'limlar tarixi: ← strelka va telefonning "orqaga" harakati oldingi bo'limga qaytaradi
+  const { view, go: setView, back: goBack, canGoBack } = useHistoryView("dashboard", !!currentUser && !isWorkerRole(currentUser.role));
   const [navFilter, setNavFilter] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useBackToClose(sidebarOpen, () => setSidebarOpen(false));
   const [quickAdd, setQuickAdd] = useState(null); // {kind: "order"|"expense", n} — pastki "+" tugmasidan
 
   function navigateWithFilter(targetView, filter) {
@@ -573,7 +576,7 @@ export default function App() {
       <div className={`uvix-density-${appearance.density || "comfortable"}`} style={{ display: "flex", minHeight: "100vh", background: THEME.surface, maxWidth: "100vw", overflowX: "hidden" }}>
         <Sidebar nav={visibleNav} view={view} setView={(v) => { setNavFilter(null); setView(v); }} user={currentUser} onLogout={() => { authLogout(); setCurrentUser(null); }} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} />
+          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} />
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 24px 40px" }}>
             {view === "dashboard" && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
@@ -718,7 +721,7 @@ export default function App() {
       )}
       <BottomNav
         view={view}
-        onNavigate={(v) => { setNavFilter(null); setView(v); window.scrollTo(0, 0); }}
+        onNavigate={(v) => { setNavFilter(null); setView(v); }}
         onMore={() => setSidebarOpen(true)}
         onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
       />

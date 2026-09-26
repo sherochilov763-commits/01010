@@ -277,3 +277,28 @@ Eslatma: agar kimdir oldin Sozlamalarda "Light" rejimni saqlagan bo'lsa, ilova T
 **Xavfsizlik (server darajasida):** dizayner/pechatchi faqat `/api/tasks` orqali o'z vazifalarini oladi — summa, to'lov, qarz, telefon raqami ularga yuborilmaydi. Buyurtmalar, tranzaksiyalar, lidlar, Telegram va tarixga kirish 403 bilan yopiq. Menejerning eskirgan nusxasi ishchilar kiritgan holatni bosib keta olmaydi.
 
 Fayllar: `backend/tasks.js`, `frontend/src/views/tasks/WorkerApp.jsx`, `frontend/src/views/crm/TaskAssignModal.jsx`
+
+---
+
+## ← Orqaga navigatsiya (2026-09)
+
+- Har bir bo'lim sarlavhasi yonida **← strelka** — oldingi ochilgan bo'limga qaytaradi (asosiy sahifada ko'rinmaydi)
+- Telefonning o'z "orqaga" harakati (iPhone'da chetdan surish, Android'da orqaga tugmasi) ham xuddi shunday ishlaydi
+- Ochiq oyna bo'lsa (modal, "+" menyusi, yon menyu, telefondagi chat) — "orqaga" avval shuni yopadi
+- Asosiy sahifada "orqaga" ilovani yopmaydi
+- Dizayner/Pechatchi ekranida ham: Sozlamalar → orqaga → Vazifalar
+
+Fayl: `frontend/src/lib/history.js` (`useHistoryView`, `useBackToClose`)
+
+---
+
+## Telegram: "Noma'lum" ism muammosi tuzatildi (2026-09)
+
+**Sabab:** Telegram yangi xabarda ko'pincha faqat foydalanuvchi ID'sini yuboradi. Ism kutubxonaning xotirasidan olinardi, u esa har deploy/qayta ishga tushishda bo'shab qolardi → "Noma'lum (ID)".
+
+**Yechim** (`backend/telegram-userbot.js`):
+- Ism topilmasa — so'nggi suhbatlar ro'yxati yuklanib (getDialogs), ism qayta so'raladi
+- Ulanishda xotira darhol to'ldiriladi
+- Ulanganda (va Chatlar sahifasi ochilganda) eski "Noma'lum" lidlarga ism, username, telefon avtomatik yoziladi
+- Qo'lda: `POST /api/telegram-user/refresh-names`
+- Telegram cheklovlariga rioya: bir xil ID uchun daqiqasiga ko'pi bilan 1 qayta urinish

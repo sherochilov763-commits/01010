@@ -3,6 +3,7 @@ import { AlertTriangle, FolderTree, Plus, X } from "lucide-react";
 import { PAGE_SIZE, PAYMENT_TYPES } from "../constants.js";
 import { fmt, money, uid } from "../lib/format.js";
 import { THEME, mixColors, shadeColor } from "../theme.js";
+import { useBackToClose } from "../lib/history.js";
 
 /* ---------------- SHARED UI ---------------- */
 export function Card({ children, style, className, onClick, ...rest }) {
@@ -92,6 +93,8 @@ export function getInputStyle() {
 }
 export function Modal({ title, onClose, children, width = 460 }) {
   const [shake, setShake] = useState(false);
+  // Telefonning "orqaga" harakati oynani yopadi (bo'limdan chiqib ketmaydi)
+  useBackToClose(true, onClose);
   function handleBackdropClick() {
     setShake(true);
     setTimeout(() => setShake(false), 350);

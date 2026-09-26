@@ -17,6 +17,71 @@ function setMediaDir(dir) {
   mediaDir = dir;
 }
 
+// ==================== Ism aniqlash ====================
+// Telegram yangi xabarda ko'pincha faqat foydalanuvchi ID'sini yuboradi. Ism kutubxonaning
+// xotirasidan (entity cache) olinadi, u esa server har qayta ishga tushganda bo'shab qoladi —
+// shuning uchun oldin "Noma'lum (ID)" chiqardi. Endi xotira bo'sh bo'lsa, so'nggi suhbatlar
+// ro'yxatini yuklab (getDialogs) xotirani to'ldiramiz va ismni qayta so'raymiz.
+let lastWarmAt = 0;
+const failedAt = new Map(); // id -> oxirgi muvaffaqiyatsiz urinish vaqti
+async function warmEntityCache(limit = 200) {
+  if (!client) return;
+  const now = Date.now();
+  if (now - lastWarmAt < 3000) return; // bir vaqtda kelgan ko'p xabarda bitta so'rov yetadi
+  lastWarmAt = now;
+  try {
+    // Yangi mijoz yozgan zahoti uning suhbati ro'yxatning eng tepasida bo'ladi
+    await client.getDialogs({ limit });
+  } catch (e) {
+    console.error("Telegram suhbatlar ro'yxatini yuklab bo'lmadi:", e.message);
+  }
+}
+
+async function resolveUser(id) {
+  if (!client || id == null) return null;
+  try {
+    return await client.getEntity(id);
+  } catch {
+    const key = String(id);
+    // Bir xil topilmaydigan ID uchun Telegram'ni daqiqasiga bir martadan ortiq bezovta qilmaymiz
+    if (Date.now() - (failedAt.get(key) || 0) < 60 * 1000) return null;
+    lastWarmAt = 0;
+    await warmEntityCache(50);
+    try {
+      const e = await client.getEntity(id);
+      failedAt.delete(key);
+      return e;
+    } catch {
+      failedAt.set(key, Date.now());
+      return null;
+    }
+  }
+}
+
+function describeEntity(entity, fallbackId) {
+  const fullName = entity ? [entity.firstName, entity.lastName].filter(Boolean).join(" ").trim() : "";
+  const title = entity?.title || ""; // guruh/kanal nomi
+  const username = entity?.username || "";
+  const phone = entity?.phone || "";
+  const name = fullName || title || (username ? `@${username}` : "") || (phone ? `+${phone}` : "");
+  return { name: name || `Noma'lum (${fallbackId})`, known: !!name, username, phone };
+}
+
+// Berilgan chat ID'lar uchun ism/username/telefonni aniqlaydi (eski "Noma'lum" lidlarni tuzatish uchun)
+async function resolveChatNames(chatIds) {
+  const out = {};
+  if (!isConnected() || !chatIds?.length) return out;
+  lastWarmAt = 0;
+  failedAt.clear();
+  await warmEntityCache(200);
+  for (const id of chatIds) {
+    const entity = await resolveUser(isNaN(Number(id)) ? id : Number(id));
+    const info = describeEntity(entity, id);
+    if (info.known) out[id] = info;
+  }
+  return out;
+}
+
 function isConnected() {
   return !!client && client.connected;
 }
@@ -47,20 +112,22 @@ async function connectFromSettings(settings, onNewMessage) {
     const session = new StringSession(sessionString);
     client = new TelegramClient(session, apiId, apiHash, { connectionRetries: 5 });
     await client.connect();
+    // Ulanishi bilan xotirani to'ldiramiz — birinchi xabardanoq ism to'g'ri chiqadi
+    warmEntityCache(200);
 
     client.updates.on("newMessage", async (update) => {
       try {
         const msg = update.message;
         if (!msg || msg.out) return; // ozimiz yuborgan xabarni ozimiz qayta ishlamaymiz
-        const sender = await msg.getSender();
+        let sender = null;
+        try { sender = await msg.getSender(); } catch { /* xotirada yo'q */ }
+        if (!sender || (!sender.firstName && !sender.lastName && !sender.title && !sender.username)) {
+          sender = (await resolveUser(msg.senderId ?? msg.chatId)) || sender;
+        }
         const chatId = String(msg.chatId || sender?.id || "");
-        const fullName = sender ? [sender.firstName, sender.lastName].filter(Boolean).join(" ") : "";
-        const title = sender?.title || ""; // guruh/kanal nomi (foydalanuvchida bo'lmaydi)
-        const usernameTag = sender?.username ? `@${sender.username}` : "";
-        const phoneTag = sender?.phone ? `+${sender.phone}` : "";
-        // Hech narsa aniqlanmasa ham, kamida chatId'ni korsatamiz — shunda bir nechta
+        // Hech narsa aniqlanmasa ham, kamida chatId'ni ko'rsatamiz — shunda bir nechta
         // "Noma'lum" birlashib ketmaydi, har biri o'zining ID'si bilan ajralib turadi.
-        const fromName = fullName || title || usernameTag || phoneTag || `Noma'lum (${chatId})`;
+        const { name: fromName } = describeEntity(sender, chatId);
 
         // Xabar matnini aniqlaymiz — agar rasm/video/fayl bo'lsa, mos belgi qo'shamiz
         let text = msg.message || "";
@@ -142,4 +209,4 @@ async function getRecentMessages(chatId, limit = 30) {
     .reverse();
 }
 
-module.exports = { connectFromSettings, disconnect, sendMessage, getRecentMessages, getStatus, isConnected, setMediaDir };
+module.exports = { connectFromSettings, disconnect, sendMessage, getRecentMessages, getStatus, isConnected, setMediaDir, resolveChatNames };

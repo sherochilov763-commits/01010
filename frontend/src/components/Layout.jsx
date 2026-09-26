@@ -1,4 +1,4 @@
-import { LogOut, Menu } from "lucide-react";
+import { ArrowLeft, LogOut, Menu } from "lucide-react";
 import { NAV, roleLabel } from "../constants.js";
 import { longDateUz } from "../lib/format.js";
 import { THEME } from "../theme.js";
@@ -83,7 +83,7 @@ export function Sidebar({ nav, view, setView, user, onLogout, sidebarStyle, isOp
 }
 
 
-export function Topbar({ user, view, onLogout, onMenuClick }) {
+export function Topbar({ user, view, onLogout, onMenuClick, onBack }) {
   const title = NAV.find((n) => n.key === view)?.label || "";
   return (
     <div className="no-print" style={{ padding: "18px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -100,6 +100,16 @@ export function Topbar({ user, view, onLogout, onMenuClick }) {
         >
           <Menu size={20} color={THEME.text} />
         </button>
+        {onBack && (
+          <button type="button" onClick={onBack} aria-label="Orqaga" title="Orqaga" className="uvix-iconbtn"
+            style={{
+              background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 12, cursor: "pointer",
+              width: 44, height: 44, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+              color: THEME.text, WebkitTapHighlightColor: "transparent", touchAction: "manipulation",
+            }}>
+            <ArrowLeft size={20} />
+          </button>
+        )}
         <div>
           <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.3 }}>{title}</div>
           <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 2 }}>

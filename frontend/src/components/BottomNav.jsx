@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { LayoutDashboard, Package, Plus, TrendingDown, MoreHorizontal, X } from "lucide-react";
 import { THEME } from "../theme.js";
+import { useBackToClose } from "../lib/history.js";
 
 const TABS = [
   { key: "dashboard", label: "Asosiy", icon: LayoutDashboard },
@@ -13,6 +14,7 @@ const TABS = [
 
 export function BottomNav({ view, onNavigate, onMore, onQuickAdd }) {
   const [sheet, setSheet] = useState(false);
+  useBackToClose(sheet, () => setSheet(false));
   const mainKeys = ["dashboard", "orders", "expense"];
   const moreActive = !mainKeys.includes(view);
 
