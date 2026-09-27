@@ -5,6 +5,7 @@ import { TaskAssignModal } from "./views/crm/TaskAssignModal.jsx";
 import { authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
+import { StorageWarning } from "./components/StorageWarning.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } from "./constants.js";
 import { generateOrderNumber } from "./lib/finance.js";
 import { money, paymentTypeLabel, uid } from "./lib/format.js";
@@ -578,6 +579,7 @@ export default function App() {
         <Sidebar nav={visibleNav} view={view} setView={(v) => { setNavFilter(null); setView(v); }} user={currentUser} onLogout={() => { authLogout(); setCurrentUser(null); }} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} />
+          {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 24px 40px" }}>
             {view === "dashboard" && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
@@ -626,10 +628,13 @@ export default function App() {
               <ChatsView
                 leads={leads}
                 onFetchChats={fetchTelegramChats}
-                onFetchMessages={fetchTelegramMessages}
                 onSendMessage={sendTelegramUserMessage}
                 onMarkRead={markTelegramChatRead}
                 onMoveLead={moveLead}
+                onLeadCreated={(lead) => {
+                  setLeads((prev) => (prev.some((l) => l.id === lead.id) ? prev : [lead, ...prev]));
+                  addLog(`Telegram suhbati CRM'ga qo'shildi: ${lead.customer}`);
+                }}
                 initialChatId={openChatId}
                 onInitialChatHandled={() => setOpenChatId(null)}
               />

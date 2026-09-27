@@ -306,3 +306,41 @@ export async function reactTelegramMessage(chatId, messageId, emoji) {
   });
   return tgJson(res, "Reaksiya qo'yib bo'lmadi");
 }
+
+// Suhbat + eski tarix bormi (yuqoriga aylantirganda yuklash uchun)
+export async function fetchTelegramThread(chatId) {
+  const res = await fetch(`${API_BASE}/telegram-user/messages/${encodeURIComponent(chatId)}`, { headers: authHeaders() });
+  const data = await tgJson(res, "Xabarlarni yuklab bo'lmadi");
+  return { messages: data.messages || [], hasOlder: !!data.hasOlder };
+}
+export async function fetchOlderTelegramMessages(chatId, beforeTgId) {
+  const q = beforeTgId ? `?before=${encodeURIComponent(beforeTgId)}` : "";
+  const res = await fetch(`${API_BASE}/telegram-user/messages/${encodeURIComponent(chatId)}/older${q}`, { headers: authHeaders() });
+  const data = await tgJson(res, "Eski xabarlarni yuklab bo'lmadi");
+  return { messages: data.messages || [], hasMore: !!data.hasMore };
+}
+export async function createLeadFromChat(chatId) {
+  const res = await fetch(`${API_BASE}/telegram-user/create-lead`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ chatId }),
+  });
+  return (await tgJson(res, "CRM'ga qo'shib bo'lmadi")).lead;
+}
+
+// ---- Tizim holati va zaxiradan tiklash (admin) ----
+export async function fetchHealth() {
+  const res = await fetch(`${API_BASE}/health`);
+  return res.json().catch(() => ({}));
+}
+export async function fetchSystemStatus() {
+  const res = await fetch(`${API_BASE}/system/status`, { headers: authHeaders() });
+  return tgJson(res, "Tizim holatini olib bo'lmadi");
+}
+// apply=false — faqat tekshiradi (nechta buyurtma/lid borligini ko'rsatadi), true — tiklaydi
+export async function restoreBackup(file, apply) {
+  const form = new FormData();
+  form.append("file", file, file.name || "backup.db");
+  const res = await fetch(`${API_BASE}/backup/restore${apply ? "?apply=1" : ""}`, { method: "POST", headers: authHeaders(), body: form });
+  return tgJson(res, "Zaxirani tiklab bo'lmadi");
+}

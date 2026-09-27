@@ -333,3 +333,41 @@ Fayllar: `backend/audio.js`, `backend/telegram-userbot.js`, `backend/server.js` 
 - **Faqat odamlar:** botlar (CardXabar kabi), kanallar, guruhlar va Telegram xizmat xabarlari CRM'ga tushmaydi. Ulanishda eski bot suhbatlari va **tegilmagan** avtomatik lidlar tozalanadi (qo'lda tahrirlangan yoki buyurtmaga bog'langan lidlarga tegilmaydi).
 - **Panellar (kompyuterda):** chegarani surib kenglikni o'zgartirish (ikki marta bosish — standart), ro'yxat va mijoz panelini yashirish, to'liq ekran (Esc — chiqish). Sozlamalar shu brauzerda eslab qolinadi.
 - Kun ajratgichlari: "Bugun", "Kecha", "25-sentabr".
+
+## 🛟 Ma'lumotlar himoyasi va zaxiradan tiklash (2026-09)
+
+**Nega ma'lumotlar yo'qolishi mumkin:** Railway'da Volume ulanmagan yoki `DB_PATH` noto'g'ri bo'lsa,
+baza fayli konteyner ichida yaratiladi va **har bir deploy'da bo'sh holatga qaytadi**.
+
+**Endi dastur buni o'zi sezadi:**
+- Server ishga tushganda Railway o'zgaruvchilarini tekshiradi (`RAILWAY_VOLUME_MOUNT_PATH`).
+  Baza Volume ichida bo'lmasa — logda katta ogohlantirish, adminga esa har sahifada qizil banner chiqadi.
+- `DB_PATH` papkasi yo'q bo'lsa, avtomatik yaratiladi.
+- Kunlik Telegram zaxirasi endi `db.serialize()` orqali olinadi — WAL jurnalidagi eng so'nggi o'zgarishlar ham kiradi
+  (avval faylni to'g'ridan-to'g'ri o'qish oxirgi yozuvlarni tushirib qoldirishi mumkin edi).
+
+**Tekshirish:** Sozlamalar → "Baza holati va zaxiradan tiklash" — baza qayerda, doimiy diskdami,
+nechta buyurtma/rasxod/lid bor, oxirgi zaxira qachon yuborilgan.
+
+**Zaxiradan tiklash:**
+1. Telegram'dagi `uvix_backup_YYYY-MM-DD.db` faylini yuklab oling.
+2. Sozlamalar → "Zaxira faylini tanlash" → fayl tarkibi (nechta buyurtma, lid...) ko'rsatiladi.
+3. "Shu zaxiradan tiklash" → tasdiqlang. Hozirgi holat `uvix.before-restore-<vaqt>.db` nomi bilan
+   Volume'da saqlab qo'yiladi. PIN kodlar zaxiradagi holatiga qaytadi.
+- Eslatma: buyurtma rasmlari (uploads papkasi) zaxira faylida yo'q — faqat baza ma'lumotlari tiklanadi.
+
+API: `GET /api/health` (storage.persistent), `GET /api/system/status` (admin), `POST /api/backup/restore` (admin; `?apply=1` — haqiqiy tiklash, busiz — faqat tekshirish).
+
+## 💬 Chatlar: barcha shaxsiy suhbatlar va eski tarix (2026-09)
+
+- **Barcha shaxsiy suhbatlar** — Telegram ilovasidagi kabi, hali yozmagan odamlar ham ro'yxatda
+  (`getDialogs`, daqiqasiga 1 marta yangilanadi). Botlar, kanallar, guruhlar, "Telegram" xizmati va
+  "Saqlangan xabarlar" chiqarilmaydi. Lidi bor suhbatlarda **CRM** belgisi turadi; oxirgi xabar o'zingizniki bo'lsa "Siz:" deb ko'rsatiladi.
+  Ro'yxatdagi vaqt: bugun — soat, shu hafta — hafta kuni, eskiroq — sana.
+- **Lid faqat qo'lda** — yangi odam yozsa CRM'ga avtomatik lid ochilmaydi. Suhbat sarlavhasida va o'ng panelda
+  **"CRM'ga qo'shish"** tugmasi bor (ism, username, telefon Telegram'dan olinadi). Mavjud lidlarning ismi/telefoni avvalgidek avtomatik to'ldiriladi.
+- **Eski tarix** — suhbatni yuqoriga aylantirsangiz, Telegram'dan 40 tadan eskiroq xabarlar avtomatik yuklanadi
+  (ekran joyi siljimaydi). Boshigacha yetganda "Suhbat boshi" yoziladi.
+- Ismlar `uvix:telegramContacts`da eslab qolinadi — Telegram vaqtincha uzilsa ham ro'yxatda ism turadi.
+
+API: `GET /api/telegram-user/messages/:chatId/older?before=<tgId>`, `POST /api/telegram-user/create-lead`.

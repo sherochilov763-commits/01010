@@ -196,19 +196,63 @@ async function parseMessageContent(msg, maxDownload) {
 }
 
 // Suhbat tarixi (o'zingiz va mijoz yozganlari). knownTgIds — allaqachon saqlanganlar (qayta yuklanmaydi)
-async function fetchHistory(chatId, { limit = 50, knownTgIds = new Set() } = {}) {
+async function fetchHistory(chatId, { limit = 50, knownTgIds = new Set(), offsetId = 0 } = {}) {
   requireConnected();
   const peer = peerOf(chatId);
   const entity = await resolveUser(peer);
-  if (entity?.bot) return { messages: [], isBot: true };
-  const list = await client.getMessages(peer, { limit });
+  if (entity?.bot) return { messages: [], isBot: true, hasMore: false };
+  // offsetId berilsa — shu xabardan ESKIROQLARI (yuqoriga aylantirganda keyingi sahifa)
+  const list = await client.getMessages(peer, offsetId ? { limit, offsetId } : { limit });
+  const hasMore = list.length >= limit;
   const out = [];
   for (const m of list) {
     if (!m || m.className === "MessageService" || knownTgIds.has(m.id)) continue;
     // Tarix uchun yengilroq chegara: 10 MB dan katta video/hujjat faqat nomi bilan
     out.push({ out: !!m.out, ...(await parseMessageContent(m, 10 * 1024 * 1024)) });
   }
-  return { messages: out.reverse(), isBot: false };
+  return { messages: out.reverse(), isBot: false, hasMore };
+}
+
+// Shaxsiy suhbatlar ro'yxati (Telegram ilovasidagidek) — faqat odamlar:
+// botlar, kanallar, guruhlar, "Telegram" xizmat chati va "Saqlangan xabarlar" chiqarilmaydi.
+function dialogPreview(m) {
+  if (!m) return "";
+  const media = m.media?.className || "";
+  if (media === "MessageMediaPhoto") return m.message ? `📷 ${m.message}` : "📷 Rasm";
+  if (media === "MessageMediaGeo" || media === "MessageMediaGeoLive" || media === "MessageMediaVenue") return "📍 Joylashuv";
+  if (media === "MessageMediaDocument") {
+    const attrs = m.media.document?.attributes || [];
+    if (attrs.some((a) => a.className === "DocumentAttributeAudio" && a.voice)) return "🎤 Ovozli xabar";
+    if (attrs.some((a) => a.className === "DocumentAttributeSticker")) return "Stiker";
+    if (attrs.some((a) => a.className === "DocumentAttributeVideo")) return m.message ? `🎥 ${m.message}` : "🎥 Video";
+    const fn = attrs.find((a) => a.className === "DocumentAttributeFilename");
+    return `📎 ${fn?.fileName || "Hujjat"}`;
+  }
+  return m.message || "";
+}
+async function listPrivateDialogs(limit = 300) {
+  requireConnected();
+  const dialogs = await client.getDialogs({ limit });
+  const out = [];
+  for (const d of dialogs) {
+    const e = d.entity;
+    if (!d.isUser || !e || e.bot || e.deleted) continue;
+    const chatId = String(e.id);
+    if (chatId === TELEGRAM_SERVICE_ID || (selfId && chatId === selfId) || e.self) continue;
+    const info = describeEntity(e, chatId);
+    const m = d.message;
+    const date = m?.date ? new Date(m.date * 1000).toISOString() : null;
+    out.push({ chatId, name: info.name, username: info.username, phone: info.phone, lastText: dialogPreview(m), lastOut: !!m?.out, lastDate: date, unreadCount: d.unreadCount || 0 });
+  }
+  return out;
+}
+
+// Bitta suhbat egasi haqida: ism, username, telefon (CRM'ga qo'lda qo'shish uchun)
+async function describeChat(chatId) {
+  if (!isConnected()) return null;
+  const e = await resolveUser(peerOf(chatId));
+  if (!e) return null;
+  return { ...describeEntity(e, chatId), bot: !!e.bot, isUser: e.className === "User" };
 }
 
 // Chat ID bot/kanal ekanini aniqlaydi (eski yozuvlarni tozalash uchun)
@@ -375,4 +419,4 @@ async function getRecentMessages(chatId, limit = 30) {
     .reverse();
 }
 
-module.exports = { fetchHistory, isBotChat, connectFromSettings, disconnect, sendMessage, sendPhoto, sendVideo, sendDocument, sendVoice, sendLocation, sendReaction, getRecentMessages, getStatus, isConnected, setMediaDir, resolveChatNames };
+module.exports = { listPrivateDialogs, describeChat, fetchHistory, isBotChat, connectFromSettings, disconnect, sendMessage, sendPhoto, sendVideo, sendDocument, sendVoice, sendLocation, sendReaction, getRecentMessages, getStatus, isConnected, setMediaDir, resolveChatNames };

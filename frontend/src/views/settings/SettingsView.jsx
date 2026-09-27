@@ -8,6 +8,7 @@ import { roleLabel } from "../../constants.js";
 import { THEME } from "../../theme.js";
 import { AppearancePreviewCard, AppearanceSection } from "./AppearanceSection.jsx";
 import { TrashSection } from "./TrashSection.jsx";
+import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
 
 export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
   const [pin, setPin] = useState("");
@@ -193,6 +194,12 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
             <div style={{ fontSize: 12, color: THEME.muted, marginTop: 10 }}>
               Joriy kurs: <b style={{ color: THEME.text }}>1 $ = {money(settings?.usdRate || 0)}</b>
             </div>
+          </Card>
+        )}
+
+        {isAdmin && (
+          <Card>
+            <BackupRestoreSection />
           </Card>
         )}
 

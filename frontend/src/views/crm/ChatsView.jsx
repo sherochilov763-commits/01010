@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Info, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Check, Info, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, UserPlus, X } from "lucide-react";
 import { LAYOUT_CSS, Resizer, useChatLayout } from "./chatLayout.jsx";
 import { useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
-import { reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
+import { createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
 import { CHAT_CSS, Composer, MessageList } from "./ChatConversation.jsx";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
@@ -20,17 +20,42 @@ export const TG_DARK_MUTED = "#6D7F91";
 export const TG_OUT_BUBBLE = "#2B5278";
 export const TG_IN_BUBBLE = "#182533";
 
-export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage, onMarkRead, onMoveLead, initialChatId, onInitialChatHandled }) {
+// Ro'yxatdagi vaqt: bugun — soat, shu hafta — hafta kuni, undan eski — sana (Telegram'dagidek)
+const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
+function listTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (d >= startOfToday) return d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+  const days = (startOfToday - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000;
+  if (days < 7) return WEEKDAYS[d.getDay()];
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return d.getFullYear() === now.getFullYear() ? `${dd}.${mm}` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`;
+}
+const lastKey = (list) => (list.length ? `${list[list.length - 1].id}|${list.length}` : "");
+
+export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMoveLead, onLeadCreated, initialChatId, onInitialChatHandled }) {
   const [chats, setChats] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedChatId, setSelectedChatId] = useState(null);
+  const selectedRef = useRef(null);
+  selectedRef.current = selectedChatId;
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState("");
   const [replyTo, setReplyTo] = useState(null);
   const lastCountRef = useRef(0);
+  const lastMsgRef = useRef(""); // oxirgi xabar — faqat PASTGA yangi xabar qo'shilsa pastga aylantiramiz
   const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const olderReq = useRef(null); // { chatId, prevHeight, prevTop } — eski xabarlar qo'shilganda joyni saqlash
+  const [addingLead, setAddingLead] = useState(false);
+  const [justAdded, setJustAdded] = useState(null);
   const openedFromCrm = useRef(false); // CRM'dan kelinganmi — telefonda "orqaga" to'g'ri CRM'ga qaytarsin
   // CRM'dan "Chat" bosib kelinganda — shu mijoz suhbatini darhol ochamiz
   useEffect(() => {
@@ -53,9 +78,25 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
   });
   useBackToClose(isMobile && infoOpen, () => setInfoOpen(false));
 
+  // Telegram'dagi barcha shaxsiy suhbatlar; yangi yozganlar ro'yxatga tushishi uchun har 30 soniyada yangilanadi
   useEffect(() => {
-    onFetchChats().then((list) => { setChats(list); setLoadingChats(false); }).catch(() => setLoadingChats(false));
+    let alive = true;
+    const load = () => onFetchChats().then((list) => {
+      if (!alive) return;
+      setChats((prev) => {
+        // Ochiq suhbatda o'qilgan deb belgilangan holatni saqlaymiz
+        const openId = selectedRef.current;
+        const next = list.map((c) => (c.chatId === openId ? { ...c, unread: false } : c));
+        return JSON.stringify(prev) === JSON.stringify(next) ? prev : next;
+      });
+      setLoadingChats(false);
+    }).catch(() => alive && setLoadingChats(false));
+    load();
+    const t = setInterval(() => document.visibilityState === "visible" && load(), 30000);
+    return () => { alive = false; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
 
   // "Noma'lum (ID)" bo'lib qolgan mijozlar bo'lsa — ismlarini Telegram'dan qayta so'raymiz
   useEffect(() => {
@@ -69,12 +110,24 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
     if (!selectedChatId) return;
     setReplyTo(null);
     lastCountRef.current = 0;
+    lastMsgRef.current = "";
+    olderReq.current = null;
+    setMessages([]);
+    setHasOlder(false);
+    setLoadingOlder(false);
     setLoadingMessages(true);
-    onFetchMessages(selectedChatId).then(setMessages).catch(() => setMessages([])).finally(() => setLoadingMessages(false));
+    const chatId = selectedChatId;
+    fetchTelegramThread(chatId)
+      .then((r) => { if (selectedRef.current !== chatId) return; setMessages(r.messages); setHasOlder(r.hasOlder); })
+      .catch(() => selectedRef.current === chatId && setMessages([]))
+      .finally(() => selectedRef.current === chatId && setLoadingMessages(false));
     // Ochiq suhbatni har 5 soniyada yangilaymiz — mijozning javobi sahifani yangilamasdan chiqadi
     const t = setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      onFetchMessages(selectedChatId).then((list) => setMessages((prev) => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))).catch(() => {});
+      if (document.visibilityState !== "visible" || olderReq.current) return;
+      fetchTelegramThread(chatId).then((r) => {
+        if (selectedRef.current !== chatId || olderReq.current) return;
+        setMessages((prev) => (prev.length > r.messages.length || JSON.stringify(prev) === JSON.stringify(r.messages) ? prev : r.messages));
+      }).catch(() => {});
     }, 5000);
     if (onMarkRead) {
       onMarkRead(selectedChatId);
@@ -83,13 +136,76 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
     return () => clearInterval(t);
   }, [selectedChatId]);
 
-  useEffect(() => {
-    if (messages.length > lastCountRef.current) bottomRef.current?.scrollIntoView({ behavior: lastCountRef.current ? "smooth" : "auto" });
+  // Eski xabarlar tepaga qo'shilganda ekrandagi joy siljimasin; yangi xabar pastga kelganda — pastga aylantiramiz
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const req = olderReq.current;
+    if (el && req && req.done) {
+      el.scrollTop = el.scrollHeight - req.prevHeight + req.prevTop;
+      olderReq.current = null;
+    } else if (lastKey(messages) && messages[messages.length - 1]?.id !== lastMsgRef.current.split("|")[0]) {
+      bottomRef.current?.scrollIntoView({ behavior: lastCountRef.current ? "smooth" : "auto" });
+    }
     lastCountRef.current = messages.length;
+    lastMsgRef.current = lastKey(messages);
   }, [messages]);
 
+  async function loadOlder() {
+    const el = scrollRef.current;
+    const chatId = selectedChatId;
+    if (!el || !chatId || !hasOlder || loadingOlder || olderReq.current) return;
+    olderReq.current = { chatId, prevHeight: el.scrollHeight, prevTop: el.scrollTop, done: false };
+    setLoadingOlder(true);
+    try {
+      const oldest = messages.map((m) => m.tgId).filter((x) => Number.isInteger(x) && x > 0);
+      const r = await fetchOlderTelegramMessages(chatId, oldest.length ? Math.min(...oldest) : undefined);
+      if (selectedRef.current !== chatId) return;
+      setHasOlder(r.hasMore);
+      if (r.messages.length > messages.length) {
+        const cur = scrollRef.current;
+        olderReq.current = { ...olderReq.current, prevHeight: cur.scrollHeight, prevTop: cur.scrollTop, done: true };
+        setMessages(r.messages);
+        return;
+      }
+    } catch (e) {
+      if (selectedRef.current === chatId) { setHasOlder(false); setError(e.message); }
+    } finally {
+      if (selectedRef.current === chatId) setLoadingOlder(false);
+      if (olderReq.current && !olderReq.current.done) olderReq.current = null;
+    }
+  }
+  function onMessagesScroll(e) {
+    if (e.currentTarget.scrollTop < 150) loadOlder();
+  }
+  // Xabarlar ekranni to'ldirmasa (qisqa suhbat) — o'zi yana eskiroqlarini yuklaydi
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || loadingMessages || loadingOlder || !hasOlder) return;
+    if (el.scrollHeight <= el.clientHeight + 150) loadOlder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, hasOlder, loadingMessages, loadingOlder]);
+
+  async function addToCrm() {
+    if (!selectedChatId || addingLead) return;
+    setAddingLead(true);
+    try {
+      const lead = await createLeadFromChat(selectedChatId);
+      if (lead) { onLeadCreated?.(lead); setJustAdded(selectedChatId); }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAddingLead(false);
+    }
+  }
+
   function leadForChat(chatId) {
-    return (leads || []).find((l) => l.telegramChatId === chatId);
+    return (leads || []).find((l) => String(l.telegramChatId) === String(chatId));
+  }
+  // Ism: CRM'dagi mijoz nomi, bo'lmasa Telegram'dagi ismi
+  function chatName(chatId) {
+    const lead = leadForChat(chatId);
+    if (lead?.customer) return lead.customer;
+    return chats.find((c) => c.chatId === chatId)?.name || "Noma'lum";
   }
 
   const filteredChats = useMemo(() => {
@@ -97,7 +213,7 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
     const q = search.trim().toLowerCase();
     return chats.filter((c) => {
       const lead = leadForChat(c.chatId);
-      return (lead?.customer || "").toLowerCase().includes(q) || (c.lastText || "").toLowerCase().includes(q);
+      return [lead?.customer, c.name, c.username, c.phone, lead?.phone, c.lastText].some((v) => (v || "").toLowerCase().includes(q));
     });
   }, [chats, search, leads]);
 
@@ -144,6 +260,17 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
   }
 
   const selectedLead = selectedChatId ? leadForChat(selectedChatId) : null;
+  const selectedChat = selectedChatId ? chats.find((c) => c.chatId === selectedChatId) : null;
+  const selectedName = selectedChatId ? chatName(selectedChatId) : "";
+  const selectedUsername = selectedLead?.telegramUsername || selectedChat?.username || "";
+  const selectedPhone = selectedLead?.phone || (selectedChat?.phone ? `+${String(selectedChat.phone).replace(/^\+/, "")}` : "");
+  const addBtn = (full) => (
+    <button type="button" onClick={addToCrm} disabled={addingLead} className="uc-addlead" data-full={full ? "1" : undefined}
+      aria-label="CRM'ga lid sifatida qo'shish" title="CRM'ga lid sifatida qo'shish">
+      {addingLead ? <Loader2 size={16} className="uc-spin" /> : <UserPlus size={16} />}
+      {(full || !isMobile) && <span>CRM'ga qo'shish</span>}
+    </button>
+  );
   const unreadTotal = chats.filter((c) => c.unread).length;
   const { layout, update, fullscreen, setFullscreen } = useChatLayout();
   const containerRef = useRef(null);
@@ -201,12 +328,12 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
             <div style={{ textAlign: "center", color: TG_DARK_MUTED, fontSize: 12.5, marginTop: 30 }}>Yuklanmoqda...</div>
           ) : filteredChats.length === 0 ? (
             <div style={{ textAlign: "center", color: TG_DARK_MUTED, fontSize: 12.5, marginTop: 30, padding: "0 20px" }}>
-              {chats.length === 0 ? "Hali suhbat yo'q. Telegram orqali mijozdan xabar kelganda shu yerda paydo bo'ladi." : "Hech narsa topilmadi"}
+              {chats.length === 0 ? "Suhbatlar yo'q. Sozlamalarda Telegram akkaunt ulanganini tekshiring." : "Hech narsa topilmadi"}
             </div>
           ) : (
             filteredChats.map((chat) => {
               const lead = leadForChat(chat.chatId);
-              const name = lead?.customer || "Noma'lum";
+              const name = lead?.customer || chat.name || "Noma'lum";
               const isSelected = selectedChatId === chat.chatId;
               return (
                 <div
@@ -223,11 +350,14 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                      {chat.lastDate && <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, flexShrink: 0, marginLeft: 6 }}>{new Date(chat.lastDate).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })}</div>}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                        {lead && <span title="CRM'da lid bor" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#6AB3F3", border: "1px solid rgba(106,179,243,0.45)", borderRadius: 6, padding: "0 5px", lineHeight: "15px", flexShrink: 0 }}>CRM</span>}
+                      </div>
+                      {chat.lastDate && <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, flexShrink: 0, marginLeft: 6 }}>{listTime(chat.lastDate)}</div>}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
-                      <div style={{ fontSize: 12, color: TG_DARK_MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{chat.lastText}</div>
+                      <div style={{ fontSize: 12, color: TG_DARK_MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{chat.lastOut && chat.lastText ? <span style={{ color: "#8FA3B6" }}>Siz: </span> : null}{chat.lastText}</div>
                       {chat.unread && <span style={{ width: 8, height: 8, borderRadius: "50%", background: TG_BLUE, flexShrink: 0, marginLeft: 6 }} />}
                     </div>
                   </div>
@@ -265,29 +395,37 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
                 </button>
               )}
               <div style={{ width: 38, height: 38, borderRadius: "50%", background: TG_BLUE, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, flexShrink: 0 }}>
-                {(selectedLead?.customer || "?").slice(0, 1).toUpperCase()}
+                {(selectedName || "?").slice(0, 1).toUpperCase()}
               </div>
-              <div>
-                <div style={{ fontSize: 14.5, fontWeight: 700 }}>{selectedLead?.customer || "Noma'lum"}</div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedName}</div>
                 <div style={{ fontSize: 11, color: TG_DARK_MUTED }}>
-                  {selectedLead?.telegramUsername ? `@${selectedLead.telegramUsername}` : "Telegram akkaunt"}
+                  {selectedUsername ? `@${selectedUsername}` : selectedLead ? "Telegram akkaunt" : "CRM'da yo'q"}
                 </div>
               </div>
+              {!selectedLead && <div style={{ marginLeft: isMobile ? "auto" : 8 }}>{addBtn(false)}</div>}
               {tools}
               {isMobile && (
                 <button type="button" onClick={() => setInfoOpen(true)} aria-label="Mijoz ma'lumotlari"
-                  style={{ marginLeft: "auto", width: 44, height: 44, border: 0, background: "none", color: TG_DARK_MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  style={{ marginLeft: selectedLead ? "auto" : 0, width: 44, height: 44, border: 0, background: "none", color: TG_DARK_MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
                   <Info size={21} />
                 </button>
               )}
             </div>
-            <style>{CHAT_CSS}</style>
-            <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "14px 10px" : 18, display: "flex", flexDirection: "column", gap: 8 }}>
+            <style>{CHAT_CSS + ADD_CSS}</style>
+            <div ref={scrollRef} onScroll={onMessagesScroll} style={{ flex: 1, overflowY: "auto", overflowAnchor: "none", padding: isMobile ? "14px 10px" : 18, display: "flex", flexDirection: "column", gap: 8 }}>
+              {!loadingMessages && messages.length > 0 && (
+                <div aria-live="polite" style={{ alignSelf: "center", fontSize: 12, color: TG_DARK_MUTED, padding: "4px 12px", minHeight: 22, display: "flex", alignItems: "center", gap: 6 }}>
+                  {loadingOlder ? (<><Loader2 size={14} className="uc-spin" /> Eski xabarlar yuklanmoqda…</>)
+                    : hasOlder ? (<button type="button" onClick={loadOlder} style={{ border: 0, background: "rgba(255,255,255,0.06)", color: "#8FA3B6", borderRadius: 12, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Eski xabarlarni yuklash</button>)
+                    : <span>Suhbat boshi</span>}
+                </div>
+              )}
               <MessageList
                 messages={messages}
                 loading={loadingMessages}
                 isMobile={isMobile}
-                customerName={selectedLead?.customer || "Mijoz"}
+                customerName={selectedName || "Mijoz"}
                 onReply={(m) => setReplyTo(m)}
                 onReact={handleReact}
               />
@@ -299,7 +437,7 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
             <Composer
               key={selectedChatId}
               isMobile={isMobile}
-              customerName={selectedLead?.customer || "Mijoz"}
+              customerName={selectedName || "Mijoz"}
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
               onSendText={handleSendText}
@@ -331,10 +469,20 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
           )}
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: TG_BLUE, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, margin: "0 auto 10px" }}>
-              {(selectedLead?.customer || "?").slice(0, 1).toUpperCase()}
+              {(selectedName || "?").slice(0, 1).toUpperCase()}
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>{selectedLead?.customer || "Noma'lum"}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>{selectedName}</div>
           </div>
+
+          {!selectedLead && (
+            <div style={{ background: TG_DARK_HOVER, borderRadius: 12, padding: 12, marginBottom: 16 }}>
+              <div style={{ fontSize: 12.5, color: "#C5D2DD", lineHeight: 1.45, marginBottom: 10 }}>Bu suhbat CRM'da yo'q. Mijoz bo'lsa — lid sifatida qo'shing, bosqichi va buyurtmasini kuzatasiz.</div>
+              {addBtn(true)}
+            </div>
+          )}
+          {selectedLead && justAdded === selectedChatId && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#7BD88F", fontSize: 12.5, marginBottom: 12 }}><Check size={15} /> CRM'ga qo'shildi</div>
+          )}
 
           {selectedLead && onMoveLead && (
             <div style={{ marginBottom: 14 }}>
@@ -352,11 +500,11 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Telefon</div>
-              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedLead?.phone || "—"}</div>
+              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedPhone || "—"}</div>
             </div>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Username</div>
-              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedLead?.telegramUsername ? `@${selectedLead.telegramUsername}` : "—"}</div>
+              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedUsername ? `@${selectedUsername}` : "—"}</div>
             </div>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Menejer</div>
@@ -384,3 +532,14 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
     </div>
   );
 }
+
+const ADD_CSS = `
+  .uc-addlead { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(106,179,243,0.5); background: rgba(0,136,204,0.14); color: #8CC8F5; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; font-family: inherit; }
+  .uc-addlead:hover:not(:disabled) { background: rgba(0,136,204,0.26); color: #fff; }
+  .uc-addlead:disabled { opacity: .7; cursor: default; }
+  .uc-addlead[data-full] { width: 100%; height: 42px; background: #0088CC; border-color: #0088CC; color: #fff; }
+  .uc-addlead[data-full]:hover:not(:disabled) { background: #0A96DE; }
+  @media (max-width: 768px) { .uc-addlead:not([data-full]) { width: 44px; height: 44px; padding: 0; border-radius: 12px; } }
+  .uc-spin { animation: uc-spin 0.9s linear infinite; }
+  @keyframes uc-spin { to { transform: rotate(360deg); } }
+`;
