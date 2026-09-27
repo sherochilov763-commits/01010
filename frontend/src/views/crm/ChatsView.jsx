@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Info, Search, X } from "lucide-react";
+import { ArrowLeft, Info, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, X } from "lucide-react";
+import { LAYOUT_CSS, Resizer, useChatLayout } from "./chatLayout.jsx";
 import { useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
 import { reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
@@ -144,13 +145,40 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
 
   const selectedLead = selectedChatId ? leadForChat(selectedChatId) : null;
   const unreadTotal = chats.filter((c) => c.unread).length;
+  const { layout, update, fullscreen, setFullscreen } = useChatLayout();
+  const containerRef = useRef(null);
+  const showList = isMobile || !layout.listHidden;
+  const showInfo = isMobile ? infoOpen : !layout.infoHidden;
+  // Kompyuterda panellarni boshqarish tugmalari (sarlavhaning o'ng tomonida)
+  const tools = !isMobile && (
+    <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+      <button type="button" className="uc-tool" onClick={() => update((l) => ({ listHidden: !l.listHidden }))} aria-pressed={!layout.listHidden}
+        aria-label={layout.listHidden ? "Suhbatlar ro'yxatini ko'rsatish" : "Suhbatlar ro'yxatini yashirish"} title={layout.listHidden ? "Ro'yxatni ko'rsatish" : "Ro'yxatni yashirish"}>
+        {layout.listHidden ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+      </button>
+      {selectedChatId && (
+        <button type="button" className="uc-tool" onClick={() => update((l) => ({ infoHidden: !l.infoHidden }))} aria-pressed={!layout.infoHidden}
+          aria-label={layout.infoHidden ? "Mijoz panelini ko'rsatish" : "Mijoz panelini yashirish"} title={layout.infoHidden ? "Mijoz panelini ko'rsatish" : "Mijoz panelini yashirish"}>
+          {layout.infoHidden ? <PanelRightOpen size={19} /> : <PanelRightClose size={19} />}
+        </button>
+      )}
+      <button type="button" className="uc-tool" onClick={() => setFullscreen((v) => !v)} aria-pressed={fullscreen}
+        aria-label={fullscreen ? "To'liq ekrandan chiqish" : "To'liq ekran"} title={fullscreen ? "To'liq ekrandan chiqish (Esc)" : "To'liq ekran"}>
+        {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+      </button>
+    </div>
+  );
 
   return (
-    <div style={isMobile
+    <div ref={containerRef} style={isMobile
       ? { borderRadius: 16, overflow: "hidden", boxShadow: THEME.shadowLg }
-      : { display: "flex", height: "calc(100vh - 140px)", minHeight: 520, borderRadius: 16, overflow: "hidden", boxShadow: THEME.shadowLg }}>
+      : fullscreen
+        ? { display: "flex", position: "fixed", inset: 0, zIndex: 250, background: TG_DARK_BG }
+        : { display: "flex", height: "calc(100vh - 140px)", minHeight: 520, borderRadius: 16, overflow: "hidden", boxShadow: THEME.shadowLg }}>
+      <style>{LAYOUT_CSS}</style>
       {/* Chap panel — suhbatlar royxati */}
-      <div style={{ width: isMobile ? "100%" : 300, minHeight: isMobile ? "60vh" : undefined, flexShrink: 0, display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR }}>
+      {showList && (<>
+      <div style={{ width: isMobile ? "100%" : layout.listW, minHeight: isMobile ? "60vh" : undefined, flexShrink: 0, display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR, minWidth: 0 }}>
         <div style={{ padding: "16px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>Chatlar</div>
@@ -209,19 +237,27 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
           )}
         </div>
       </div>
+      {!isMobile && (
+        <Resizer side="left" width={layout.listW} onChange={(w) => update({ listW: w })} containerRef={containerRef}
+          otherWidth={selectedChatId && !layout.infoHidden ? layout.infoW : 0} />
+      )}
+      </>)}
 
       {/* Ortadagi panel — tanlangan suhbat */}
       {(!isMobile || selectedChatId) && (
       <div style={isMobile
         ? { position: "fixed", inset: 0, zIndex: 160, display: "flex", flexDirection: "column", background: TG_DARK_BG, paddingTop: "env(safe-area-inset-top, 0px)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }
-        : { flex: 1, display: "flex", flexDirection: "column", background: TG_DARK_BG, borderLeft: `1px solid ${TG_DARK_BORDER}`, borderRight: `1px solid ${TG_DARK_BORDER}` }}>
+        : { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: TG_DARK_BG }}>
         {!selectedChatId ? (
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: TG_DARK_MUTED, fontSize: 13.5 }}>
-            Suhbatni tanlang
-          </div>
+          <>
+            {!isMobile && <div style={{ display: "flex", padding: "10px 14px", background: TG_DARK_SIDEBAR, borderBottom: `1px solid ${TG_DARK_BORDER}` }}>{tools}</div>}
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: TG_DARK_MUTED, fontSize: 13.5 }}>
+              Suhbatni tanlang
+            </div>
+          </>
         ) : (
           <>
-            <div style={{ padding: isMobile ? "8px 10px" : "14px 20px", background: TG_DARK_SIDEBAR, color: "#fff", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${TG_DARK_BORDER}` }}>
+            <div style={{ padding: isMobile ? "8px 10px" : "10px 14px 10px 20px", background: TG_DARK_SIDEBAR, color: "#fff", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${TG_DARK_BORDER}` }}>
               {isMobile && (
                 <button type="button" onClick={() => window.history.back()} aria-label={openedFromCrm.current ? "CRM'ga qaytish" : "Suhbatlar ro'yxatiga qaytish"}
                   style={{ width: 44, height: 44, border: 0, background: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
@@ -237,6 +273,7 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
                   {selectedLead?.telegramUsername ? `@${selectedLead.telegramUsername}` : "Telegram akkaunt"}
                 </div>
               </div>
+              {tools}
               {isMobile && (
                 <button type="button" onClick={() => setInfoOpen(true)} aria-label="Mijoz ma'lumotlari"
                   style={{ marginLeft: "auto", width: 44, height: 44, border: 0, background: "none", color: TG_DARK_MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
@@ -276,10 +313,14 @@ export function ChatsView({ leads, onFetchChats, onFetchMessages, onSendMessage,
       )}
 
       {/* Ong panel — mijoz malumoti */}
-      {selectedChatId && (!isMobile || infoOpen) && (
+      {selectedChatId && showInfo && !isMobile && (
+        <Resizer side="right" width={layout.infoW} onChange={(w) => update({ infoW: w })} containerRef={containerRef}
+          otherWidth={showList ? layout.listW : 0} />
+      )}
+      {selectedChatId && showInfo && (
         <div style={isMobile
           ? { position: "fixed", inset: 0, zIndex: 170, background: TG_DARK_SIDEBAR, overflowY: "auto", padding: "calc(12px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px))" }
-          : { width: 280, flexShrink: 0, background: TG_DARK_SIDEBAR, overflowY: "auto", padding: 20 }}>
+          : { width: layout.infoW, flexShrink: 0, background: TG_DARK_SIDEBAR, overflowY: "auto", padding: 20, boxSizing: "border-box" }}>
           {isMobile && (
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
               <button type="button" onClick={() => setInfoOpen(false)} aria-label="Yopish"

@@ -1,5 +1,5 @@
 // ChatConversation.jsx — suhbat oynasi: xabarlar (rasm, ovoz, joylashuv, javob, reaksiya) va yozish paneli
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, Copy, MoreHorizontal, Download, File as FileIcon, FileText, Image as ImageIcon, Loader2, MapPin, Mic, Pause, Paperclip, Play, Reply, Send, SmilePlus, Trash2, X } from "lucide-react";
 import { useBackToClose } from "../../lib/history.js";
 
@@ -19,6 +19,19 @@ function snippet(m) {
   if (m.mediaType === "video") return m.text ? `🎥 ${m.text}` : "🎥 Video";
   if (m.mediaType === "document") return `📎 ${m.fileName || "Hujjat"}`;
   return m.text || "Xabar";
+}
+const UZ_MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+function dayKey(iso) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+function dayTitle(iso) {
+  const d = new Date(iso);
+  const today = new Date();
+  const y = new Date(); y.setDate(today.getDate() - 1);
+  if (dayKey(d) === dayKey(today)) return "Bugun";
+  if (dayKey(d) === dayKey(y)) return "Kecha";
+  return `${d.getDate()}-${UZ_MONTHS[d.getMonth()]}${d.getFullYear() !== today.getFullYear() ? ` ${d.getFullYear()}` : ""}`;
 }
 function mapUrl(lat, lng) {
   return `https://www.google.com/maps?q=${lat},${lng}`;
@@ -88,12 +101,19 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
 
   return (
     <>
-      {messages.map((m) => {
+      {messages.map((m, i) => {
+        const newDay = i === 0 || dayKey(messages[i - 1].date) !== dayKey(m.date);
         const quoted = m.replyToTgId ? byTgId.get(m.replyToTgId) : null;
         const bubbleBg = m.out ? C.outBubble : C.inBubble;
         const canAct = !!m.tgId;
         return (
-          <div key={m.id} className="uc-row" style={{ alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: isMobile ? "84%" : "62%", display: "flex", flexDirection: "column", alignItems: m.out ? "flex-end" : "flex-start" }}>
+          <Fragment key={m.id}>
+          {newDay && (
+            <div style={{ alignSelf: "center", margin: "8px 0 4px", padding: "4px 12px", borderRadius: 12, background: "rgba(24,37,51,0.9)", color: C.muted, fontSize: 12.5, fontWeight: 600 }}>
+              {dayTitle(m.date)}
+            </div>
+          )}
+          <div className="uc-row" style={{ alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: isMobile ? "84%" : "62%", display: "flex", flexDirection: "column", alignItems: m.out ? "flex-end" : "flex-start" }}>
             {!isMobile && canAct && (
               <div className="uc-quick" style={m.out ? { right: "calc(100% + 6px)" } : { left: "calc(100% + 6px)" }}>
                 <button type="button" aria-label="Javob berish" title="Javob berish" onClick={() => onReply(m)}><Reply size={15} /></button>
@@ -141,6 +161,7 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
               {m.out && <CheckCheck size={12} color={C.blue} />}
             </div>
           </div>
+          </Fragment>
         );
       })}
 

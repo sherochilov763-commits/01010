@@ -11,6 +11,7 @@ const nodemailer = require("nodemailer");
 const telegramUserbot = require("./telegram-userbot");
 const multer = require("multer");
 const db = require("./db");
+const { registerTaskRoutes, mergeLeadTaskState } = require("./tasks");
 
 // ==================== Rasm (foto hisobot) saqlash ====================
 // Rasmlar bazaning o'zi bilan bir joyda (doimiy diskda) saqlanadi — Railway'da
@@ -39,14 +40,27 @@ const upload = multer({
 const PORT = process.env.PORT || 4000;
 const app = express();
 
-app.use(cors());
+// CORS — standart holatda o'chiq (frontend shu serverning o'zidan beriladi).
+// Frontend boshqa domenda bo'lsa: CORS_ORIGIN="https://a.uz,https://b.uz"
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || "").split(",").map((s) => s.trim()).filter(Boolean);
+if (CORS_ORIGINS.length) app.use(cors({ origin: CORS_ORIGINS }));
+
+app.set("trust proxy", 1); // Railway/Nginx ortida haqiqiy IP'ni olish uchun (rate limit to'g'ri ishlashi uchun)
+app.disable("x-powered-by");
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "same-origin");
+  next();
+});
 app.use(express.json({ limit: "5mb" }));
 
 // ---- JWT sekret kaliti — birinchi ishga tushirilganda yaratiladi va faylga saqlanadi
 // (server qayta ishga tushirilganda ham eski tokenlar amal qilishda davom etishi uchun) ----
-const SECRET_PATH = path.join(__dirname, "uvix.secret");
-let JWT_SECRET;
-try {
+// Ustuvorlik: JWT_SECRET env o'zgaruvchisi → doimiy diskdagi fayl (DB bilan bir joyda).
+const SECRET_PATH = path.join(path.dirname(db.DB_PATH), "uvix.secret");
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) try {
   JWT_SECRET = fs.readFileSync(SECRET_PATH, "utf8").trim();
   if (!JWT_SECRET) throw new Error("empty");
 } catch {
@@ -54,6 +68,11 @@ try {
   fs.writeFileSync(SECRET_PATH, JWT_SECRET, { mode: 0o600 });
 }
 const TOKEN_TTL = "12h";
+function issueToken(employee) {
+  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
+  return { token, employee: { id: employee.id, name: employee.name, role: employee.role } };
+}
+let passkeyApi = null; // pastda, requireAuth'dan keyin ulanadi
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
@@ -104,6 +123,9 @@ if (readEmployees().length === 0) {
 const loginAttempts = new Map(); // ip -> { count, resetAt }
 const MAX_ATTEMPTS = 8;
 const WINDOW_MS = 10 * 60 * 1000; // 10 daqiqa
+function clearRateLimit(key) {
+  loginAttempts.delete(key);
+}
 function checkRateLimit(ip) {
   const now = Date.now();
   const rec = loginAttempts.get(ip);
@@ -120,7 +142,8 @@ function checkRateLimit(ip) {
 // Faqat ism/rolni qaytaradi (PIN hech qachon qaytarilmaydi) — Kirish ekranida ro'yxat uchun
 app.get("/api/auth/employees", (req, res) => {
   const list = readEmployees();
-  res.json({ employees: list.map((e) => ({ id: e.id, name: e.name, role: e.role })) });
+  const withPasskey = passkeyApi ? passkeyApi.employeeIdsWithPasskey() : new Set();
+  res.json({ employees: list.map((e) => ({ id: e.id, name: e.name, role: e.role, hasPasskey: withPasskey.has(e.id) })) });
 });
 
 // Birinchi administratorni yaratish — FAQAT hali birorta xodim bo'lmaganda ishlaydi
@@ -147,18 +170,8 @@ app.post("/api/auth/bootstrap", (req, res) => {
   res.json({ token, employee: { id: employee.id, name: employee.name, role: employee.role } });
 });
 
-// Kirish imkoni yo'qolganda — birinchi (eng qadimgi) administrator PIN'ini "0000"ga qaytaradi.
-// Kompyuterga jismoniy/tarmoq orqali kirish huquqi bo'lgan kishi uchun mo'ljallangan zaxira yechim.
-app.post("/api/auth/reset-admin-pin", (req, res) => {
-  const employees = readEmployees();
-  const admin = employees.find((e) => e.role === "admin");
-  if (!admin) {
-    return res.status(404).json({ error: "no_admin_found" });
-  }
-  admin.pin = bcrypt.hashSync("0000", 10);
-  writeEmployees(employees);
-  res.json({ ok: true, name: admin.name, message: "PIN '0000'ga qaytarildi" });
-});
+// Admin PIN'ini tiklash endi faqat server konsolidan: `node reset-admin-pin.js`
+// (avval bu ochiq API edi — internetdagi har kim admin PIN'ini 0000 ga qaytara olardi).
 
 // ==================== Email orqali PIN tiklash ====================
 const pinResetAttempts = new Map(); // ip -> { count, resetAt }
@@ -206,9 +219,9 @@ app.post("/api/auth/forgot-pin", async (req, res) => {
   if (!employee) {
     return res.json({ ok: true });
   }
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = String(crypto.randomInt(100000, 1000000));
   const expiresAt = Date.now() + 10 * 60 * 1000;
-  upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify({ code, expiresAt }));
+  upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify({ code, expiresAt, attempts: 0 }));
   try {
     await sendResetEmail(employee.email, code, employee.name);
     res.json({ ok: true });
@@ -220,6 +233,10 @@ app.post("/api/auth/forgot-pin", async (req, res) => {
 
 // 2-qadam: kod va yangi PIN tasdiqlanadi
 app.post("/api/auth/reset-pin-with-code", (req, res) => {
+  const ip = req.ip || "unknown";
+  if (!checkPinResetRateLimit(ip)) {
+    return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
+  }
   const { email, code, newPin } = req.body || {};
   if (!email || !code || !newPin) return res.status(400).json({ error: "missing_fields" });
   if (!/^\d{4,6}$/.test(String(newPin))) return res.status(400).json({ error: "invalid_pin" });
@@ -229,7 +246,13 @@ app.post("/api/auth/reset-pin-with-code", (req, res) => {
   const row = getStmt.get(`uvix:pinReset:${employee.id}`);
   if (!row) return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
   const record = JSON.parse(row.value);
-  if (record.code !== String(code) || Date.now() > record.expiresAt) {
+  const codeOk = typeof record.code === "string" && String(code).length === record.code.length &&
+    crypto.timingSafeEqual(Buffer.from(String(code)), Buffer.from(record.code));
+  if (!codeOk || Date.now() > record.expiresAt) {
+    // 5 ta noto'g'ri urinishdan keyin kod butunlay bekor qilinadi
+    record.attempts = (record.attempts || 0) + 1;
+    if (record.attempts >= 5 || Date.now() > record.expiresAt) deleteStmt.run(`uvix:pinReset:${employee.id}`);
+    else upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify(record));
     return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
   }
   employee.pin = bcrypt.hashSync(String(newPin), 10);
@@ -240,11 +263,12 @@ app.post("/api/auth/reset-pin-with-code", (req, res) => {
 
 // Kirish — PIN tekshiriladi, muvaffaqiyatli bo'lsa token beriladi
 app.post("/api/auth/login", (req, res) => {
-  const ip = req.ip || req.connection?.remoteAddress || "unknown";
-  if (!checkRateLimit(ip)) {
+  const { employeeId, name, pin } = req.body || {};
+  // Cheklov IP + xodim bo'yicha: bir ofisdagi (bitta IP) xodimlar bir-birini bloklab qo'ymaydi
+  const limitKey = `${req.ip || "unknown"}:${employeeId || String(name || "").toLowerCase()}`;
+  if (!checkRateLimit(limitKey)) {
     return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
   }
-  const { employeeId, name, pin } = req.body || {};
   if ((!employeeId && !name) || !pin) {
     return res.status(400).json({ error: "missing_fields" });
   }
@@ -260,8 +284,8 @@ app.post("/api/auth/login", (req, res) => {
     employee.pin = bcrypt.hashSync(String(pin), 10);
     writeEmployees(employees);
   }
-  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
-  res.json({ token, employee: { id: employee.id, name: employee.name, role: employee.role } });
+  clearRateLimit(limitKey);
+  res.json(issueToken(employee));
 });
 
 // ==================== Middleware — bundan pastdagi HAMMA yo'l token talab qiladi ====================
@@ -269,17 +293,74 @@ function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: "no_token" });
+  let payload;
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
+    payload = jwt.verify(token, JWT_SECRET);
   } catch {
     return res.status(401).json({ error: "invalid_token" });
   }
+  // Rolni tokendan emas, bazadagi JORIY holatdan olamiz: xodim o'chirilsa yoki
+  // admin huquqi olib tashlansa — bu darhol kuchga kiradi (12 soat kutmasdan).
+  const employee = readEmployees().find((e) => e.id === payload.sub);
+  if (!employee) return res.status(401).json({ error: "invalid_token" });
+  req.user = { sub: employee.id, id: employee.id, name: employee.name, role: employee.role };
+  next();
+}
+// Dizayner va Pechatchi — faqat o'z vazifalarini ko'radigan "ishchi" rollar (pul ma'lumotlarisiz)
+const WORKER_ROLES = new Set(["designer", "printer"]);
+const isWorker = (user) => WORKER_ROLES.has(user?.role);
+// Ishchi rollar o'qishi/yozishi mumkin bo'lgan KV kalitlari (qolgani — 403)
+const WORKER_READ_KEYS = new Set(["uvix:employees", "uvix:appearance", "uvix:settings"]);
+const WORKER_WRITE_KEYS = new Set(["uvix:employees"]); // faqat o'z PIN'ini o'zgartirish uchun
+function requireStaff(req, res, next) {
+  if (isWorker(req.user)) return res.status(403).json({ error: "forbidden", message: "Bu bo'lim sizning rolingiz uchun yopiq" });
+  next();
+}
+function requireAdmin(req, res, next) {
+  if (req.user?.role !== "admin") return res.status(403).json({ error: "forbidden", message: "Faqat administrator uchun" });
+  next();
 }
 app.use("/api/kv", requireAuth);
 
+// ==================== Face ID / barmoq izi (passkey) ====================
+passkeyApi = require("./passkeys")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, issueToken,
+  rateLimit: (key) => checkRateLimit(`passkey:${key}`),
+});
+
+// ==================== Dizayner / Pechatchi vazifalari ====================
+registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker });
+
+// ==================== KV kirish huquqlari ====================
+// Sozlamalardagi maxfiy maydonlar — faqat admin ko'radi/o'zgartiradi
+const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
+// Oddiy xodim yozishi mumkin bo'lgan kalitlar (qolganlari — faqat admin)
+const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
+// Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
+function isInternalKey(key) {
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys";
+}
+function sanitizeEmployeesForClient(list, user) {
+  // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
+  const isAdmin = !user || user.role === "admin";
+  return list.map(({ pin, ...rest }) => {
+    if (!isAdmin && rest.id !== user.id) delete rest.email;
+    return rest;
+  });
+}
+function sanitizeSettingsForClient(settings, isAdmin, user) {
+  if (isWorker(user) && settings && typeof settings === "object") {
+    // Ishchilarga faqat ko'rinishga oid sozlamalar (kurs, summa formatlari va h.k. emas)
+    return {};
+  }
+  if (isAdmin || !settings || typeof settings !== "object") return settings;
+  const copy = { ...settings };
+  SECRET_SETTING_FIELDS.forEach((f) => delete copy[f]);
+  return copy;
+}
+
 // ==================== Foto hisobot (buyurtma rasmlari) ====================
-app.post("/api/photos/upload", requireAuth, (req, res) => {
+app.post("/api/photos/upload", requireAuth, requireStaff, (req, res) => {
   upload.array("photos", 10)(req, res, (err) => {
     if (err) return res.status(400).json({ error: "upload_failed", message: err.message });
     const files = req.files || [];
@@ -304,10 +385,20 @@ app.get("/api/photos/:filename", (req, res) => {
   if (!filePath.startsWith(UPLOADS_DIR) || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: "not_found" });
   }
+  // Faqat rasm/video/ovoz/PDF brauzerda ochiladi. Qolgan hamma narsa (HTML, SVG, exe, zip...) —
+  // faqat yuklab olinadi: mijoz yuborgan zararli fayl sahifamiz ichida ishga tushib ketmasligi uchun.
+  const ext = path.extname(filename).toLowerCase();
+  const INLINE = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm", ".mov", ".m4a", ".ogg", ".mp3", ".pdf"]);
+  const wantName = typeof req.query.name === "string" ? req.query.name.replace(/[\r\n"\\/]/g, "").slice(0, 150) : "";
+  if (!INLINE.has(ext) || req.query.dl) {
+    res.setHeader("Content-Type", INLINE.has(ext) ? (ext === ".pdf" ? "application/pdf" : "application/octet-stream") : "application/octet-stream");
+    return res.download(filePath, wantName || filename);
+  }
+  res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox");
   res.sendFile(filePath);
 });
 
-app.delete("/api/photos/:filename", requireAuth, (req, res) => {
+app.delete("/api/photos/:filename", requireAuth, requireStaff, (req, res) => {
   const filename = req.params.filename.replace(/[^a-zA-Z0-9.]/g, "");
   const filePath = path.join(UPLOADS_DIR, filename);
   if (filePath.startsWith(UPLOADS_DIR) && fs.existsSync(filePath)) {
@@ -317,8 +408,20 @@ app.delete("/api/photos/:filename", requireAuth, (req, res) => {
 });
 
 app.get("/api/kv/:key", (req, res) => {
-  const row = getStmt.get(req.params.key);
+  const key = req.params.key;
+  if (isInternalKey(key)) return res.status(403).json({ error: "forbidden" });
+  if (isWorker(req.user) && !WORKER_READ_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
+  const row = getStmt.get(key);
   if (!row) return res.status(404).json({ error: "not_found" });
+  const isAdmin = req.user.role === "admin";
+  if (key === "uvix:employees") {
+    return res.json({ key, value: JSON.stringify(sanitizeEmployeesForClient(readEmployees(), req.user)) });
+  }
+  if (key === "uvix:settings") {
+    try {
+      return res.json({ key, value: JSON.stringify(sanitizeSettingsForClient(JSON.parse(row.value), isAdmin, req.user)) });
+    } catch { /* buzilgan JSON — pastda xom holda qaytaramiz */ }
+  }
   res.json({ key: row.key, value: row.value });
 });
 
@@ -492,32 +595,95 @@ function notifyExpensesDiff(oldValue, newValue) {
   }
 }
 
+// Xodimlar ro'yxatini saqlash — server tomonda qat'iy tekshiruv bilan.
+// Admin: qo'shish/o'chirish/rol/PIN o'zgartirishi mumkin (lekin oxirgi adminni o'chira olmaydi).
+// Oddiy xodim: faqat O'ZINING PIN'ini o'zgartira oladi, qolgan hamma narsa e'tiborsiz qoldiriladi.
+function mergeEmployees(incoming, user) {
+  const existing = readEmployees();
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  const isAdmin = user.role === "admin";
+  const validPin = (p) => typeof p === "string" && /^\d{4,6}$/.test(p);
+
+  if (!isAdmin) {
+    const mine = incoming.find((e) => e && e.id === user.id);
+    const result = existing.map((e) => {
+      if (e.id === user.id && mine && validPin(mine.pin) && !pinMatches(mine.pin, e.pin)) {
+        return { ...e, pin: bcrypt.hashSync(mine.pin, 10) };
+      }
+      return e;
+    });
+    return { list: result };
+  }
+
+  const result = [];
+  const seen = new Set();
+  for (const e of incoming) {
+    if (!e || typeof e.id !== "string" || seen.has(e.id)) continue;
+    seen.add(e.id);
+    const old = byId.get(e.id);
+    const name = String(e.name || old?.name || "").trim();
+    if (!name) continue;
+    const role = e.role === "admin" ? "admin" : (typeof e.role === "string" ? e.role : old?.role || "operator");
+    let pin = old?.pin;
+    if (validPin(e.pin) && !(old && pinMatches(e.pin, old.pin))) pin = bcrypt.hashSync(e.pin, 10);
+    if (!pin) return { error: "Yangi xodim uchun 4-6 xonali PIN kerak" };
+    // Yuborilmagan maydonlar (masalan email) eskisidan saqlanadi — tasodifan o'chib ketmasligi uchun
+    const { pin: _ignored, hasPasskey: _hp, ...rest } = e;
+    const { pin: _oldPin, ...oldRest } = old || {};
+    result.push({ ...oldRest, ...rest, name, role, pin });
+  }
+  if (!result.some((e) => e.role === "admin")) return { error: "Kamida bitta administrator qolishi shart" };
+  return { list: result };
+}
+
 app.put("/api/kv/:key", (req, res) => {
+  const key = req.params.key;
   const { value } = req.body || {};
   if (typeof value !== "string") {
     return res.status(400).json({ error: "value_must_be_string" });
   }
-  if (req.params.key.length > 200) {
+  if (key.length > 200) {
     return res.status(400).json({ error: "key_too_long" });
   }
-  const oldRow = getStmt.get(req.params.key);
+  if (isInternalKey(key)) return res.status(403).json({ error: "forbidden" });
+  const isAdmin = req.user.role === "admin";
+  if (isWorker(req.user) && !WORKER_WRITE_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
+  if (!isAdmin && !USER_WRITABLE_KEYS.has(key)) {
+    return res.status(403).json({ error: "forbidden", message: "Faqat administrator uchun" });
+  }
+  const oldRow = getStmt.get(key);
   const oldValue = oldRow ? oldRow.value : null;
-  // Xodimlar ro'yxati yozilganda — hali hash qilinmagan PIN'larni shaffof ravishda hash qilamiz
-  if (req.params.key === "uvix:employees") {
+
+  if (key === "uvix:employees") {
+    let list;
+    try { list = JSON.parse(value); } catch { return res.status(400).json({ error: "invalid_json" }); }
+    if (!Array.isArray(list)) return res.status(400).json({ error: "must_be_array" });
+    const merged = mergeEmployees(list, req.user);
+    if (merged.error) return res.status(400).json({ error: "invalid_employees", message: merged.error });
+    writeEmployees(merged.list);
+    passkeyApi.removeForMissingEmployees(new Set(merged.list.map((e) => e.id)));
+    return res.json({ key, value: JSON.stringify(sanitizeEmployeesForClient(merged.list, req.user)) });
+  }
+
+  if (key === "uvix:settings" && !isAdmin) {
+    // Oddiy xodim maxfiy maydonlarni ko'rmaydi va o'zgartira olmaydi — eskisini saqlab qolamiz
+    let next;
+    try { next = JSON.parse(value); } catch { return res.status(400).json({ error: "invalid_json" }); }
+    const prev = oldValue ? JSON.parse(oldValue) : {};
+    SECRET_SETTING_FIELDS.forEach((f) => {
+      if (f in prev) next[f] = prev[f]; else delete next[f];
+    });
+    upsertStmt.run(key, JSON.stringify(next));
+    return res.json({ key, value: JSON.stringify(sanitizeSettingsForClient(next, false)) });
+  }
+
+  if (key === "uvix:leads") {
+    // Dizayner/pechatchi vazifa holatini o'zgartirgan bo'lsa, menejerning eskirgan nusxasi uni bosib ketmasin
     try {
-      const list = JSON.parse(value);
-      if (Array.isArray(list)) {
-        list.forEach((e) => {
-          if (e && typeof e.pin === "string" && !isHashed(e.pin) && /^\d{4,6}$/.test(e.pin)) {
-            e.pin = bcrypt.hashSync(e.pin, 10);
-          }
-        });
-        upsertStmt.run(req.params.key, JSON.stringify(list));
-        return res.json({ key: req.params.key, value: JSON.stringify(list) });
-      }
-    } catch {
-      // JSON emas yoki massiv emas — oddiy holatda davom etamiz
-    }
+      const merged = mergeLeadTaskState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []);
+      upsertStmt.run(key, JSON.stringify(merged));
+      return res.json({ key, value: JSON.stringify(merged) });
+    } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
   upsertStmt.run(req.params.key, value);
   res.json({ key: req.params.key, value });
@@ -531,7 +697,8 @@ app.put("/api/kv/:key", (req, res) => {
 });
 
 
-app.delete("/api/kv/:key", (req, res) => {
+app.delete("/api/kv/:key", requireAdmin, (req, res) => {
+  if (isInternalKey(req.params.key) || req.params.key === "uvix:employees") return res.status(403).json({ error: "forbidden" });
   deleteStmt.run(req.params.key);
   res.json({ key: req.params.key, deleted: true });
 });
@@ -539,11 +706,12 @@ app.delete("/api/kv/:key", (req, res) => {
 app.get("/api/kv", (req, res) => {
   const prefix = req.query.prefix || "";
   const rows = listStmt.all(`${prefix}%`);
-  res.json({ keys: rows.map((r) => r.key) });
+  const keys = rows.map((r) => r.key).filter((k) => !isInternalKey(k) && (!isWorker(req.user) || WORKER_READ_KEYS.has(k)));
+  res.json({ keys });
 });
 
 // Qo'lda "Hoziroq yubor" — Sozlamalar sahifasidagi tugma shu yerni chaqiradi (faqat tizimga kirgan foydalanuvchi uchun)
-app.post("/api/backup/send-now", requireAuth, (req, res) => {
+app.post("/api/backup/send-now", requireAuth, requireAdmin, (req, res) => {
   const cfg = getTelegramConfig();
   if (!cfg) return res.status(400).json({ error: "telegram_not_configured" });
   runDailyBackup()
@@ -562,19 +730,69 @@ app.get("*", (req, res, next) => {
 });
 
 // ==================== Telegram shaxsiy akkaunt (CRM chat) ====================
-function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text, mediaUrl, mediaType, out, date }) {
-  try {
-    // Xabarni saqlaymiz (out=true bo'lsa — bu hisobning boshqa qurilmasidan
-    // to'g'ridan-to'g'ri yuborilgan chiquvchi xabar, u ham CRM'da ko'rinishi kerak)
-    const row = getStmt.get("uvix:telegramMessages");
-    const allMessages = row ? JSON.parse(row.value) : {};
-    if (!allMessages[chatId]) allMessages[chatId] = [];
-    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, mediaUrl: mediaUrl || null, mediaType: mediaType || null, out: !!out, date });
-    upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
+// ---- Telegram xabarlarini saqlash (takrorlanishsiz) ----
+function normalizeTgMessage(m, out) {
+  return {
+    id: crypto.randomUUID(),
+    text: m.text || "", mediaUrl: m.mediaUrl || null, mediaUrlAlt: m.mediaUrlAlt || null, mediaType: m.mediaType || null,
+    fileName: m.fileName || null, fileSize: m.fileSize || null,
+    lat: m.lat ?? null, lng: m.lng ?? null,
+    tgId: m.tgId ?? null, replyToTgId: m.replyToTgId ?? null,
+    out: !!out, date: m.date || new Date().toISOString(),
+  };
+}
+// Mavjud xabarni topadi: avval Telegram ID bo'yicha, bo'lmasa (ID'siz eski yozuvlar) — matn + yo'nalish + vaqt (±3 daqiqa)
+function findSameMessage(list, m) {
+  if (m.tgId != null) {
+    const byId = list.find((x) => x.tgId === m.tgId);
+    if (byId) return byId;
+  }
+  const t = new Date(m.date).getTime();
+  return list.find((x) => x.tgId == null && !!x.out === !!m.out && (x.text || "") === (m.text || "") && (x.mediaType || null) === (m.mediaType || null)
+    && Math.abs(new Date(x.date).getTime() - t) < 3 * 60 * 1000);
+}
+// Xabarlarni suhbatga qo'shadi; qaytaradi: qo'shilganlar soni
+function mergeTgMessages(chatId, incoming) {
+  const row = getStmt.get("uvix:telegramMessages");
+  const all = row ? JSON.parse(row.value) : {};
+  const list = all[chatId] || (all[chatId] = []);
+  let added = 0;
+  for (const m of incoming) {
+    const same = findSameMessage(list, m);
+    if (same) {
+      if (same.tgId == null && m.tgId != null) same.tgId = m.tgId; // eski yozuvga ID biriktiramiz
+      if (same.replyToTgId == null && m.replyToTgId != null) same.replyToTgId = m.replyToTgId;
+      continue;
+    }
+    list.push(normalizeTgMessage(m, m.out));
+    added++;
+  }
+  list.sort((a, b) => new Date(a.date) - new Date(b.date));
+  upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
+  return added;
+}
 
-    // Lid yaratish/yangilash faqat MIJOZDAN kelgan (kiruvchi) xabarlarda mantiqiy —
-    // chiquvchi xabarda "jo'natuvchi" biz o'zimiz bo'lamiz, mijoz ma'lumoti emas.
-    if (out) return;
+function handleIncomingTelegramMessage(data) {
+  const { chatId, out, fromName, username, phone } = data;
+  if (out) {
+    // Telefondagi Telegram'dan o'zingiz yozgan xabar. CRM'dan yuborilganlar ham shu yerga keladi —
+    // ular avval saqlanib ulgurishi uchun biroz kutamiz, keyin Telegram ID bo'yicha takrorini tashlaymiz.
+    setTimeout(() => {
+      try {
+        const row = getStmt.get("uvix:telegramMessages");
+        const all = row ? JSON.parse(row.value) : {};
+        const hasLead = (JSON.parse(getStmt.get("uvix:leads")?.value || "[]")).some((l) => l.telegramChatId === String(chatId));
+        // Faqat CRM'dagi mijozlar bilan yozishma saqlanadi (shaxsiy suhbatlaringiz CRM'ga tushmaydi)
+        if (!all[chatId] && !hasLead) return;
+        mergeTgMessages(String(chatId), [{ ...data, out: true }]);
+      } catch (e) {
+        console.error("Chiquvchi Telegram xabarini saqlashda xato:", e.message);
+      }
+    }, 2500);
+    return;
+  }
+  try {
+    mergeTgMessages(String(chatId), [{ ...data, out: false }]);
 
     // Agar shu chatId'ga bog'langan lid bo'lmasa — avtomatik yangi lid yaratamiz.
     // Mavjud bo'lsa ham, agar ism hali "Noma'lum" bo'lsa yoki telefon/username hali
@@ -622,11 +840,75 @@ function handleIncomingTelegramMessage({ chatId, fromName, username, phone, text
   }
 }
 
-app.get("/api/telegram-user/status", requireAuth, (req, res) => {
+// "Noma'lum (ID)" bo'lib qolgan lidlarga Telegram'dan haqiqiy ism, username va telefonni yozadi
+// Botlar (CardXabar kabi), kanallar va Telegram xizmati bilan yozishmalarni CRM'dan olib tashlaydi.
+// Lid faqat avtomatik ochilgan va hech kim tegmagan bo'lsa o'chiriladi.
+async function removeBotChats() {
+  if (!telegramUserbot.isConnected()) return { removedChats: 0, removedLeads: 0 };
+  const msgs = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
+  const leads = JSON.parse(getStmt.get("uvix:leads")?.value || "[]");
+  const ids = new Set([...Object.keys(msgs), ...leads.filter((l) => l.telegramChatId).map((l) => String(l.telegramChatId))]);
+  const bots = new Set();
+  for (const id of ids) {
+    try { if ((await telegramUserbot.isBotChat(id)) === true) bots.add(id); } catch { /* aniqlab bo'lmadi — tegmaymiz */ }
+  }
+  if (!bots.size) return { removedChats: 0, removedLeads: 0 };
+  const freshMsgs = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
+  let removedChats = 0;
+  for (const id of bots) if (freshMsgs[id]) { delete freshMsgs[id]; removedChats++; }
+  upsertStmt.run("uvix:telegramMessages", JSON.stringify(freshMsgs));
+  const freshLeads = JSON.parse(getStmt.get("uvix:leads")?.value || "[]");
+  const untouched = (l) => l.createdBy === "Telegram (avtomatik)" && (l.stage || "new") === "new" && !l.orderId && !l.design && !l.print
+    && !Number(l.estimatedValue) && !l.manager;
+  const kept = freshLeads.filter((l) => !(l.telegramChatId && bots.has(String(l.telegramChatId)) && untouched(l)));
+  const removedLeads = freshLeads.length - kept.length;
+  if (removedLeads) upsertStmt.run("uvix:leads", JSON.stringify(kept));
+  return { removedChats, removedLeads };
+}
+
+async function repairUnknownTelegramNames() {
+  if (!telegramUserbot.isConnected()) return { fixed: 0 };
+  const cleaned = await removeBotChats().catch((e) => { console.error("Botlarni tozalashda xato:", e.message); return {}; });
+  if (cleaned.removedChats || cleaned.removedLeads) console.log(`Telegram: ${cleaned.removedChats} ta bot suhbati va ${cleaned.removedLeads} ta avtomatik lid olib tashlandi`);
+  const leadsRow = getStmt.get("uvix:leads");
+  const leads = leadsRow ? JSON.parse(leadsRow.value) : [];
+  const targets = leads.filter((l) => l.telegramChatId && (!l.customer || l.customer.startsWith("Noma'lum") || !l.telegramUsername || !l.phone));
+  if (!targets.length) return { fixed: 0 };
+  const names = await telegramUserbot.resolveChatNames([...new Set(targets.map((l) => String(l.telegramChatId)))]);
+  // Oraliqda boshqa o'zgarish bo'lgan bo'lishi mumkin — yangidan o'qib, faqat kerakli maydonlarni yozamiz
+  const freshRow = getStmt.get("uvix:leads");
+  const fresh = freshRow ? JSON.parse(freshRow.value) : [];
+  let fixed = 0;
+  for (const l of fresh) {
+    const info = l.telegramChatId && names[String(l.telegramChatId)];
+    if (!info) continue;
+    let changed = false;
+    if (!l.customer || l.customer.startsWith("Noma'lum")) { l.customer = info.name; changed = true; }
+    if (!l.telegramUsername && info.username) {
+      l.telegramUsername = info.username;
+      if (!l.notes) l.notes = `Telegram: @${info.username}`;
+      changed = true;
+    }
+    if (!l.phone && info.phone) { l.phone = `+${info.phone}`; changed = true; }
+    if (changed) fixed++;
+  }
+  if (fixed) upsertStmt.run("uvix:leads", JSON.stringify(fresh));
+  return { fixed };
+}
+
+app.post("/api/telegram-user/refresh-names", requireAuth, requireStaff, async (req, res) => {
+  try {
+    res.json({ ok: true, ...(await repairUnknownTelegramNames()) });
+  } catch (e) {
+    res.status(500).json({ error: "refresh_failed", message: e.message });
+  }
+});
+
+app.get("/api/telegram-user/status", requireAuth, requireStaff, (req, res) => {
   res.json(telegramUserbot.getStatus());
 });
 
-app.get("/api/telegram-user/chats", requireAuth, (req, res) => {
+app.get("/api/telegram-user/chats", requireAuth, requireStaff, (req, res) => {
   const row = getStmt.get("uvix:telegramMessages");
   const allMessages = row ? JSON.parse(row.value) : {};
   const seenRow = getStmt.get("uvix:telegramLastSeen");
@@ -635,13 +917,13 @@ app.get("/api/telegram-user/chats", requireAuth, (req, res) => {
     const last = msgs[msgs.length - 1];
     const lastIncoming = [...msgs].reverse().find((m) => !m.out);
     const unread = !!(lastIncoming && (!lastSeen[chatId] || new Date(lastIncoming.date) > new Date(lastSeen[chatId])));
-    return { chatId, lastText: last?.text || "", lastDate: last?.date || null, unread };
+    return { chatId, lastText: previewText(last), lastDate: last?.date || null, unread };
   });
   chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
   res.json({ chats });
 });
 
-app.post("/api/telegram-user/mark-read", requireAuth, (req, res) => {
+app.post("/api/telegram-user/mark-read", requireAuth, requireStaff, (req, res) => {
   const { chatId } = req.body || {};
   if (!chatId) return res.status(400).json({ error: "missing_chatId" });
   const seenRow = getStmt.get("uvix:telegramLastSeen");
@@ -651,44 +933,198 @@ app.post("/api/telegram-user/mark-read", requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/telegram-user/connect", requireAuth, async (req, res) => {
+app.post("/api/telegram-user/connect", requireAuth, requireAdmin, async (req, res) => {
   const row = getStmt.get("uvix:settings");
   const settings = row ? JSON.parse(row.value) : {};
   const result = await telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage);
+  if (result.ok) repairUnknownTelegramNames().catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
   if (result.ok) res.json({ ok: true });
   else res.status(400).json({ error: "connect_failed", message: result.error });
 });
 
-app.post("/api/telegram-user/disconnect", requireAuth, async (req, res) => {
+app.post("/api/telegram-user/disconnect", requireAuth, requireAdmin, async (req, res) => {
   await telegramUserbot.disconnect();
   res.json({ ok: true });
 });
 
-app.get("/api/telegram-user/messages/:chatId", requireAuth, (req, res) => {
+// Suhbat ochilganda Telegram'dan so'nggi xabarlar tortib olinadi (telefondan yozganlaringiz ham).
+// Bir suhbat uchun daqiqasiga ko'pi bilan bir marta — Telegram cheklovlariga rioya qilish uchun.
+const historySyncedAt = new Map();
+async function syncChatHistory(chatId) {
+  if (!telegramUserbot.isConnected()) return;
+  const last = historySyncedAt.get(chatId) || 0;
+  if (Date.now() - last < 60 * 1000) return;
+  historySyncedAt.set(chatId, Date.now());
+  const row = getStmt.get("uvix:telegramMessages");
+  const known = new Set(((row ? JSON.parse(row.value) : {})[chatId] || []).map((m) => m.tgId).filter((x) => x != null));
+  const { messages } = await telegramUserbot.fetchHistory(chatId, { limit: 50, knownTgIds: known });
+  if (messages.length) mergeTgMessages(chatId, messages);
+}
+app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, async (req, res) => {
+  const chatId = String(req.params.chatId).slice(0, 64);
+  try {
+    await Promise.race([syncChatHistory(chatId), new Promise((r) => setTimeout(r, 8000))]);
+  } catch (e) {
+    console.error("Suhbat tarixini olishda xato:", e.message);
+  }
   const row = getStmt.get("uvix:telegramMessages");
   const allMessages = row ? JSON.parse(row.value) : {};
-  res.json({ messages: allMessages[req.params.chatId] || [] });
+  res.json({ messages: allMessages[chatId] || [] });
 });
 
-app.post("/api/telegram-user/send", requireAuth, async (req, res) => {
-  const { chatId, text } = req.body || {};
-  if (!chatId || !text) return res.status(400).json({ error: "missing_fields" });
+// ---- Chatdan yuborish: matn, rasm, ovozli xabar, joylashuv, reaksiya ----
+const tgAudio = require("./audio");
+function previewText(m) {
+  if (!m) return "";
+  if (m.mediaType === "photo") return m.text ? `📷 ${m.text}` : "📷 Rasm";
+  if (m.mediaType === "voice") return "🎤 Ovozli xabar";
+  if (m.mediaType === "location") return "📍 Joylashuv";
+  if (m.mediaType === "video") return m.text ? `🎥 ${m.text}` : "🎥 Video";
+  if (m.mediaType === "document") return `📎 ${m.fileName || "Hujjat"}`;
+  return m.text || "";
+}
+function storeOutgoing(chatId, msg) {
+  const row = getStmt.get("uvix:telegramMessages");
+  const all = row ? JSON.parse(row.value) : {};
+  if (!all[chatId]) all[chatId] = [];
+  // Telegram shu xabarni "yangi xabar" sifatida ham yuborgan bo'lishi mumkin — takrorlamaymiz
+  const existing = msg.tgId != null ? all[chatId].find((x) => x.tgId === msg.tgId) : null;
+  if (existing) {
+    Object.assign(existing, msg, { out: true });
+    upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
+    return existing;
+  }
+  const full = { id: crypto.randomUUID(), out: true, date: new Date().toISOString(), text: "", mediaUrl: null, mediaType: null, ...msg };
+  all[chatId].push(full);
+  upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
+  return full;
+}
+const validChatId = (v) => typeof v === "string" || typeof v === "number" ? String(v).length > 0 && String(v).length < 64 : false;
+const replyOpt = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
+
+app.post("/api/telegram-user/send", requireAuth, requireStaff, async (req, res) => {
+  const { chatId, text, replyToTgId } = req.body || {};
+  if (!validChatId(chatId) || !text || typeof text !== "string") return res.status(400).json({ error: "missing_fields" });
   try {
-    await telegramUserbot.sendMessage(chatId, text);
-    const row = getStmt.get("uvix:telegramMessages");
-    const allMessages = row ? JSON.parse(row.value) : {};
-    if (!allMessages[chatId]) allMessages[chatId] = [];
-    allMessages[chatId].push({ id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), text, out: true, date: new Date().toISOString() });
-    upsertStmt.run("uvix:telegramMessages", JSON.stringify(allMessages));
-    res.json({ ok: true });
+    const { tgId } = await telegramUserbot.sendMessage(chatId, text, { replyTo: replyOpt(replyToTgId) });
+    const message = storeOutgoing(String(chatId), { text, tgId, replyToTgId: replyOpt(replyToTgId) || null });
+    res.json({ ok: true, message });
   } catch (e) {
     res.status(500).json({ error: "send_failed", message: e.message });
   }
 });
 
+// Rasm yoki ovozli xabar (multipart: file, chatId, kind=photo|voice, caption, replyToTgId)
+const chatUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^a-z0-9.]/g, "");
+      cb(null, `${crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`);
+    },
+  }),
+  limits: { fileSize: 50 * 1024 * 1024, files: 1 }, // video/hujjat 50 MB gacha (rasm va ovoz — 15 MB, pastda tekshiriladi)
+});
+app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) => {
+  chatUpload.single("file")(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: "upload_failed", message: err.message });
+    const f = req.file;
+    const { chatId, kind, caption, replyToTgId } = req.body || {};
+    if (!f || !validChatId(chatId) || !["photo", "video", "document", "voice"].includes(kind)) {
+      if (f) fs.unlink(f.path, () => {});
+      return res.status(400).json({ error: "missing_fields" });
+    }
+    const cleanup = [];
+    try {
+      const replyTo = replyOpt(replyToTgId);
+      // Brauzer fayl nomini latin1 qilib yuboradi — o'zbekcha/ruscha nomlar buzilmasligi uchun tiklaymiz
+      const originalName = Buffer.from(f.originalname || "fayl", "latin1").toString("utf8").replace(/[\r\n\\/]/g, "_").slice(0, 150);
+      if ((kind === "photo" || kind === "voice") && f.size > 15 * 1024 * 1024) throw new Error("Fayl 15 MB dan katta");
+      if (kind === "video") {
+        if (!f.mimetype.startsWith("video/")) throw new Error("Video fayli kutilgan edi");
+        const { tgId } = await telegramUserbot.sendVideo(chatId, f.path, { caption, replyTo });
+        const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "video", mediaUrl: `/api/photos/${f.filename}`, fileName: originalName, fileSize: f.size, tgId, replyToTgId: replyTo || null });
+        return res.json({ ok: true, message });
+      }
+      if (kind === "document") {
+        const { tgId } = await telegramUserbot.sendDocument(chatId, f.path, { fileName: originalName, caption, replyTo });
+        const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "document", mediaUrl: `/api/photos/${f.filename}`, fileName: originalName, fileSize: f.size, tgId, replyToTgId: replyTo || null });
+        return res.json({ ok: true, message });
+      }
+      if (kind === "photo") {
+        if (!f.mimetype.startsWith("image/")) throw new Error("Rasm fayli kutilgan edi");
+        const { tgId } = await telegramUserbot.sendPhoto(chatId, f.path, { caption, replyTo });
+        const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "photo", mediaUrl: `/api/photos/${f.filename}`, tgId, replyToTgId: replyTo || null });
+        return res.json({ ok: true, message });
+      }
+      // Ovoz: Telegram uchun OGG/Opus, CRM'da ijro uchun M4A
+      const base = path.join(UPLOADS_DIR, path.parse(f.filename).name);
+      let sendPath = f.path;
+      const ogg = await tgAudio.toTelegramVoice(f.path, `${base}.ogg`).catch((e) => { console.error("Ovozni o'girishda xato:", e.message); return null; });
+      if (ogg) sendPath = ogg; // OGG'ni o'chirmaymiz — CRM'da ham ijro uchun ishlatiladi
+      const duration = tgAudio.probeDuration(sendPath);
+      const { tgId } = await telegramUserbot.sendVoice(chatId, sendPath, { replyTo, duration });
+      // Ikki format: M4A (iPhone Safari) + OGG/asl yozuv (qolgan brauzerlar)
+      const m4a = await tgAudio.toPlayableM4a(f.path, `${base}.m4a`).catch(() => null);
+      const altName = ogg ? path.basename(ogg) : f.filename;
+      if (ogg) cleanup.push(f.path);
+      const message = storeOutgoing(String(chatId), {
+        mediaType: "voice",
+        mediaUrl: `/api/photos/${m4a ? path.basename(m4a) : altName}`,
+        mediaUrlAlt: m4a ? `/api/photos/${altName}` : null,
+        duration, tgId, replyToTgId: replyTo || null,
+      });
+      res.json({ ok: true, message });
+    } catch (e) {
+      fs.unlink(f.path, () => {});
+      res.status(500).json({ error: "send_failed", message: e.message });
+    } finally {
+      cleanup.forEach((p) => fs.unlink(p, () => {}));
+    }
+  });
+});
+
+app.post("/api/telegram-user/send-location", requireAuth, requireStaff, async (req, res) => {
+  const { chatId, lat, lng, replyToTgId } = req.body || {};
+  const la = Number(lat), lo = Number(lng);
+  if (!validChatId(chatId) || !Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) {
+    return res.status(400).json({ error: "bad_location", message: "Joylashuv noto'g'ri" });
+  }
+  try {
+    const { tgId } = await telegramUserbot.sendLocation(chatId, la, lo, { replyTo: replyOpt(replyToTgId) });
+    const message = storeOutgoing(String(chatId), { mediaType: "location", lat: la, lng: lo, tgId, replyToTgId: replyOpt(replyToTgId) || null });
+    res.json({ ok: true, message });
+  } catch (e) {
+    res.status(500).json({ error: "send_failed", message: e.message });
+  }
+});
+
+// Reaksiya: emoji — qo'yish, null — olib tashlash
+const ALLOWED_REACTIONS = new Set(["👍", "❤", "🔥", "😁", "😢", "🙏", "👌"]);
+app.post("/api/telegram-user/react", requireAuth, requireStaff, async (req, res) => {
+  const { chatId, messageId, emoji } = req.body || {};
+  if (!validChatId(chatId) || !messageId || (emoji && !ALLOWED_REACTIONS.has(emoji))) return res.status(400).json({ error: "bad_request" });
+  const row = getStmt.get("uvix:telegramMessages");
+  const all = row ? JSON.parse(row.value) : {};
+  const msg = (all[chatId] || []).find((m) => m.id === messageId);
+  if (!msg) return res.status(404).json({ error: "not_found" });
+  if (!msg.tgId) return res.status(409).json({ error: "no_tg_id", message: "Bu eski xabarga reaksiya qo'yib bo'lmaydi" });
+  try {
+    await telegramUserbot.sendReaction(chatId, msg.tgId, emoji || null);
+    // Yangidan o'qib yozamiz (oraliqda yangi xabar kelgan bo'lishi mumkin)
+    const fresh = JSON.parse(getStmt.get("uvix:telegramMessages").value);
+    const target = (fresh[chatId] || []).find((m) => m.id === messageId);
+    if (target) target.myReaction = emoji || null;
+    upsertStmt.run("uvix:telegramMessages", JSON.stringify(fresh));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: "react_failed", message: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`UVIX backend http://localhost:${PORT} da ishga tushdi`);
-  console.log(`Baza fayli: ${path.join(__dirname, "uvix.db")}`);
+  console.log(`Baza fayli: ${db.DB_PATH}`);
   console.log(`Autentifikatsiya: YOQILGAN (barcha /api/kv/* yo'llari token talab qiladi)`);
 
   // Agar Telegram shaxsiy akkaunt sozlamalari saqlangan bo'lsa, server ishga tushganda
@@ -698,7 +1134,12 @@ app.listen(PORT, () => {
     const settings = row ? JSON.parse(row.value) : {};
     if (settings?.telegramUserApiId && settings?.telegramUserApiHash && settings?.telegramUserSession) {
       telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage).then((r) => {
-        if (r.ok) console.log("Telegram shaxsiy akkaunt: ulandi");
+        if (r.ok) {
+          console.log("Telegram shaxsiy akkaunt: ulandi");
+          repairUnknownTelegramNames()
+            .then((x) => x.fixed && console.log(`Telegram: ${x.fixed} ta "Noma'lum" mijozning ismi tiklandi`))
+            .catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
+        }
         else console.log("Telegram shaxsiy akkaunt: ulanmadi —", r.error);
       });
     }
