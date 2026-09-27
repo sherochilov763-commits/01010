@@ -201,11 +201,11 @@ export async function fetchTelegramMessages(chatId) {
   return data.messages || [];
 }
 
-export async function sendTelegramUserMessage(chatId, text, replyToTgId) {
+export async function sendTelegramUserMessage(chatId, text) {
   const res = await fetch(`${API_BASE}/telegram-user/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ chatId, text, replyToTgId: replyToTgId || undefined }),
+    body: JSON.stringify({ chatId, text }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -214,6 +214,16 @@ export async function sendTelegramUserMessage(chatId, text, replyToTgId) {
   return data;
 }
 
+
+export async function authResetAdminPin() {
+  const res = await fetch(`${API_BASE}/auth/reset-admin-pin`, { method: "POST" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || data.error || `reset failed: ${res.status}`);
+    throw err;
+  }
+  return data;
+}
 
 export function authLogout() {
   clearToken();
@@ -244,65 +254,4 @@ export async function apiDelete(key) {
   if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
   if (!res.ok) throw new Error(`DELETE ${key} failed: ${res.status}`);
   return res.json();
-}
-
-// ---- Dizayner / Pechatchi vazifalari ----
-export async function fetchTasks() {
-  const res = await fetch(`${API_BASE}/tasks`, { headers: authHeaders() });
-  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || "Vazifalarni olib bo'lmadi");
-  return data.tasks || [];
-}
-export async function setTaskStatus(leadId, kind, status) {
-  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(leadId)}/${kind}/status`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ status }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || "Holatni o'zgartirib bo'lmadi");
-  return data.task;
-}
-
-// "Noma'lum" Telegram mijozlarining ismini Telegram'dan qayta so'rash
-export async function refreshTelegramNames() {
-  const res = await fetch(`${API_BASE}/telegram-user/refresh-names`, { method: "POST", headers: authHeaders() });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || "Ismlarni yangilab bo'lmadi");
-  return data;
-}
-
-// ---- Chat: rasm, ovozli xabar, joylashuv, reaksiya ----
-async function tgJson(res, fallback) {
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || fallback);
-  return data;
-}
-// kind: "photo" | "voice"; file: File yoki Blob
-export async function sendTelegramMedia(chatId, kind, file, { caption, replyToTgId, filename } = {}) {
-  const form = new FormData();
-  form.append("chatId", chatId);
-  form.append("kind", kind);
-  if (caption) form.append("caption", caption);
-  if (replyToTgId) form.append("replyToTgId", String(replyToTgId));
-  form.append("file", file, filename || file.name || (kind === "voice" ? "voice.webm" : "photo.jpg"));
-  const res = await fetch(`${API_BASE}/telegram-user/send-media`, { method: "POST", headers: authHeaders(), body: form });
-  return (await tgJson(res, kind === "voice" ? "Ovozli xabar yuborilmadi" : "Rasm yuborilmadi")).message;
-}
-export async function sendTelegramLocation(chatId, lat, lng, replyToTgId) {
-  const res = await fetch(`${API_BASE}/telegram-user/send-location`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ chatId, lat, lng, replyToTgId: replyToTgId || undefined }),
-  });
-  return (await tgJson(res, "Joylashuv yuborilmadi")).message;
-}
-export async function reactTelegramMessage(chatId, messageId, emoji) {
-  const res = await fetch(`${API_BASE}/telegram-user/react`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify({ chatId, messageId, emoji: emoji || null }),
-  });
-  return tgJson(res, "Reaksiya qo'yib bo'lmadi");
 }
