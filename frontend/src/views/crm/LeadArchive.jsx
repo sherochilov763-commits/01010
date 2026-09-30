@@ -6,6 +6,7 @@ import { LEAD_STAGES } from "../../constants.js";
 import { money, moneyCompact } from "../../lib/format.js";
 import { closedDate, inPeriod, isClosed, leadValue, monthKeyOf } from "../../lib/leads.js";
 import { PeriodPicker } from "./PeriodPicker.jsx";
+import { SourceChip, TgHandle } from "../../components/LeadSource.jsx";
 import { exportRows } from "../../lib/excel.js";
 import { THEME } from "../../theme.js";
 
@@ -124,10 +125,12 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: won ? WON.color : LOST.color, flexShrink: 0 }} title={won ? "Yopilgan" : "Yo'qotilgan"} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 700, color: THEME.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.customer}</div>
-                      <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
                         <span>{shortDate(x.date)}</span>
                         {l.phone && <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Phone size={10} /> {l.phone}</span>}
                         {l.manager && <span>{l.manager}</span>}
+                        {l.source && <SourceChip source={l.source} />}
+                        <TgHandle username={l.telegramUsername} />
                       </div>
                     </div>
                     <div style={{ fontWeight: 800, fontSize: 13.5, color: won ? WON.color : THEME.muted, fontFamily: THEME.fontNum, whiteSpace: "nowrap" }}>{money(x.value)}</div>

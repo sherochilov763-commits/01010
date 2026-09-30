@@ -7,6 +7,7 @@ import { TaskChips } from "./TaskAssignModal.jsx";
 import { LeadArchive } from "./LeadArchive.jsx";
 import { closedDate, inPeriod, isClosed, periodRange, periodStats, staleInfo } from "../../lib/leads.js";
 import { PeriodPicker } from "./PeriodPicker.jsx";
+import { LEAD_SOURCES, SourceChip, TgHandle, isAutoTgNote, sourceMeta } from "../../components/LeadSource.jsx";
 
 // Faol bosqichda uzoq turib qolgan lid belgisi
 function StaleBadge({ lead, big = false }) {
@@ -64,6 +65,20 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
         </Field>
         <Field label="Manba (qayerdan kelgan)">
           <input value={source} onChange={(e) => setSource(e.target.value)} style={getInputStyle()} placeholder="Instagram, tavsiya, qo'ng'iroq..." />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
+            {LEAD_SOURCES.map((x) => {
+              const Icon = x.icon;
+              const on = sourceMeta(source)?.key === x.key;
+              return (
+                <button key={x.key} type="button" onClick={() => setSource(x.label)} data-source={x.key}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px 4px 4px", borderRadius: 20, cursor: "pointer", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit",
+                    border: `1px solid ${on ? x.color : THEME.border}`, background: on ? `${x.color}22` : "transparent", color: THEME.text }}>
+                  <span style={{ width: 17, height: 17, borderRadius: "50%", background: x.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon size={10} strokeWidth={2.4} /></span>
+                  {x.label}
+                </button>
+              );
+            })}
+          </div>
         </Field>
         <Field label="Taxminiy summa (so'm)">
           <input value={estimatedValueStr} onChange={(e) => setEstimatedValueStr(fmt(parseInt(e.target.value.replace(/\D/g, ""), 10) || 0))} style={getInputStyle()} placeholder="0" inputMode="numeric" />
@@ -369,13 +384,14 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
                       {lead.phone && (
                         <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 4 }}><Phone size={11} /> {lead.phone}</div>
                       )}
+                      <TgHandle username={lead.telegramUsername} />
                       {lead.estimatedValue > 0 && (
                         <div style={{ fontSize: 12.5, fontWeight: 700, color: THEME.violet }}>{money(lead.estimatedValue)}</div>
                       )}
                       <StaleBadge lead={lead} />
                       {lead.manager && <div style={{ fontSize: 11, color: THEME.muted }}>Menejer: {lead.manager}</div>}
-                      {lead.source && <div style={{ fontSize: 11, color: THEME.muted }}>Manba: {lead.source}</div>}
-                      {lead.notes && <div style={{ fontSize: 11, color: THEME.muted, fontStyle: "italic" }}>{lead.notes}</div>}
+                      {lead.source && <SourceChip source={lead.source} />}
+                      {lead.notes && !isAutoTgNote(lead) && <div style={{ fontSize: 11, color: THEME.muted, fontStyle: "italic" }}>{lead.notes}</div>}
                       <div style={{ marginTop: 8 }}>
                         <TaskChips lead={lead} employees={employees} compact onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
                       </div>
@@ -494,21 +510,27 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
             const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
             const tel = telLink(lead.phone);
             const tg = lead.telegramChatId && onChat ? null : telegramLink(lead);
-            const meta = [lead.source, lead.manager].filter(Boolean).join(" · ");
+            const meta = lead.manager || "";
             return (
               <Card key={lead.id} style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 15.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
                     {lead.phone && <div style={{ fontSize: 13, color: THEME.muted, marginTop: 2 }}>{lead.phone}</div>}
-                    {meta && <div style={{ fontSize: 12, color: THEME.muted, marginTop: 2 }}>{meta}</div>}
+                    {(lead.source || lead.telegramUsername) && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                        <SourceChip source={lead.source} size="md" />
+                        <TgHandle username={lead.telegramUsername} size="md" />
+                      </div>
+                    )}
+                    {meta && <div style={{ fontSize: 12, color: THEME.muted, marginTop: 4 }}>{meta}</div>}
                   </div>
                   {Number(lead.estimatedValue) > 0 && (
                     <div style={{ fontSize: 14.5, fontWeight: 700, color: THEME.violet, whiteSpace: "nowrap" }}>{money(lead.estimatedValue)}</div>
                   )}
                 </div>
                 <StaleBadge lead={lead} big />
-                {lead.notes && <div style={{ fontSize: 13, color: THEME.mutedDark, lineHeight: 1.45 }}>{lead.notes}</div>}
+                {lead.notes && !isAutoTgNote(lead) && <div style={{ fontSize: 13, color: THEME.mutedDark, lineHeight: 1.45 }}>{lead.notes}</div>}
                 <TaskChips lead={lead} employees={employees} onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
 
                 {linkedOrder ? (

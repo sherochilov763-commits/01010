@@ -508,3 +508,7 @@ Menyu pastidagi **«Menyuni sozlash»** (ixcham va tepa panelda — ⚙ belgisi)
   Harakat = bosqich o'zgarishi, tahrir, dizayn/pechat vazifasi holati.
 - **Tuzatildi:** lidni tahrirlash endi Telegram bog'lanishi, dizayn/pechat vazifalari va sanalarni o'chirib yubormaydi.
 - Kod: `frontend/src/lib/leads.js`, `frontend/src/views/crm/LeadArchive.jsx`.
+- **Lid manbasi ikonka bilan** (`components/LeadSource.jsx`): Telegram, Instagram, Facebook, WhatsApp, Qo'ng'iroq, Sayt, YouTube,
+  Tavsiya, Ofisga keldi, Reklama — erkin matndan kalit so'z bo'yicha aniqlanadi (masalan "Instagram reklama" → Instagram);
+  tanilmagan manba kulrang teg bilan. Lid formasida bir bosishda tanlash tugmalari.
+- **Telegram nikneymi** Telegram ko'k rangida (@username, bosilsa Telegram'da ochiladi); avtomatik "Telegram: @user" izohi takrorlanmaydi.
