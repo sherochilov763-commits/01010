@@ -3,6 +3,7 @@ import LoginScreen from "./auth/LoginScreen.jsx";
 import { authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
+import { NAV_CSS, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
 import { StorageWarning } from "./components/StorageWarning.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } from "./constants.js";
 import { generateOrderNumber } from "./lib/finance.js";
@@ -209,6 +210,8 @@ export default function App() {
     setSettings(next);
     await storageSet("uvix:settings", true, next);
   }
+  // Menyu: joylashuv, tartib, yashirilganlar, telefon paneli (xodimning o'zi yoki admin standarti)
+  const navCfg = useNavPrefs({ currentUser, settings, onSaveSettings: persistSettings, isAdmin: currentUser?.role === "admin" });
 
   async function persistTx(next) {
     setTransactions(next);
@@ -511,7 +514,9 @@ export default function App() {
   }
 
   const isAdmin = currentUser.role === "admin";
-  const visibleNav = NAV.filter((n) => !n.adminOnly || isAdmin);
+  const visibleNav = navCfg.items;
+  const goView = (v) => { setNavFilter(null); setView(v); };
+  const logout = () => { authLogout(); setCurrentUser(null); };
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
   const myTx = isAdmin ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
@@ -521,6 +526,8 @@ export default function App() {
     <div style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
         html, body { overflow-x: hidden; max-width: 100vw; overscroll-behavior-x: none; }
+        /* clip — gorizontal aylanishni to'sadi, lekin (hidden'dan farqli) tepa panelning "yopishqoq"ligini buzmaydi */
+        @supports (overflow-x: clip) { html, body { overflow-x: clip; } }
         * { box-sizing: border-box; }
         .uvix-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
         .uvix-scroll::-webkit-scrollbar-thumb { background: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#D8D4E8"}; border-radius: 4px; }
@@ -613,10 +620,13 @@ export default function App() {
           [style*="grid-template-columns: 1.2fr 0.8fr 0.8fr auto"] { grid-template-columns: 1fr !important; }
         }
         /* Pastki menyu — oxirida turishi shart, hamburger qoidasini bekor qiladi */
+        ${NAV_CSS}
         ${BOTTOM_NAV_CSS}
       `}</style>
-      <div className={`uvix-density-${appearance.density || "comfortable"}`} style={{ display: "flex", minHeight: "100vh", background: THEME.surface, maxWidth: "100vw", overflowX: "hidden" }}>
-        <Sidebar nav={visibleNav} view={view} setView={(v) => { setNavFilter(null); setView(v); }} user={currentUser} onLogout={() => { authLogout(); setCurrentUser(null); }} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}`} style={{ display: "flex", minHeight: "100vh", background: THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
+        <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} />
+        {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} />}
+        {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} />}
         <div style={{ flex: 1, minWidth: 0 }}>
           <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
@@ -777,6 +787,7 @@ export default function App() {
       <SaveStatus />
       <BottomNav
         view={view}
+        tabs={navCfg.mobileBar}
         onNavigate={(v) => { setNavFilter(null); setView(v); }}
         onMore={() => setSidebarOpen(true)}
         onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}

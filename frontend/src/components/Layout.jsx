@@ -1,18 +1,19 @@
 import { ArrowLeft, LogOut, Menu } from "lucide-react";
 import { NAV, roleLabel } from "../constants.js";
+import { EditNavButton, NavEditor } from "./Nav.jsx";
 import { longDateUz } from "../lib/format.js";
 import { THEME } from "../theme.js";
 
 /* ---------------- LOGIN ---------------- */
 /* ---------------- SIDEBAR / TOPBAR ---------------- */
-export function Sidebar({ nav, view, setView, user, onLogout, sidebarStyle, isOpen, onClose }) {
+export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarStyle, isOpen, onClose }) {
   const style = sidebarStyle || "modern";
   const isClassic = style === "classic";
   const isMinimal = style === "minimal";
   return (
     <>
       {isOpen && <div className="uvix-sidebar-backdrop no-print" onClick={onClose} />}
-      <div className={`uvix-sidebar no-print${isOpen ? " uvix-sidebar-open" : ""}`} style={{ width: isMinimal ? 208 : 232, background: THEME.ink, flexShrink: 0, display: "flex", flexDirection: "column", padding: isMinimal ? "20px 10px" : "20px 14px" }}>
+      <div className={`uvix-sidebar no-print${isOpen ? " uvix-sidebar-open" : ""}`} style={{ width: navCfg?.editing ? 300 : isMinimal ? 208 : 232, transition: "width .2s ease", background: THEME.ink, flexShrink: 0, display: "flex", flexDirection: "column", padding: isMinimal ? "20px 10px" : "20px 14px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 6px 24px" }}>
         <div style={{ width: 36, height: 36, borderRadius: 11, background: `linear-gradient(135deg, ${THEME.violet}, ${THEME.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: `0 4px 14px rgba(124,92,252,0.35)` }}>
           <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>UV</span>
@@ -22,6 +23,9 @@ export function Sidebar({ nav, view, setView, user, onLogout, sidebarStyle, isOp
           <div style={{ color: "#837DA3", fontSize: 10.5 }}>Moliya tizimi</div>
         </div>
       </div>
+      {navCfg?.editing ? (
+        <div style={{ overflowY: "auto", flex: 1, margin: "0 -4px", padding: "0 4px" }}><NavEditor nav={navCfg} /></div>
+      ) : (
       <div style={{ display: "flex", flexDirection: "column", gap: isMinimal ? 1 : 3 }}>
         {nav.map((n) => {
           const Icon = n.icon;
@@ -64,7 +68,9 @@ export function Sidebar({ nav, view, setView, user, onLogout, sidebarStyle, isOp
           );
         })}
       </div>
-      <div style={{ flex: 1 }} />
+      )}
+      {!navCfg?.editing && <div style={{ flex: 1 }} />}
+      {navCfg && !navCfg.editing && <div style={{ marginBottom: 6 }}><EditNavButton nav={navCfg} /></div>}
       <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14, display: "flex", alignItems: "center", gap: 9, padding: "14px 8px 4px" }}>
         <div style={{ width: 30, height: 30, borderRadius: "50%", background: `linear-gradient(135deg, ${THEME.violet}, ${THEME.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 11, flexShrink: 0 }}>
           {user.name.slice(0, 1).toUpperCase()}

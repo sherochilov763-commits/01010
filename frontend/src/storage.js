@@ -392,3 +392,19 @@ export async function saveMyDashboard(prefs) {
   if (!res.ok) throw new Error("Ko'rinishni saqlab bo'lmadi");
   return (await res.json()).prefs;
 }
+
+// Shaxsiy menyu sozlamasi (joylashuv, tartib, yashirilganlar, telefon paneli)
+export async function fetchMyNav() {
+  const res = await fetch(`${API_BASE}/me/nav`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  return (await res.json().catch(() => ({}))).prefs || null;
+}
+export async function saveMyNav(prefs) {
+  const res = await fetch(`${API_BASE}/me/nav`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ prefs }),
+  });
+  if (!res.ok) throw new Error("Menyuni saqlab bo'lmadi");
+  return (await res.json()).prefs;
+}

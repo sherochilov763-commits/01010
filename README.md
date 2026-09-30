@@ -475,3 +475,16 @@ Endi (bank ilovalaridagi usul):
 - **Imzolangan challenge** (HMAC, 10 daqiqa, serverda saqlanmaydi, bir martalik) — deploy/qayta ishga tushishdan keyin ham ishlaydi;
   brauzerda 4 daqiqada va ilovaga qaytilganda o'zi yangilanadi.
 - **Limit faqat muvaffaqiyatsiz tekshiruvlarga** (10 daqiqada 8 ta), tayyorlash so'rovlari sanalmaydi.
+
+## Menyuni moslashtirish (joylashuv, tartib, yashirish, telefon paneli)
+
+Menyu pastidagi **«Menyuni sozlash»** (ixcham va tepa panelda — ⚙ belgisi) bosilganda menyuning o'zida tahrirlash ochiladi:
+- **Joylashuv:** Chap panel · Ixcham (faqat ikonlar, ustiga kelganda nomi) · Tepa (gorizontal; sig'maganlari «Yana ▾» ichida).
+  Telefonda har doim pastki panel + chiquvchi menyu.
+- **Tartib:** sudrab (sichqoncha yoki barmoq bilan) yoki ↑/↓ tugmalari (klaviatura uchun ham).
+- **Yashirish:** ko'z belgisi. «Sozlamalar»ni yashirib bo'lmaydi.
+- **Telefon pastki paneli:** 4 ta bo'lim tanlanadi (o'rtada «+» va oxirida «Yana»).
+- **Kimga:** har xodim o'zi uchun (`/api/me/nav`, ichki kalit `uvix:nav:<id>`); admin «Hamma uchun» rejimida standartni
+  belgilaydi (`settings.navDefaults`) — o'z menyusini o'zgartirmagan xodimlarga qo'llanadi. «Standart» tugmasi shaxsiy sozlamani o'chiradi.
+- Kod: `frontend/src/components/Nav.jsx` (useNavPrefs, NavEditor, RailNav, TopNav, NAV_CSS).
+- Tepa panel sahifa aylantirilganda ham ko'rinib turadi (`html, body { overflow-x: clip }`).

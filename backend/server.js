@@ -346,7 +346,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key === "uvix:tgSession" || key === "uvix:tgSessionState";
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState";
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -667,6 +667,33 @@ app.put("/api/me/dashboard", requireAuth, (req, res) => {
     if (st && typeof st === "object" && (!st.color || /^#[0-9A-Fa-f]{6}$/.test(st.color))) cardStyles[id.slice(0, 60)] = { filled: !!st.filled, color: st.color || null };
   });
   const clean = { layout, cardStyles };
+  upsertStmt.run(key, JSON.stringify(clean));
+  res.json({ prefs: clean });
+});
+
+// ---- Har xodimning o'z menyusi (joylashuv, tartib, yashirilganlar, telefon paneli) ----
+const NAV_LAYOUTS = ["side", "rail", "top"];
+function sanitizeNavPrefs(p) {
+  if (!p || typeof p !== "object") return null;
+  const keys = (arr, max) => (Array.isArray(arr) ? arr : []).filter((k) => typeof k === "string" && /^[a-z_]{2,30}$/.test(k)).slice(0, max);
+  return {
+    layout: NAV_LAYOUTS.includes(p.layout) ? p.layout : "side",
+    order: keys(p.order, 40),
+    hidden: keys(p.hidden, 40).filter((k) => k !== "settings"), // Sozlamalarni yashirib bo'lmaydi — aks holda qaytib bo'lmaydi
+    mobileBar: keys(p.mobileBar, 4),
+  };
+}
+app.get("/api/me/nav", requireAuth, (req, res) => {
+  const row = getStmt.get(`uvix:nav:${req.user.id}`);
+  let prefs = null;
+  try { prefs = row ? JSON.parse(row.value) : null; } catch { prefs = null; }
+  res.json({ prefs });
+});
+app.put("/api/me/nav", requireAuth, (req, res) => {
+  const key = `uvix:nav:${req.user.id}`;
+  if (req.body?.prefs === null) { deleteStmt.run(key); return res.json({ prefs: null }); }
+  const clean = sanitizeNavPrefs(req.body?.prefs);
+  if (!clean) return res.status(400).json({ error: "invalid_prefs" });
   upsertStmt.run(key, JSON.stringify(clean));
   res.json({ prefs: clean });
 });

@@ -1,21 +1,25 @@
 // BottomNav.jsx — telefon uchun pastki menyu (bank ilovalaridagidek) va "+" tezkor qo'shish
 import { useEffect, useState } from "react";
-import { LayoutDashboard, Package, Plus, TrendingDown, MoreHorizontal, X } from "lucide-react";
+import { Package, Plus, TrendingDown, MoreHorizontal, X } from "lucide-react";
+import { NAV } from "../constants.js";
+import { NAV_SHORT } from "./Nav.jsx";
 import { THEME } from "../theme.js";
 import { useBackToClose } from "../lib/history.js";
 
-const TABS = [
-  { key: "dashboard", label: "Asosiy", icon: LayoutDashboard },
-  { key: "orders", label: "Buyurtma", icon: Package },
-  { key: "__add" },
-  { key: "expense", label: "Rasxod", icon: TrendingDown },
-  { key: "__more", label: "Yana", icon: MoreHorizontal },
-];
+// Pastki panel: xodim tanlagan 4 ta bo'lim (o'rtada "+" tugmasi) va "Yana"
+function buildTabs(keys) {
+  const tabs = (keys && keys.length ? keys : ["dashboard", "orders", "expense", "crm"]).slice(0, 4)
+    .map((k) => NAV.find((n) => n.key === k)).filter(Boolean)
+    .map((n) => ({ key: n.key, label: NAV_SHORT[n.key] || n.label, icon: n.icon }));
+  const mid = Math.ceil(tabs.length / 2);
+  return [...tabs.slice(0, mid), { key: "__add" }, ...tabs.slice(mid), { key: "__more", label: "Yana", icon: MoreHorizontal }];
+}
 
-export function BottomNav({ view, onNavigate, onMore, onQuickAdd }) {
+export function BottomNav({ view, tabs: tabKeys, onNavigate, onMore, onQuickAdd }) {
   const [sheet, setSheet] = useState(false);
   useBackToClose(sheet, () => setSheet(false));
-  const mainKeys = ["dashboard", "orders", "expense"];
+  const TABS = buildTabs(tabKeys);
+  const mainKeys = TABS.map((t) => t.key).filter((k) => !k.startsWith("__"));
   const moreActive = !mainKeys.includes(view);
 
   useEffect(() => {
@@ -82,9 +86,9 @@ export const BOTTOM_NAV_CSS = `
   .uvix-bottomnav { display: none; }
   @media (max-width: 860px) {
     .uvix-bottomnav {
-      display: flex; align-items: flex-start; gap: 2px;
+      display: flex; align-items: flex-start; gap: 0;
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 150;
-      padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+      padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
     }
     .uvix-hamburger { display: none !important; }
     .uvix-main-pad { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; }
@@ -94,11 +98,11 @@ export const BOTTOM_NAV_CSS = `
   .uvix-tab {
     flex: 1 1 0; min-width: 0; height: 54px; border: 0; background: none; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    font-size: 11px; -webkit-tap-highlight-color: transparent; font-family: inherit;
+    font-size: 10px; letter-spacing: -0.1px; padding: 0 1px; -webkit-tap-highlight-color: transparent; font-family: inherit;
   }
   .uvix-tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .uvix-fab {
-    width: 56px; height: 56px; margin-top: -20px; flex-shrink: 0; border: 0; border-radius: 20px; cursor: pointer;
+    width: 52px; height: 52px; margin: -18px 2px 0; flex-shrink: 0; border: 0; border-radius: 20px; cursor: pointer;
     display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent;
     transition: transform 0.15s ease;
   }
