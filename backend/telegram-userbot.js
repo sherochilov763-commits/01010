@@ -12,6 +12,77 @@ const { StringSession } = require("teleproto/sessions");
 let client = null;
 let connecting = false;
 let lastError = null;
+let expired = null; // { code, message, at } — Telegram sessiyani bekor qilgan bo'lsa
+let me = null; // { id, name, username, phone }
+let onSessionDeadCallback = null;
+let watchdog = null;
+
+// Telegram'dagi «Qurilmalar» ro'yxatida shu nom bilan ko'rinadi — begona qurilma deb o'chirib yuborilmasin
+const CLIENT_OPTS = { connectionRetries: 5, deviceModel: "UVIX CRM (server)", systemVersion: "UVIX", appVersion: "UVIX 2.0", langCode: "en", systemLangCode: "uz" };
+
+// Sessiya butunlay yaroqsiz bo'lib qolganini bildiradigan xatolar — qayta urinishdan foyda yo'q, qayta kirish kerak
+const DEAD_ERRORS = {
+  AUTH_KEY_UNREGISTERED: "Telegram sessiyani bekor qilgan: telefondagi «Qurilmalar» bo'limidan o'chirilgan yoki muddati tugagan.",
+  AUTH_KEY_DUPLICATED: "Bu sessiya bir vaqtda boshqa joyda ham ishlatilgan — Telegram xavfsizlik uchun uni o'chirdi.",
+  AUTH_KEY_INVALID: "Sessiya kaliti yaroqsiz.",
+  AUTH_KEY_PERM_EMPTY: "Sessiya kaliti yaroqsiz.",
+  SESSION_REVOKED: "Sessiya akkaunt egasi tomonidan tugatilgan.",
+  SESSION_EXPIRED: "Sessiya muddati tugagan.",
+  USER_DEACTIVATED_BAN: "Telegram akkaunt bloklangan.",
+  USER_DEACTIVATED: "Telegram akkaunt o'chirilgan.",
+};
+function authErrorCode(e) {
+  const m = String(e?.errorMessage || e?.message || "");
+  return Object.keys(DEAD_ERRORS).find((c) => m.includes(c)) || null;
+}
+// Sessiya o'lgan bo'lsa — ulanishni to'xtatamiz (bekorga urinib, xato ko'paytirmaymiz) va serverga xabar beramiz
+function markDead(e) {
+  const code = authErrorCode(e);
+  if (!code) return false;
+  if (!expired) {
+    expired = { code, message: DEAD_ERRORS[code], at: new Date().toISOString() };
+    lastError = expired.message;
+    stopWatchdog();
+    const c = client;
+    client = null;
+    me = null;
+    if (c) c.disconnect().catch(() => {});
+    console.warn("Telegram sessiyasi yaroqsiz:", code);
+    try { onSessionDeadCallback && onSessionDeadCallback(expired); } catch (err) { console.error(err); }
+  }
+  return true;
+}
+// Foydalanuvchiga ko'rsatiladigan tushunarli (o'zbekcha) xato matni
+function friendlyError(e) {
+  const code = authErrorCode(e);
+  if (code) return Object.assign(new Error(DEAD_ERRORS[code] + " Sozlamalardan qayta ulang."), { code: "session_expired" });
+  const m = String(e?.errorMessage || e?.message || "");
+  const flood = m.match(/FLOOD_WAIT_?(\d+)|wait of (\d+) seconds/i);
+  if (flood) return Object.assign(new Error(`Telegram cheklovi: ${flood[1] || flood[2]} soniyadan keyin qayta urinib ko'ring.`), { code: "flood" });
+  if (m.includes("PEER_ID_INVALID") || m.includes("Could not find the input entity")) return new Error("Bu suhbat Telegram'da topilmadi.");
+  if (m.includes("USER_IS_BLOCKED") || m.includes("YOU_BLOCKED_USER")) return new Error("Bu foydalanuvchi bilan yozishma bloklangan.");
+  if (m.includes("CHAT_WRITE_FORBIDDEN")) return new Error("Bu suhbatga yozishga ruxsat yo'q.");
+  return e instanceof Error ? e : new Error(m || "Telegram xatosi");
+}
+function stopWatchdog() {
+  if (watchdog) clearInterval(watchdog);
+  watchdog = null;
+}
+// Har 4 daqiqada sessiya tirikligini tekshiramiz: o'lgan bo'lsa — darhol bilamiz (hech kim chat ochmasa ham),
+// internet uzilgan bo'lsa — qayta ulanamiz.
+function startWatchdog() {
+  stopWatchdog();
+  watchdog = setInterval(async () => {
+    if (!client || expired || connecting) return;
+    try {
+      if (!client.connected) await client.connect();
+      await client.invoke(new Api.updates.GetState());
+    } catch (e) {
+      if (!markDead(e)) console.error("Telegram tekshiruv xatosi:", e.message);
+    }
+  }, 4 * 60 * 1000);
+  if (watchdog.unref) watchdog.unref();
+}
 let onNewMessageCallback = null;
 let mediaDir = null; // rasmlar saqlanadigan papka (server.js tomonidan beriladi)
 const MAX_DOWNLOAD = 50 * 1024 * 1024; // mijozdan kelgan video/hujjatni 50 MB gacha saqlaymiz
@@ -36,6 +107,7 @@ async function warmEntityCache(limit = 200) {
     // Yangi mijoz yozgan zahoti uning suhbati ro'yxatning eng tepasida bo'ladi
     await client.getDialogs({ limit });
   } catch (e) {
+    if (markDead(e)) return;
     console.error("Telegram suhbatlar ro'yxatini yuklab bo'lmadi:", e.message);
   }
 }
@@ -90,8 +162,9 @@ function isConnected() {
 }
 
 function getStatus() {
+  if (expired) return { status: "expired", message: expired.message, code: expired.code, at: expired.at };
   if (connecting) return { status: "connecting" };
-  if (isConnected()) return { status: "connected" };
+  if (isConnected()) return { status: "connected", me };
   if (lastError) return { status: "error", message: lastError };
   return { status: "disconnected" };
 }
@@ -266,27 +339,41 @@ async function isBotChat(chatId) {
 
 // Sozlamalardan (apiId, apiHash, sessionString) o'qib, ulanishni boshlaydi.
 // onNewMessage(fromUserId, fromName, text, chatId) — yangi xabar kelganda chaqiriladi.
-async function connectFromSettings(settings, onNewMessage) {
+async function connectFromSettings(settings, onNewMessage, { session: sessionOverride, onSessionDead } = {}) {
   onNewMessageCallback = onNewMessage;
+  if (onSessionDead) onSessionDeadCallback = onSessionDead;
   const apiId = parseInt(settings?.telegramUserApiId, 10);
   const apiHash = settings?.telegramUserApiHash;
-  const sessionString = settings?.telegramUserSession;
+  const sessionString = sessionOverride || settings?.telegramUserSession;
 
   if (!apiId || !apiHash || !sessionString) {
-    lastError = "Sozlamalar to'liq emas (API ID / API Hash / Session)";
+    lastError = "Telegram akkaunt ulanmagan";
     return { ok: false, error: lastError };
   }
+  if (connecting) return { ok: false, error: "Ulanish davom etmoqda" };
 
   try {
     connecting = true;
     lastError = null;
+    expired = null;
+    await disconnect(); // eski ulanish qolgan bo'lsa — bir vaqtda ikkita ulanish bo'lmasin
     const session = new StringSession(sessionString);
-    client = new TelegramClient(session, apiId, apiHash, { connectionRetries: 5 });
+    client = new TelegramClient(session, apiId, apiHash, CLIENT_OPTS);
     await client.connect();
+    // Kalit tirikligini darhol tekshiramiz — aks holda holat «ulangan» deb ko'rinib, har so'rov xato berardi
+    let self;
+    try {
+      self = await client.getMe();
+    } catch (e) {
+      connecting = false;
+      if (markDead(e)) return { ok: false, expired: true, error: expired.message };
+      throw e;
+    }
+    selfId = String(self?.id ?? "");
+    me = { id: selfId, name: [self?.firstName, self?.lastName].filter(Boolean).join(" "), username: self?.username || "", phone: self?.phone || "" };
     // Ulanishi bilan xotirani to'ldiramiz — birinchi xabardanoq ism to'g'ri chiqadi
     warmEntityCache(200);
-
-    try { selfId = String((await client.getMe())?.id ?? ""); } catch { selfId = ""; }
+    startWatchdog();
 
     client.updates.on("newMessage", async (update) => {
       try {
@@ -317,13 +404,18 @@ async function connectFromSettings(settings, onNewMessage) {
     return { ok: true };
   } catch (e) {
     connecting = false;
-    lastError = e.message;
+    const c = client;
     client = null;
-    return { ok: false, error: e.message };
+    if (c) c.disconnect().catch(() => {});
+    if (markDead(e)) return { ok: false, expired: true, error: expired.message };
+    lastError = friendlyError(e).message;
+    return { ok: false, error: lastError };
   }
 }
 
 async function disconnect() {
+  stopWatchdog();
+  me = null;
   if (client) {
     try {
       await client.disconnect();
@@ -419,4 +511,22 @@ async function getRecentMessages(chatId, limit = 30) {
     .reverse();
 }
 
-module.exports = { listPrivateDialogs, describeChat, fetchHistory, isBotChat, connectFromSettings, disconnect, sendMessage, sendPhoto, sendVideo, sendDocument, sendVoice, sendLocation, sendReaction, getRecentMessages, getStatus, isConnected, setMediaDir, resolveChatNames };
+// Telegram bilan ishlaydigan har bir funksiya: sessiya o'lgan bo'lsa — aniqlab, tushunarli xato qaytaradi
+const guarded = (fn) => async (...args) => {
+  try {
+    return await fn(...args);
+  } catch (e) {
+    markDead(e);
+    throw friendlyError(e);
+  }
+};
+// Kirish oqimi (telegram-login.js) va boshqa modullar uchun
+function clearExpired() { expired = null; lastError = null; }
+
+module.exports = {
+  listPrivateDialogs: guarded(listPrivateDialogs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
+  isBotChat: guarded(isBotChat), sendMessage: guarded(sendMessage), sendPhoto: guarded(sendPhoto), sendVideo: guarded(sendVideo),
+  sendDocument: guarded(sendDocument), sendVoice: guarded(sendVoice), sendLocation: guarded(sendLocation), sendReaction: guarded(sendReaction),
+  getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames),
+  connectFromSettings, disconnect, getStatus, isConnected, setMediaDir, clearExpired, friendlyError, authErrorCode, CLIENT_OPTS,
+};

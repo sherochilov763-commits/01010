@@ -10,6 +10,7 @@ const bcrypt = require("bcryptjs");
 const XLSX = require("xlsx");
 const nodemailer = require("nodemailer");
 const telegramUserbot = require("./telegram-userbot");
+const telegramLogin = require("./telegram-login");
 const multer = require("multer");
 const db = require("./db");
 const { registerTaskRoutes, mergeLeadTaskState } = require("./tasks");
@@ -330,6 +331,7 @@ app.use("/api/kv", requireAuth);
 
 // ==================== Face ID / barmoq izi (passkey) ====================
 passkeyApi = require("./passkeys")(app, {
+  secret: JWT_SECRET,
   getStmt, upsertStmt, readEmployees, requireAuth, issueToken,
   rateLimit: (key) => checkRateLimit(`passkey:${key}`),
 });
@@ -344,7 +346,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:");
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key === "uvix:tgSession" || key === "uvix:tgSessionState";
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -1069,9 +1071,82 @@ app.post("/api/telegram-user/refresh-names", requireAuth, requireStaff, async (r
   }
 });
 
+// ---- Telegram sessiyasi: alohida ichki kalitda saqlanadi ----
+// Sozlamalar (uvix:settings) brauzerdan butunligicha yoziladi — agar sessiya o'sha yerda tursa, eski ochiq
+// sahifa yangi sessiyani eskisi bilan ustidan yozib yuborishi mumkin edi. Shuning uchun uni faqat server yozadi.
+const sessionHash = (s) => crypto.createHash("sha256").update(String(s || "")).digest("hex").slice(0, 16);
+function readTgState() {
+  try { return JSON.parse(getStmt.get("uvix:tgSessionState")?.value || "{}"); } catch { return {}; }
+}
+function currentTgSession(settings) {
+  let stored = null;
+  try { stored = JSON.parse(getStmt.get("uvix:tgSession")?.value || "null"); } catch { /* */ }
+  if (stored?.session) return stored.session;
+  // Eski usul: sozlamalarga qo'lda qo'yilgan session string (o'lganligi ma'lum bo'lsa — ishlatmaymiz)
+  const legacy = settings?.telegramUserSession;
+  if (legacy && readTgState().deadHash !== sessionHash(legacy)) return legacy;
+  return null;
+}
+function readSettings() {
+  try { return JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch { return {}; }
+}
+let tgDeadNotifiedHash = null;
+function onTelegramSessionDead(info) {
+  const settings = readSettings();
+  const dead = currentTgSession(settings);
+  const deadHash = sessionHash(dead);
+  upsertStmt.run("uvix:tgSessionState", JSON.stringify({ expired: info, deadHash }));
+  db.prepare("DELETE FROM kv_store WHERE key = ?").run("uvix:tgSession");
+  if (tgDeadNotifiedHash !== deadHash) {
+    tgDeadNotifiedHash = deadHash;
+    sendTelegramMessage(`⚠️ <b>UVIX: Telegram akkaunt uzildi</b>\n${info.message}\n\nCRM chatlar ishlashi uchun: Sozlamalar → Telegram akkaunt → «Qayta ulash» (QR kod yoki telefon kodi).`);
+  }
+}
+function connectTelegramUserbot() {
+  const settings = readSettings();
+  const session = currentTgSession(settings);
+  if (!settings?.telegramUserApiId || !settings?.telegramUserApiHash || !session) return Promise.resolve({ ok: false, error: "Telegram akkaunt ulanmagan" });
+  return telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage, { session, onSessionDead: onTelegramSessionDead }).then((r) => {
+    if (r.ok) repairUnknownTelegramNames().catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
+    return r;
+  });
+}
+
 app.get("/api/telegram-user/status", requireAuth, requireStaff, (req, res) => {
-  res.json(telegramUserbot.getStatus());
+  const st = telegramUserbot.getStatus();
+  // Server qayta ishga tushgan bo'lsa ham «sessiya tugagan» holati yo'qolmasin
+  if ((st.status === "disconnected" || st.status === "error") && !currentTgSession(readSettings())) {
+    const { expired } = readTgState();
+    if (expired) return res.json({ status: "expired", ...expired });
+  }
+  res.json(st);
 });
+
+// ---- Ilovaning o'zidan kirish (QR kod / telefon kodi / 2FA) ----
+async function saveLoggedInSession({ session, apiId, apiHash, user }) {
+  upsertStmt.run("uvix:tgSession", JSON.stringify({ session, savedAt: new Date().toISOString(), user }));
+  upsertStmt.run("uvix:tgSessionState", JSON.stringify({}));
+  tgDeadNotifiedHash = null;
+  const settings = readSettings();
+  const next = { ...settings, telegramUserApiId: String(apiId), telegramUserApiHash: apiHash, telegramUserPhone: user?.phone || settings.telegramUserPhone || "" };
+  delete next.telegramUserSession; // endi alohida kalitda
+  upsertStmt.run("uvix:settings", JSON.stringify(next));
+  const r = await connectTelegramUserbot();
+  if (!r.ok) throw new Error(r.error || "Ulanib bo'lmadi");
+}
+function loginCreds(body) {
+  const settings = readSettings();
+  return { apiId: body?.apiId || settings.telegramUserApiId, apiHash: body?.apiHash || settings.telegramUserApiHash };
+}
+const loginRoute = (fn) => async (req, res) => {
+  try { res.json(await fn(req)); } catch (e) { res.status(400).json({ error: "login_failed", message: e.message }); }
+};
+app.get("/api/telegram-user/login", requireAuth, requireAdmin, (req, res) => res.json(telegramLogin.getState()));
+app.post("/api/telegram-user/login/qr", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.startQr({ ...loginCreds(req.body), onSuccess: saveLoggedInSession })));
+app.post("/api/telegram-user/login/phone", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.startPhone({ ...loginCreds(req.body), phone: req.body?.phone, onSuccess: saveLoggedInSession })));
+app.post("/api/telegram-user/login/code", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.submitCode(req.body?.code)));
+app.post("/api/telegram-user/login/password", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.submitPassword(req.body?.password)));
+app.post("/api/telegram-user/login/cancel", requireAuth, requireAdmin, loginRoute(() => telegramLogin.cancel()));
 
 // Telegram'dagi shaxsiy suhbatlar ro'yxati — daqiqasiga bir marta yangilanadi (Telegram cheklovlari)
 let dialogsCache = { at: 0, list: [] };
@@ -1184,10 +1259,7 @@ app.post("/api/telegram-user/mark-read", requireAuth, requireStaff, (req, res) =
 });
 
 app.post("/api/telegram-user/connect", requireAuth, requireAdmin, async (req, res) => {
-  const row = getStmt.get("uvix:settings");
-  const settings = row ? JSON.parse(row.value) : {};
-  const result = await telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage);
-  if (result.ok) repairUnknownTelegramNames().catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
+  const result = await connectTelegramUserbot();
   if (result.ok) res.json({ ok: true });
   else res.status(400).json({ error: "connect_failed", message: result.error });
 });
@@ -1404,6 +1476,20 @@ app.post("/api/telegram-user/react", requireAuth, requireStaff, async (req, res)
   }
 });
 
+// Server o'chirilayotganda (deploy, qayta ishga tushirish) Telegram'dan to'g'ri uzilamiz —
+// eski va yangi server bir vaqtda bitta sessiyada o'tirib qolmasin (Telegram buni yoqtirmaydi va kalitni o'chiradi).
+let shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} — server to'xtatilmoqda...`);
+  const force = setTimeout(() => process.exit(0), 4000);
+  force.unref?.();
+  Promise.allSettled([telegramUserbot.disconnect(), telegramLogin.cancel()]).finally(() => process.exit(0));
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
 app.listen(PORT, () => {
   console.log(`UVIX backend http://localhost:${PORT} da ishga tushdi`);
   console.log(`Baza fayli: ${db.DB_PATH}`);
@@ -1412,19 +1498,11 @@ app.listen(PORT, () => {
   // Agar Telegram shaxsiy akkaunt sozlamalari saqlangan bo'lsa, server ishga tushganda
   // avtomatik ulanishga harakat qilamiz (qo'lda qayta ulash shart bo'lmasligi uchun)
   try {
-    const row = getStmt.get("uvix:settings");
-    const settings = row ? JSON.parse(row.value) : {};
-    if (settings?.telegramUserApiId && settings?.telegramUserApiHash && settings?.telegramUserSession) {
-      telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage).then((r) => {
-        if (r.ok) {
-          console.log("Telegram shaxsiy akkaunt: ulandi");
-          repairUnknownTelegramNames()
-            .then((x) => x.fixed && console.log(`Telegram: ${x.fixed} ta "Noma'lum" mijozning ismi tiklandi`))
-            .catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
-        }
-        else console.log("Telegram shaxsiy akkaunt: ulanmadi —", r.error);
-      });
-    }
+    connectTelegramUserbot().then((r) => {
+      if (r.ok) console.log("Telegram shaxsiy akkaunt: ulandi");
+      else if (r.expired) console.log("Telegram shaxsiy akkaunt: sessiya tugagan — Sozlamalardan qayta ulang");
+      else console.log("Telegram shaxsiy akkaunt:", r.error);
+    });
   } catch (e) {
     console.error("Telegram avto-ulanish xatosi:", e.message);
   }

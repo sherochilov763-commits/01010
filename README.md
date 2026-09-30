@@ -440,3 +440,38 @@ Nima qilindi:
 - CRM ustun sarlavhalarida summa qisqa ko'rinishda ("211,5 mln so'm"), to'liq qiymat — kursor olib borilganda.
 
 Yangi bog'liqlik: backend `compression` — Railway `npm install` paytida o'zi o'rnatadi.
+
+## Telegram akkaunt: barqaror ulanish va ilova ichidan kirish
+
+`AUTH_KEY_UNREGISTERED` ("The specified authorization key is not registered…") — Telegram sessiya kalitini bekor qilganini bildiradi
+(telefondagi «Qurilmalar»dan o'chirilgan, bitta sessiya ikki joyda ishlatilgan yoki muddati tugagan). Endi:
+
+- **Ulanishda kalit darhol tekshiriladi** (`getMe`). O'lgan bo'lsa — holat `expired`, bekorga qayta urinilmaydi,
+  o'lik sessiya qayta ishlatilmaydi (server qayta ishga tushsa ham), adminga bot orqali xabar boradi.
+- **Har 4 daqiqada tekshiruv** (`updates.GetState`): sessiya o'lsa — chat ochilmasa ham darhol bilinadi; internet uzilsa — qayta ulanadi.
+- **Ilova ichidan kirish** (Sozlamalar → Telegram akkaunt): QR kod (telefon Telegram → Qurilmalar → «Qurilma ulash»)
+  yoki telefon raqam + kod, 2FA parol bilan. Terminal va `setup-telegram.js` endi shart emas (zaxira usul sifatida qoldi).
+  Backend: `telegram-login.js`, yo'llar `/api/telegram-user/login[/qr|/phone|/code|/password|/cancel]` (faqat admin).
+- **Sessiya alohida ichki kalitda** (`uvix:tgSession`, KV orqali o'qib/yozib bo'lmaydi) — brauzerdagi eski sozlamalar uni ustidan yozib yubora olmaydi.
+- Telegram «Qurilmalar» ro'yxatida **«UVIX CRM (server)»** nomi bilan ko'rinadi.
+- Server to'xtatilganda (`SIGTERM`, deploy) Telegram'dan to'g'ri uziladi — ikki nusxa bir sessiyada o'tirib qolmaydi.
+- Xatolar o'zbekcha (sessiya tugagan, FLOOD_WAIT cheklovi, bloklangan suhbat va h.k.); Chatlar sahifasida «Qayta ulash» ogohlantirishi.
+
+Muhim: bitta sessiyani bir vaqtda faqat bitta serverda ishlating (kompyuterda lokal ishga tushirganda boshqa akkaunt yoki alohida sessiya ulang).
+Yangi bog'liqlik: backend `qrcode`.
+
+## Face ID / barmoq izi bilan kirish (qayta ishlandi)
+
+Oldingi muammolar: so'rov (challenge) oldindan olinib, xotirada 5 daqiqa turardi — sahifa uzoq ochiq tursa yoki
+deploy bo'lsa "So'rov muddati o'tgan" chiqardi; har bir tayyorlangan so'rov urinishlar limitiga sanalardi;
+umumiy kompyuterda Windows Hello xodimni emas, kompyuter egasini taniydi (xavfsizlik teshigi).
+
+Endi (bank ilovalaridagi usul):
+- **Faqat shaxsiy telefon/planshetda.** Kompyuterda ko'rsatilmaydi, server ham kompyuterdan yangi qurilma qo'shishni rad etadi.
+  Eski kompyuter yozuvlari Sozlamalarda "endi ishlatilmaydi" deb ko'rinadi — o'chirib qo'yish mumkin.
+- **Taklif PIN bilan kirgandan keyin** (bir marta, "Hozir emas" bilan). Server tayyor bo'lmasa taklif ko'rsatilmaydi.
+- **Bir bosishda kirish:** shu telefonda oldin biometrik bilan kirgan xodim bo'lsa, ilova ochilishi bilan ro'yxat va PIN'siz
+  Face ID so'raladi (Android'da o'zi, iPhone'da bitta tugma). "PIN bilan kirish" va "Boshqa xodim" har doim bor.
+- **Imzolangan challenge** (HMAC, 10 daqiqa, serverda saqlanmaydi, bir martalik) — deploy/qayta ishga tushishdan keyin ham ishlaydi;
+  brauzerda 4 daqiqada va ilovaga qaytilganda o'zi yangilanadi.
+- **Limit faqat muvaffaqiyatsiz tekshiruvlarga** (10 daqiqada 8 ta), tayyorlash so'rovlari sanalmaydi.

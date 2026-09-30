@@ -152,6 +152,16 @@ export async function fetchTelegramUserStatus() {
   return data;
 }
 
+// Ilovaning o'zidan Telegram'ga kirish: step = "qr" | "phone" | "code" | "password" | "cancel", yoki holatni olish (step yo'q)
+export async function telegramLogin(step, body = {}) {
+  const res = step
+    ? await fetch(`${API_BASE}/telegram-user/login/${step}`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) })
+    : await fetch(`${API_BASE}/telegram-user/login`, { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `login failed: ${res.status}`);
+  return data;
+}
+
 export async function fetchTelegramChats() {
   const res = await fetch(`${API_BASE}/telegram-user/chats`, { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));

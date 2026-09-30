@@ -213,3 +213,15 @@
 @media (prefers-reduced-motion: reduce) {
   .ul-root *, .ul-root *::before, .ul-root *::after { animation: none !important; transition: none !important; }
 }
+
+/* Tezkor kirish (shu telefonda Face ID yoqilgan) */
+.ul-quick-bio {
+  width: 112px; height: 112px; margin: 26px auto 14px; border-radius: 32px; border: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; color: var(--cyan);
+  background: radial-gradient(circle at 50% 35%, rgba(45, 212, 238, 0.22), rgba(124, 92, 252, 0.14));
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 238, 0.35), 0 12px 40px rgba(45, 212, 238, 0.12);
+  transition: transform .15s ease;
+}
+.ul-quick-bio:active { transform: scale(0.96); }
+.ul-quick-bio:disabled { cursor: default; }
+.ul-offer .ul-primary.bio { margin: 18px 0 10px; }

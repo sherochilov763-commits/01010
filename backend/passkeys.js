@@ -15,10 +15,10 @@ const {
 } = require("@simplewebauthn/server");
 
 const PASSKEYS_KEY = "uvix:passkeys";
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const CHALLENGE_TTL_MS = 10 * 60 * 1000;
 const MAX_PASSKEYS_PER_EMPLOYEE = 10;
 
-module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, issueToken, rateLimit }) {
+module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, issueToken, rateLimit, secret }) {
   // ---------- saqlash ----------
   function readPasskeys() {
     const row = getStmt.get(PASSKEYS_KEY);
@@ -34,21 +34,54 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
     upsertStmt.run(PASSKEYS_KEY, JSON.stringify(list));
   }
 
-  // ---------- challenge'lar (xotirada, 5 daqiqa) ----------
-  const challenges = new Map(); // id -> { challenge, employeeId, type, expiresAt }
-  function saveChallenge(data) {
+  // ---------- challenge'lar: imzolangan, serverda saqlanmaydi ----------
+  // Oldin xotirada 5 daqiqa turardi: sahifa uzoq ochiq tursa yoki shu orada deploy bo'lsa —
+  // "So'rov muddati o'tgan" xatosi chiqardi. Endi challenge o'zi imzolangan ma'lumot
+  // (kim uchun, qaysi amal, qachongacha), server qayta ishga tushsa ham tekshiriladi.
+  const HMAC_KEY = crypto.createHash("sha256").update(`uvix-passkey:${secret || "dev"}`).digest();
+  const used = new Map(); // bir martalik: ishlatilgan challenge'lar (muddati tugaguncha)
+  const sign = (s) => crypto.createHmac("sha256", HMAC_KEY).update(s).digest("base64url");
+  function makeChallenge(data) {
+    const payload = Buffer.from(JSON.stringify({ ...data, exp: Date.now() + CHALLENGE_TTL_MS, n: crypto.randomBytes(12).toString("base64url") })).toString("base64url");
+    return `${payload}.${sign(payload)}`; // shu satrning baytlari — WebAuthn challenge
+  }
+  // challengeB64u — brauzer javobidagi (clientDataJSON) challenge, base64url ko'rinishida
+  function readChallenge(challengeB64u, type) {
+    let token;
+    try { token = Buffer.from(challengeB64u, "base64url").toString("utf8"); } catch { return null; }
+    const [payload, mac] = token.split(".");
+    if (!payload || !mac) return null;
+    const expected = sign(payload);
+    if (expected.length !== mac.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(mac))) return null;
+    let data;
+    try { data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")); } catch { return null; }
+    if (data.type !== type || data.exp < Date.now() || used.has(token)) return null;
+    return { token, data };
+  }
+  function consume(token, exp) {
     const now = Date.now();
-    for (const [k, v] of challenges) if (v.expiresAt < now) challenges.delete(k);
-    const id = crypto.randomBytes(16).toString("hex");
-    challenges.set(id, { ...data, expiresAt: now + CHALLENGE_TTL_MS });
-    return id;
+    for (const [k, v] of used) if (v < now) used.delete(k);
+    used.set(token, exp);
   }
-  function takeChallenge(id, type) {
-    const c = challenges.get(id);
-    challenges.delete(id); // bir martalik
-    if (!c || c.type !== type || c.expiresAt < Date.now()) return null;
-    return c;
+  // Javobdagi challenge'ni oldindan o'qib olamiz (tekshiruvdan oldin kim ekanini bilish uchun)
+  function challengeOf(response) {
+    try { return JSON.parse(Buffer.from(response.response.clientDataJSON, "base64url").toString("utf8")).challenge; } catch { return null; }
   }
+  // Urinishlar limiti faqat MUVAFFAQIYATSIZ tekshiruvlarni sanaydi. Oldin har bir oldindan tayyorlangan
+  // so'rov ham sanalardi — ilovaga tez-tez qaytgan xodim bekorga bloklanib qolardi.
+  const failures = new Map(); // key -> { n, until }
+  const FAIL_MAX = 8, FAIL_WINDOW = 10 * 60 * 1000;
+  function isLocked(key) { const f = failures.get(key); return !!f && f.until > Date.now() && f.n >= FAIL_MAX; }
+  function noteFailure(key) {
+    const now = Date.now();
+    const f = failures.get(key);
+    if (!f || f.until < now) failures.set(key, { n: 1, until: now + FAIL_WINDOW });
+    else f.n += 1;
+  }
+  const LOCKED = { error: "too_many_attempts", message: "Juda ko'p muvaffaqiyatsiz urinish. 10 daqiqadan so'ng qayta urinib ko'ring yoki PIN bilan kiring." };
+
+  // Faqat shaxsiy telefon/planshet: umumiy kompyuterda Windows Hello xodimni emas, kompyuter egasini taniydi
+  const isMobileUA = (ua = "") => /iPhone|iPad|Android/i.test(ua);
 
   // ---------- domen / origin ----------
   // WEBAUTHN_RP_ID va WEBAUTHN_ORIGIN env orqali qat'iy belgilash mumkin (tavsiya etiladi).
@@ -83,11 +116,15 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
   app.post("/api/auth/passkey/register/options", requireAuth, async (req, res) => {
     const rp = getRp(req);
     if (!rp) return res.status(400).json({ error: "bad_origin", message: "Domen aniqlanmadi" });
+    if (!isMobileUA(req.get("user-agent")) && !/Macintosh/.test(req.get("user-agent") || "")) {
+      return res.status(400).json({ error: "mobile_only", message: "Biometrik kirish faqat telefonda yoqiladi" });
+    }
     const mine = readPasskeys().filter((p) => p.employeeId === req.user.id);
     if (mine.length >= MAX_PASSKEYS_PER_EMPLOYEE) {
       return res.status(400).json({ error: "too_many", message: `Ko'pi bilan ${MAX_PASSKEYS_PER_EMPLOYEE} ta qurilma` });
     }
     const options = await generateRegistrationOptions({
+      challenge: new TextEncoder().encode(makeChallenge({ type: "reg", employeeId: req.user.id })),
       rpName: "UVIX Moliya",
       rpID: rp.rpID,
       userName: req.user.name,
@@ -101,29 +138,29 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
         userVerification: "required",
       },
     });
-    const challengeId = saveChallenge({ challenge: options.challenge, employeeId: req.user.id, type: "reg" });
-    res.json({ challengeId, options });
+    res.json({ options });
   });
 
   app.post("/api/auth/passkey/register/verify", requireAuth, async (req, res) => {
     const rp = getRp(req);
-    const { challengeId, response } = req.body || {};
-    const c = challengeId && takeChallenge(challengeId, "reg");
-    if (!rp || !c || c.employeeId !== req.user.id || !response) {
+    const { response } = req.body || {};
+    const c = response && readChallenge(challengeOf(response), "reg");
+    if (!rp || !c || c.data.employeeId !== req.user.id) {
       return res.status(400).json({ error: "invalid_challenge", message: "So'rov muddati o'tgan, qaytadan urinib ko'ring" });
     }
     let verification;
     try {
       verification = await verifyRegistrationResponse({
         response,
-        expectedChallenge: c.challenge,
+        expectedChallenge: challengeOf(response),
         expectedOrigin: rp.origin,
         expectedRPID: rp.rpID,
         requireUserVerification: true,
       });
     } catch (e) {
-      return res.status(400).json({ error: "verify_failed", message: e.message });
+      return res.status(400).json({ error: "verify_failed", message: "Qurilmani tasdiqlab bo'lmadi, qaytadan urinib ko'ring" });
     }
+    consume(c.token, c.data.exp);
     if (!verification.verified || !verification.registrationInfo) {
       return res.status(400).json({ error: "verify_failed" });
     }
@@ -148,42 +185,46 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
   // ==================== KIRISH (ochiq) ====================
   app.post("/api/auth/passkey/login/options", async (req, res) => {
     const { employeeId } = req.body || {};
-    if (!rateLimit(`${req.ip || "unknown"}:${employeeId}`)) return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
     const rp = getRp(req);
     if (!rp) return res.status(400).json({ error: "bad_origin" });
     const creds = readPasskeys().filter((p) => p.employeeId === employeeId);
     if (!employeeId || creds.length === 0) return res.status(404).json({ error: "no_passkey", message: "Bu xodim uchun Face ID yoqilmagan" });
     const options = await generateAuthenticationOptions({
+      challenge: new TextEncoder().encode(makeChallenge({ type: "auth", employeeId })),
       rpID: rp.rpID,
       userVerification: "required",
       allowCredentials: creds.map((p) => ({ id: p.id, transports: p.transports })),
     });
-    const challengeId = saveChallenge({ challenge: options.challenge, employeeId, type: "auth" });
-    res.json({ challengeId, options });
+    res.json({ options });
   });
 
   app.post("/api/auth/passkey/login/verify", async (req, res) => {
     const rp = getRp(req);
-    const { challengeId, response } = req.body || {};
-    const c = challengeId && takeChallenge(challengeId, "auth");
-    if (!rp || !c || !response?.id) return res.status(400).json({ error: "invalid_challenge", message: "So'rov muddati o'tgan, qaytadan urinib ko'ring" });
+    const { response } = req.body || {};
+    const c = response?.id && readChallenge(challengeOf(response), "auth");
+    if (!rp || !c) return res.status(400).json({ error: "invalid_challenge", message: "So'rov muddati o'tgan, qaytadan urinib ko'ring" });
+    const lockKey = `${req.ip || "unknown"}:${c.data.employeeId}`;
+    if (isLocked(lockKey)) return res.status(429).json(LOCKED);
     const list = readPasskeys();
-    const cred = list.find((p) => p.id === response.id && p.employeeId === c.employeeId);
-    if (!cred) return res.status(401).json({ error: "unknown_passkey", message: "Bu qurilma tanilmadi" });
+    const cred = list.find((p) => p.id === response.id && p.employeeId === c.data.employeeId);
+    if (!cred) { noteFailure(lockKey); return res.status(401).json({ error: "unknown_passkey", message: "Bu telefon tanilmadi — PIN bilan kiring" }); }
     let verification;
     try {
       verification = await verifyAuthenticationResponse({
         response,
-        expectedChallenge: c.challenge,
+        expectedChallenge: challengeOf(response),
         expectedOrigin: rp.origin,
         expectedRPID: rp.rpID,
         requireUserVerification: true,
         credential: { id: cred.id, publicKey: fromB64u(cred.publicKey), counter: cred.counter, transports: cred.transports },
       });
     } catch (e) {
+      noteFailure(lockKey);
       return res.status(401).json({ error: "verify_failed", message: "Tasdiqlab bo'lmadi" });
     }
-    if (!verification.verified) return res.status(401).json({ error: "verify_failed", message: "Tasdiqlab bo'lmadi" });
+    if (!verification.verified) { noteFailure(lockKey); return res.status(401).json({ error: "verify_failed", message: "Tasdiqlab bo'lmadi" }); }
+    failures.delete(lockKey);
+    consume(c.token, c.data.exp);
     const employee = readEmployees().find((e) => e.id === cred.employeeId);
     if (!employee) return res.status(401).json({ error: "employee_not_found" });
     cred.counter = verification.authenticationInfo.newCounter;

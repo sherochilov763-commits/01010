@@ -678,6 +678,8 @@ export default function App() {
                 }}
                 initialChatId={openChatId}
                 onInitialChatHandled={() => setOpenChatId(null)}
+                isAdmin={isAdmin}
+                onOpenSettings={() => { setNavFilter(null); setView("settings"); }}
               />
             )}
             {view === "expense" && (

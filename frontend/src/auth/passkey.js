@@ -24,8 +24,18 @@ async function post(path, body, auth = false) {
   return data;
 }
 
-/** Qurilma Face ID / Touch ID / barmoq izini qo'llay oladimi */
+// Faqat shaxsiy telefon/planshet. Umumiy kompyuterda Windows Hello / Touch ID xodimni emas,
+// kompyuter egasini taniydi — u yerda PIN qoladi.
+export function isPersonalMobile() {
+  const ua = navigator.userAgent || "";
+  if (/iPhone|Android/i.test(ua)) return true;
+  if (/iPad/.test(ua)) return true;
+  return /Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1; // iPadOS "Mac" deb o'zini ko'rsatadi
+}
+
+/** Qurilma Face ID / barmoq izini qo'llay oladimi (faqat telefonda) */
 export async function canUseBiometrics() {
+  if (!isPersonalMobile()) return false;
   if (!browserSupportsWebAuthn()) return false;
   try { return await platformAuthenticatorIsAvailable(); } catch { return false; }
 }
@@ -33,15 +43,44 @@ export async function canUseBiometrics() {
 /** Qurilma turiga qarab nom: iPhone'da "Face ID", boshqalarda "Barmoq izi" */
 export function biometricLabel() {
   const ua = navigator.userAgent || "";
-  if (/iPhone|iPad/.test(ua)) return { name: "Face ID", kind: "face" };
-  if (/Macintosh/.test(ua)) return { name: "Touch ID", kind: "finger" };
-  if (/Windows/.test(ua)) return { name: "Windows Hello", kind: "face" };
+  if (/iPhone|iPad/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1)) return { name: "Face ID", kind: "face" };
   return { name: "Barmoq izi", kind: "finger" };
 }
 
 export const isEnrolledHere = (employeeId) => lsGet(MARK(employeeId)) === "1";
 export const wasSkipped = (employeeId) => lsGet(SKIP(employeeId)) === "1";
 export const markSkipped = (employeeId) => lsSet(SKIP(employeeId), "1");
+
+// Shu telefonda oxirgi marta biometrik bilan kirgan xodim — ilova ochilganda darhol uni taklif qilamiz
+const LAST = "uvix_passkey_last";
+export function lastBioUser() {
+  try { const v = JSON.parse(lsGet(LAST) || "null"); return v && v.id ? v : null; } catch { return null; }
+}
+export function forgetLastBioUser() { lsSet(LAST, null); }
+function rememberLast(emp) { if (emp?.id) lsSet(LAST, JSON.stringify({ id: emp.id, name: emp.name || "" })); }
+
+// Safari WebAuthn oynasini faqat tugma bosilgan zahoti ochadi — shuning uchun so'rov oldindan olinadi.
+// Endi u 10 daqiqa amal qiladi va 4 daqiqadan eski bo'lsa o'zi yangilanadi.
+const FRESH_MS = 4 * 60 * 1000;
+export function makePreparer(fetcher) {
+  let cur = null;
+  let at = 0;
+  let inflight = null;
+  const refresh = () => {
+    inflight = fetcher().then((p) => { cur = p; at = Date.now(); return p; }).catch(() => { cur = null; return null; }).finally(() => { inflight = null; });
+    return inflight;
+  };
+  return {
+    refresh,
+    // tayyor va yangi bo'lsa — darhol (Safari uchun muhim), aks holda kutib olamiz
+    async get() {
+      if (cur && Date.now() - at < FRESH_MS) return cur;
+      return inflight || refresh();
+    },
+    peek: () => (cur && Date.now() - at < FRESH_MS ? cur : null),
+    invalidate() { cur = null; },
+  };
+}
 
 /** Foydalanuvchi bekor qilganini aniqlash (xato emas, oddiy holat) */
 export function isCancel(e) {
@@ -56,9 +95,10 @@ export async function prepareLogin(employeeId) {
 }
 export async function loginWithPrepared(prepared) {
   const response = await startAuthentication({ optionsJSON: prepared.options });
-  const data = await post("/auth/passkey/login/verify", { challengeId: prepared.challengeId, response });
+  const data = await post("/auth/passkey/login/verify", { response });
   setToken(data.token);
   lsSet(MARK(data.employee.id), "1");
+  rememberLast(data.employee);
   return data.employee;
 }
 
@@ -66,11 +106,19 @@ export async function loginWithPrepared(prepared) {
 export async function prepareEnroll() {
   return post("/auth/passkey/register/options", {}, true);
 }
-export async function enrollWithPrepared(prepared, employeeId) {
-  const response = await startRegistration({ optionsJSON: prepared.options });
-  const data = await post("/auth/passkey/register/verify", { challengeId: prepared.challengeId, response }, true);
+export async function enrollWithPrepared(prepared, employee) {
+  const employeeId = typeof employee === "object" ? employee.id : employee;
+  let response;
+  try {
+    response = await startRegistration({ optionsJSON: prepared.options });
+  } catch (e) {
+    if (e?.name === "InvalidStateError") throw new Error("Bu telefon allaqachon qo'shilgan");
+    throw e;
+  }
+  const data = await post("/auth/passkey/register/verify", { response }, true);
   lsSet(MARK(employeeId), "1");
   lsSet(SKIP(employeeId), null);
+  if (typeof employee === "object") rememberLast(employee);
   return data.passkey;
 }
 
@@ -87,5 +135,5 @@ export async function removePasskey(id, employeeId, isLast) {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
   if (!res.ok) throw new Error("O'chirib bo'lmadi");
-  if (isLast) lsSet(MARK(employeeId), null);
+  if (isLast) { lsSet(MARK(employeeId), null); if (lastBioUser()?.id === employeeId) forgetLastBioUser(); }
 }

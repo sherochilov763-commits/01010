@@ -1,3 +1,7 @@
+// ESLATMA: endi bu skript shart emas — akkauntni ilovaning o'zida ulash mumkin:
+//   Sozlamalar → Telegram akkaunt → «Akkauntni ulash» (QR kod yoki telefon kodi).
+// Skript faqat zaxira usul sifatida qoldirildi.
+//
 // setup-telegram.js — BIR MARTALIK skript. Buni o'zingizning kompyuteringizda
 // (Railway'da EMAS!) qo'lda ishga tushirasiz, chunki u interaktiv (telefon
 // raqami va Telegram'dan kelgan kodni so'raydi).
@@ -27,6 +31,7 @@ async function main() {
   const session = new StringSession("");
   const client = new TelegramClient(session, apiId, apiHash.trim(), {
     connectionRetries: 5,
+    deviceModel: "UVIX CRM (server)", systemVersion: "UVIX", appVersion: "UVIX 2.0", // Telegram «Qurilmalar»da shu nom bilan ko'rinadi
   });
 
   await client.start({
@@ -48,6 +53,7 @@ async function main() {
   console.log("\nDiqqat: Session string — akkauntingizga to'liq kirish huquqi beradi.");
   console.log("Uni hech kimga bermang, faqat UVIX dasturining o'z sozlamalariga kiriting.");
 
+  console.log("\nMUHIM: shu kompyuterda bu sessiyani boshqa ishlatmang — bir vaqtda ikki joyda ishlatilsa, Telegram uni o'chiradi.");
   await client.disconnect();
   rl.close();
   process.exit(0);

@@ -9,6 +9,7 @@ import { THEME } from "../../theme.js";
 import { AppearancePreviewCard, AppearanceSection } from "./AppearanceSection.jsx";
 import { TrashSection } from "./TrashSection.jsx";
 import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
+import { TelegramAccountSection } from "./TelegramAccountSection.jsx";
 
 export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
   const [pin, setPin] = useState("");
@@ -35,42 +36,6 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
   function saveGmail() {
     onSaveSettings({ ...settings, gmailUser: gmailUser.trim(), gmailAppPassword: gmailAppPassword.trim() });
     setGmailMsg("Saqlandi");
-  }
-
-  const [tgUserApiId, setTgUserApiId] = useState(settings?.telegramUserApiId || "");
-  const [tgUserApiHash, setTgUserApiHash] = useState(settings?.telegramUserApiHash || "");
-  const [tgUserSession, setTgUserSession] = useState(settings?.telegramUserSession || "");
-  const [tgUserMsg, setTgUserMsg] = useState("");
-  const [tgUserStatus, setTgUserStatus] = useState(null);
-  const [tgUserConnecting, setTgUserConnecting] = useState(false);
-
-  useEffect(() => {
-    if (onFetchTelegramUserStatus) {
-      onFetchTelegramUserStatus().then(setTgUserStatus).catch(() => setTgUserStatus({ status: "error", message: "Holatni bilib bo'lmadi" }));
-    }
-  }, []);
-
-  function saveTelegramUser() {
-    onSaveSettings({ ...settings, telegramUserApiId: tgUserApiId.trim(), telegramUserApiHash: tgUserApiHash.trim(), telegramUserSession: tgUserSession.trim() });
-    setTgUserMsg("Saqlandi");
-  }
-  async function connectTelegramUser() {
-    setTgUserConnecting(true);
-    setTgUserMsg("");
-    try {
-      await onConnectTelegramUser();
-      const status = await onFetchTelegramUserStatus();
-      setTgUserStatus(status);
-      setTgUserMsg(status.status === "connected" ? "Muvaffaqiyatli ulandi!" : "Ulanmadi");
-    } catch (e) {
-      setTgUserMsg(e?.message || "Ulanishda xato");
-    } finally {
-      setTgUserConnecting(false);
-    }
-  }
-  async function disconnectTelegramUser() {
-    await onDisconnectTelegramUser();
-    setTgUserStatus({ status: "disconnected" });
   }
 
   async function unlockTelegram() {
@@ -197,6 +162,8 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
           </Card>
         )}
 
+        {isAdmin && onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} />}
+
         {isAdmin && (
           <Card>
             <BackupRestoreSection />
@@ -302,45 +269,6 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
                 </div>
               </div>
             </div>
-            {onConnectTelegramUser && (
-              <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 14, paddingTop: 14 }}>
-                <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6, color: THEME.rose }}>Telegram shaxsiy akkaunt (CRM chat) — ⚠ tavakkalchilik</div>
-                <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 10 }}>
-                  Bu — shaxsiy Telegram akkauntingizni CRM'ga ulaydi (mijozlar bilan to'g'ridan-to'g'ri chat).
-                  <b style={{ color: THEME.rose }}> Bu Telegram qoidalariga norasmiy yondashuv — akkauntingiz bloklanish xavfi bor.</b> Session
-                  string'ni <code>setup-telegram.js</code> skripti orqali (backend papkasida, kompyuteringizda "node setup-telegram.js"
-                  buyrug'i bilan) bir marta yaratasiz.
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <Field label="API ID">
-                    <input value={tgUserApiId} onChange={(e) => setTgUserApiId(e.target.value)} style={getInputStyle()} placeholder="my.telegram.org dan olingan raqam" />
-                  </Field>
-                  <Field label="API Hash">
-                    <input value={tgUserApiHash} onChange={(e) => setTgUserApiHash(e.target.value)} style={getInputStyle()} placeholder="my.telegram.org dan olingan kod" type="password" />
-                  </Field>
-                  <Field label="Session String">
-                    <textarea value={tgUserSession} onChange={(e) => setTgUserSession(e.target.value)} rows={2} style={{ ...getInputStyle(), resize: "vertical", fontFamily: "monospace", fontSize: 11 }} placeholder="setup-telegram.js skriptidan olingan uzun matn" />
-                  </Field>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Button onClick={saveTelegramUser}>Saqlash</Button>
-                    <Button variant="ghost" onClick={connectTelegramUser} disabled={tgUserConnecting}>
-                      {tgUserConnecting ? "Ulanmoqda..." : "Ulash"}
-                    </Button>
-                    {tgUserStatus?.status === "connected" && (
-                      <Button variant="ghost" onClick={disconnectTelegramUser}>Uzish</Button>
-                    )}
-                  </div>
-                  {tgUserMsg && <div style={{ fontSize: 12, color: tgUserMsg.includes("xato") || tgUserMsg.includes("Ulanmadi") ? THEME.rose : THEME.green }}>{tgUserMsg}</div>}
-                  <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6 }}>
-                    Holat:
-                    {tgUserStatus?.status === "connected" && <Badge color={THEME.green} bg={THEME.greenBg}>Ulangan</Badge>}
-                    {tgUserStatus?.status === "connecting" && <Badge color={THEME.amber} bg={THEME.amberBg}>Ulanmoqda...</Badge>}
-                    {tgUserStatus?.status === "disconnected" && <Badge color={THEME.muted} bg={THEME.surface}>Ulanmagan</Badge>}
-                    {tgUserStatus?.status === "error" && <Badge color={THEME.rose} bg={THEME.roseBg}>{tgUserStatus.message || "Xato"}</Badge>}
-                  </div>
-                </div>
-              </div>
-            )}
               </>
             )}
           </Card>

@@ -3,7 +3,7 @@ import { ArrowLeft, Check, Info, Loader2, Maximize2, Minimize2, PanelLeftClose, 
 import { LAYOUT_CSS, Resizer, useChatLayout } from "./chatLayout.jsx";
 import { Incremental, useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
-import { createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
+import { fetchTelegramUserStatus, createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
 import { CHAT_CSS, Composer, MessageList } from "./ChatConversation.jsx";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
@@ -36,7 +36,17 @@ function listTime(iso) {
 }
 const lastKey = (list) => (list.length ? `${list[list.length - 1].id}|${list.length}` : "");
 
-export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMoveLead, onLeadCreated, initialChatId, onInitialChatHandled }) {
+export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMoveLead, onLeadCreated, initialChatId, onInitialChatHandled, isAdmin, onOpenSettings }) {
+  // Telegram ulanish holati: sessiya tugagan bo'lsa — har so'rovda xato ko'rsatish o'rniga bitta tushunarli ogohlantirish
+  const [tgStatus, setTgStatus] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetchTelegramUserStatus().then((st) => alive && setTgStatus(st)).catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const tgDown = tgStatus && (tgStatus.status === "expired" || tgStatus.status === "disconnected" || tgStatus.status === "error");
   const [chats, setChats] = useState([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [search, setSearch] = useState("");
@@ -312,6 +322,21 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
       {/* Chap panel — suhbatlar royxati */}
       {showList && (<>
       <div style={{ width: isMobile ? "100%" : layout.listW, minHeight: isMobile ? "60vh" : undefined, flexShrink: 0, display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR, minWidth: 0 }}>
+        {tgDown && (
+          <div data-testid="tg-down" role="alert" style={{ margin: "12px 12px 0", padding: "10px 12px", borderRadius: 12, background: "rgba(229,72,77,0.14)", border: "1px solid rgba(229,72,77,0.35)", color: "#FFB4B6", fontSize: 12.5, lineHeight: 1.45 }}>
+            <div style={{ fontWeight: 800, color: "#FFD2D3", marginBottom: 2 }}>
+              {tgStatus.status === "expired" ? "Telegram ulanishi uzildi" : "Telegram akkaunt ulanmagan"}
+            </div>
+            <div>{tgStatus.status === "expired" ? tgStatus.message : "Yangi xabarlar kelmaydi va yuborib bo'lmaydi."} Saqlangan yozishmalar ko'rinib turadi.</div>
+            {isAdmin && onOpenSettings ? (
+              <button type="button" onClick={onOpenSettings} style={{ marginTop: 8, height: 32, padding: "0 14px", borderRadius: 9, border: "none", background: TG_BLUE, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+                Qayta ulash
+              </button>
+            ) : (
+              <div style={{ marginTop: 4, color: TG_DARK_MUTED }}>Administratorga xabar bering.</div>
+            )}
+          </div>
+        )}
         <div style={{ padding: "16px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>Chatlar</div>

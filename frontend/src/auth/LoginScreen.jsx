@@ -4,7 +4,7 @@ import { ArrowLeft, Delete, ScanFace, Fingerprint, Loader2, ShieldCheck } from "
 import { authLogin, authLoginByName } from "../storage.js";
 import {
   canUseBiometrics, biometricLabel, isEnrolledHere, wasSkipped, markSkipped, isCancel,
-  prepareLogin, loginWithPrepared, prepareEnroll, enrollWithPrepared,
+  prepareLogin, loginWithPrepared, prepareEnroll, enrollWithPrepared, lastBioUser, makePreparer,
 } from "./passkey.js";
 import "./login.css";
 import { roleLabel } from "../constants.js";
@@ -34,7 +34,7 @@ function BioIcon({ kind, size = 24 }) {
 }
 
 export default function LoginScreen({ employees, onAuthenticated, onRequestPinReset, onConfirmPinReset }) {
-  const [step, setStep] = useState("pick"); // pick | pin | offer | forgot
+  const [step, setStep] = useState("pick"); // pick | quick | pin | offer | forgot
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState("");
   const [manualName, setManualName] = useState("");
@@ -42,6 +42,20 @@ export default function LoginScreen({ employees, onAuthenticated, onRequestPinRe
   const bio = useMemo(() => biometricLabel(), []);
 
   useEffect(() => { canUseBiometrics().then(setBioAvailable); }, []);
+
+  // Shu telefonda oldin biometrik bilan kirgan xodim bo'lsa — ro'yxat va PIN'siz, darhol Face ID
+  const quickDone = useRef(false);
+  useEffect(() => {
+    if (quickDone.current || !bioAvailable) return;
+    const last = lastBioUser();
+    const emp = last && employees.find((e) => e.id === last.id);
+    if (!emp || !emp.hasPasskey || !isEnrolledHere(emp.id)) return;
+    if (step === "pick" || (step === "pin" && employees.length === 1)) {
+      quickDone.current = true;
+      setSelected(emp);
+      setStep("quick");
+    }
+  }, [bioAvailable, employees, step]);
 
   // Kichik jamoada qidiruv shart emas
   const showSearch = employees.length > 6;
@@ -140,6 +154,16 @@ export default function LoginScreen({ employees, onAuthenticated, onRequestPinRe
           />
         )}
 
+        {step === "quick" && selected && (
+          <QuickStep
+            employee={selected}
+            bio={bio}
+            onSuccess={afterLogin}
+            onPin={() => setStep("pin")}
+            onOther={employees.length > 1 ? back : null}
+          />
+        )}
+
         {step === "offer" && selected && (
           <OfferStep employee={selected} bio={bio} onDone={() => onAuthenticated(selected)} />
         )}
@@ -152,6 +176,78 @@ export default function LoginScreen({ employees, onAuthenticated, onRequestPinRe
   );
 }
 
+// So'rovni oldindan tayyorlab, eskirsa (4 daq.) va ilovaga qaytilganda yangilab turadi
+function usePreparer(fetcher) {
+  const ref = useRef(null);
+  const key = fetcher ? "on" : "off";
+  if (!ref.current || ref.current.key !== key) ref.current = { key, p: fetcher ? makePreparer(fetcher) : { get: async () => null, refresh() {}, invalidate() {} } };
+  const p = ref.current.p;
+  useEffect(() => {
+    if (!fetcher) return;
+    p.refresh();
+    const t = setInterval(() => p.refresh(), 4 * 60 * 1000);
+    const onVis = () => { if (document.visibilityState === "visible") p.refresh(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
+  return p;
+}
+
+/* ================= Tezkor kirish: shu telefonda Face ID yoqilgan xodim ================= */
+function QuickStep({ employee, bio, onSuccess, onPin, onOther }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const preparer = usePreparer(() => prepareLogin(employee.id));
+  const tried = useRef(false);
+
+  async function go(auto = false) {
+    if (busy) return;
+    setError("");
+    setBusy(true);
+    try {
+      const p = await preparer.get();
+      if (!p) { if (!auto) setError(`${bio.name} hozir ishlamayapti. PIN bilan kiring.`); return; }
+      preparer.invalidate();
+      const user = await loginWithPrepared(p);
+      await onSuccess(user, "bio");
+    } catch (e) {
+      // Avtomatik urinishni brauzer to'sishi mumkin (tugma bosilmagan) — unda shunchaki tugma kutadi
+      if (!auto) setError(isCancel(e) ? "Bekor qilindi. Qayta urining yoki PIN bilan kiring." : (e.message || `${bio.name} bilan kirib bo'lmadi`));
+    } finally {
+      setBusy(false);
+      preparer.refresh();
+    }
+  }
+  // Ilova ochilishi bilan bir marta o'zi so'raydi (Android/Chrome'da ishlaydi; iPhone'da tugma bosiladi)
+  useEffect(() => {
+    if (tried.current) return;
+    tried.current = true;
+    const t = setTimeout(() => go(true), 350);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <section className="ul-step ul-offer" aria-label={`${bio.name} bilan kirish`}>
+      <div className="ul-who">
+        <Avatar employee={employee} />
+        <div className="ul-who-name">{employee.name}</div>
+        <div className="ul-who-role">{roleLabel(employee.role)}</div>
+      </div>
+      <button className="ul-quick-bio" onClick={() => go(false)} disabled={busy} aria-label={`${bio.name} bilan kirish`}>
+        {busy ? <Loader2 size={40} className="ul-spin" /> : <BioIcon kind={bio.kind} size={48} />}
+      </button>
+      <div className={`ul-msg${error ? " err" : ""}`} aria-live="polite">
+        {error || (busy ? "Tasdiqlanmoqda…" : `Kirish uchun ${bio.kind === "face" ? "yuzingizni ko'rsating" : "barmog'ingizni qo'ying"}`)}
+      </div>
+      <button className="ul-primary bio" onClick={() => go(false)} disabled={busy}>
+        <BioIcon kind={bio.kind} size={20} /> {bio.name} bilan kirish
+      </button>
+      <button className="ul-secondary" onClick={onPin} disabled={busy}>PIN bilan kirish</button>
+      {onOther && <button className="ul-link" onClick={onOther}>Boshqa xodim</button>}
+    </section>
+  );
+}
+
 /* ================= PIN + Face ID ================= */
 function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForgot }) {
   const [pin, setPin] = useState("");
@@ -160,16 +256,8 @@ function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForg
   const [busy, setBusy] = useState(false);
   const [locked, setLocked] = useState(false);
   const [pressed, setPressed] = useState(null);
-  const prepared = useRef(null);
   const enrolledHere = isEnrolledHere(employee.id);
-
-  // Face ID uchun challenge'ni oldindan tayyorlab qo'yamiz (Safari talabi)
-  const prepare = useCallback(async () => {
-    prepared.current = null;
-    if (!bioReady) return;
-    try { prepared.current = await prepareLogin(employee.id); } catch { prepared.current = null; }
-  }, [bioReady, employee.id]);
-  useEffect(() => { prepare(); }, [prepare]);
+  const preparer = usePreparer(bioReady ? () => prepareLogin(employee.id) : null);
 
   function fail(msg) {
     setError(msg);
@@ -197,18 +285,19 @@ function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForg
   async function biometric() {
     if (busy) return;
     setError("");
-    if (!prepared.current) await prepare();
-    if (!prepared.current) return setError(`${bio.name} hozir ishlamayapti. PIN bilan kiring.`);
     setBusy(true);
     try {
-      const user = await loginWithPrepared(prepared.current);
+      const p = await preparer.get();
+      if (!p) { setError(`${bio.name} hozir ishlamayapti. PIN bilan kiring.`); return; }
+      preparer.invalidate(); // bir martalik
+      const user = await loginWithPrepared(p);
       await onSuccess(user, "bio");
     } catch (e) {
       if (isCancel(e)) setError("Bekor qilindi. PIN bilan ham kirishingiz mumkin.");
       else setError(e.message || `${bio.name} bilan kirib bo'lmadi`);
-      prepare();
     } finally {
       setBusy(false);
+      preparer.refresh();
     }
   }
 
@@ -287,23 +376,27 @@ function OfferStep({ employee, bio, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
-  const prepared = useRef(null);
-
+  const preparer = usePreparer(prepareEnroll);
+  // Server biometrik kirishga tayyor bo'lmasa (masalan, domen sozlanmagan) — taklifni ko'rsatmay ilovaga o'tamiz
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    prepareEnroll().then((p) => { prepared.current = p; }).catch(() => { prepared.current = null; });
-  }, []);
+    let alive = true;
+    preparer.get().then((p) => { if (!alive) return; if (p) setReady(true); else onDone(); });
+    return () => { alive = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function enable() {
     setBusy(true);
     setError("");
     try {
-      if (!prepared.current) prepared.current = await prepareEnroll();
-      await enrollWithPrepared(prepared.current, employee.id);
+      const p = await preparer.get();
+      if (!p) throw new Error("Server bilan bog'lanib bo'lmadi, qaytadan urinib ko'ring");
+      preparer.invalidate();
+      await enrollWithPrepared(p, employee);
       setDone(true);
       setTimeout(onDone, 900);
     } catch (e) {
-      prepared.current = null;
-      prepareEnroll().then((p) => { prepared.current = p; }).catch(() => {});
+      preparer.refresh();
       setError(isCancel(e) ? "Bekor qilindi. Keyinroq Sozlamalardan ham yoqishingiz mumkin." : (e.message || "Yoqib bo'lmadi"));
     } finally {
       setBusy(false);
@@ -314,6 +407,7 @@ function OfferStep({ employee, bio, onDone }) {
     onDone();
   }
 
+  if (!ready) return <section className="ul-step ul-offer"><Loader2 size={28} className="ul-spin" /></section>;
   return (
     <section className="ul-step ul-offer" aria-labelledby="ul-offer-title">
       <div className="ul-offer-icon"><BioIcon kind={bio.kind} size={44} /></div>
