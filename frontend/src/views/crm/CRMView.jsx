@@ -4,6 +4,23 @@ import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, 
 import { LEAD_STAGES, ORDER_READY_STAGES, isWorkerRole } from "../../constants.js";
 import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
 import { TaskChips } from "./TaskAssignModal.jsx";
+import { LeadArchive } from "./LeadArchive.jsx";
+import { closedDate, inPeriod, isClosed, periodRange, periodStats, staleInfo } from "../../lib/leads.js";
+import { PeriodPicker } from "./PeriodPicker.jsx";
+
+// Faol bosqichda uzoq turib qolgan lid belgisi
+function StaleBadge({ lead, big = false }) {
+  const st = staleInfo(lead);
+  if (!st) return null;
+  const danger = st.level === "danger";
+  return (
+    <span data-testid="stale-badge" title="Oxirgi harakatdan beri o'tgan kun"
+      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4, fontSize: big ? 12 : 10.5, fontWeight: 700, padding: big ? "3px 9px" : "2px 7px", borderRadius: 20,
+        color: danger ? THEME.rose : THEME.amber, background: danger ? THEME.roseBg : THEME.amberBg }}>
+      ⏱ {st.days} kun harakatsiz
+    </span>
+  );
+}
 import { THEME } from "../../theme.js";
 
 /* ---------------- PAYMENTS MODAL ---------------- */
@@ -173,15 +190,30 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
   const isMobile = useIsMobile();
   const [mobileStage, setMobileStage] = useState("new");
 
-  const leadsByStage = useMemo(() => {
+  const [tab, setTab] = useState("board"); // "board" — voronka, "archive" — arxiv
+  // Davr: faqat natijalarga (yopilgan/yo'qotilgan, ko'rsatkichlar, arxiv) ta'sir qiladi; tanlov shu qurilmada eslab qolinadi
+  const [periodSel, setPeriodSel] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("uvix_crm_period")) || { mode: "month" }; } catch { return { mode: "month" }; }
+  });
+  const changePeriod = (v) => { setPeriodSel(v); try { localStorage.setItem("uvix_crm_period", JSON.stringify(v)); } catch { /* */ } };
+  const period = useMemo(() => periodRange(periodSel.mode, periodSel), [periodSel]);
+  const ordersById = useMemo(() => new Map((orders || []).map((o) => [o.id, o])), [orders]);
+  // Voronkada: barcha faol lidlar + faqat TANLANGAN DAVRDA yopilgan/yo'qotilganlar. Qolganlari — Arxivda.
+  const { leadsByStage, archivedCount } = useMemo(() => {
     const map = {};
     LEAD_STAGES.forEach((s) => (map[s.key] = []));
+    let archived = 0;
     (leads || []).forEach((l) => {
+      if (isClosed(l) && !inPeriod(closedDate(l, ordersById), period)) { archived++; return; }
       if (map[l.stage]) map[l.stage].push(l);
       else map.new.push(l);
     });
-    return map;
-  }, [leads]);
+    // Yopilganlar — eng yangisi tepada
+    ["won", "lost"].forEach((k) => map[k].sort((a, b) => String(closedDate(b, ordersById) || "").localeCompare(String(closedDate(a, ordersById) || ""))));
+    return { leadsByStage: map, archivedCount: archived };
+  }, [leads, ordersById, period]);
+  const pstats = useMemo(() => periodStats(leads, ordersById, period), [leads, ordersById, period]);
+  const closedTotal = (leads || []).filter(isClosed).length;
 
   // Har bosqich bo'yicha lidlar summasi va voronkadagi (hali yopilmagan) jami
   const stageSums = useMemo(() => {
@@ -231,19 +263,39 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        {!isMobile && (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 18, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, color: THEME.muted }}>
-              Voronkada: <b style={{ fontSize: 20, fontWeight: 800, color: THEME.text, fontFamily: THEME.fontNum, marginLeft: 4 }}>{money(pipelineSum)}</b>
-              <span style={{ marginLeft: 8 }}>· {pipelineCount} ta faol lid</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 3, padding: 3, borderRadius: 12, background: THEME.surface, width: "fit-content" }} role="tablist">
+        {[["board", "Voronka"], ["archive", `Arxiv${closedTotal ? ` (${closedTotal})` : ""}`]].map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} data-crmtab={k} onClick={() => setTab(k)}
+            style={{ padding: "8px 16px", borderRadius: 10, border: 0, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+              background: tab === k ? THEME.card : "transparent", color: tab === k ? THEME.text : THEME.muted, boxShadow: tab === k ? THEME.shadowSm : "none" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {isMobile && tab === "board" && <Button onClick={() => setModal(true)} style={{ padding: "8px 12px" }}><Plus size={14} /> Yangi lid</Button>}
+      </div>
+      {tab === "archive" ? (
+        <LeadArchive leads={leads} orders={orders} period={period} periodSel={periodSel} onPeriod={changePeriod} onReopen={(lead) => onMoveLead(lead, "new")} />
+      ) : (<>
+      {/* Bitta ixcham boshqaruv qatori: davr · asosiy ko'rsatkichlar · yangi lid.
+          Yopilganlar summasi alohida ko'rsatilmaydi — u "Yopilgan" ustuni sarlavhasida bor. */}
+      <div className="uvix-crm-toolbar" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <PeriodPicker value={periodSel} onChange={changePeriod} />
+        <div data-testid="crm-stats" className="uvix-crm-stats" style={{ flex: "1 1 360px", minWidth: 0, display: "flex", alignItems: "center", gap: 0, overflowX: "auto", scrollbarWidth: "none" }}>
+          {[
+            { label: "Voronkada", value: moneyCompact(pipelineSum), extra: `${pipelineCount} lid`, title: "Faol bosqichlardagi lidlar — davrga bog'liq emas", color: THEME.text },
+            { label: "Yangi lidlar", value: String(pstats.created), extra: period.label.toLowerCase(), title: `${period.label}: shu davrda kelgan lidlar`, color: LEAD_STAGES[0].color },
+            { label: "O'rtacha yopilish", value: pstats.avgDays == null ? "—" : `${pstats.avgDays} kun`, title: "Lid kelgandan yopilgunicha o'rtacha", color: THEME.text },
+          ].map((c, i) => (
+            <div key={c.label} title={c.title} style={{ display: "flex", alignItems: "baseline", gap: 6, padding: i ? "0 16px" : "0 16px 0 4px", borderLeft: i ? `1px solid ${THEME.border}` : "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: THEME.muted }}>{c.label}</span>
+              <b style={{ fontSize: 15, fontWeight: 800, color: c.color, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums" }}>{c.value}</b>
+              {c.extra && <span style={{ fontSize: 11.5, color: THEME.muted }}>· {c.extra}</span>}
             </div>
-            <div style={{ fontSize: 13, color: THEME.muted }}>
-              Yopilgan: <b style={{ fontSize: 16, fontWeight: 800, color: LEAD_STAGES.find((x) => x.key === "won").color, fontFamily: THEME.fontNum, marginLeft: 4 }}>{money(stageSums.won || 0)}</b>
-            </div>
-          </div>
-        )}
-        <Button onClick={() => setModal(true)}><Plus size={14} /> Yangi lid</Button>
+          ))}
+        </div>
+        {!isMobile && <Button onClick={() => setModal(true)} style={{ marginLeft: "auto" }}><Plus size={14} /> Yangi lid</Button>}
       </div>
 
       {isMobile ? (
@@ -275,15 +327,20 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
               padding: dragOverStage === stage.key ? 6 : 0,
             }}
           >
-            <div style={{ marginBottom: 10, padding: "10px 12px 11px", borderRadius: 12, background: `${stage.color}1A`, border: `1px solid ${stage.color}40`, borderTop: `3px solid ${stage.color}` }}>
+            <div style={{ marginBottom: 10, padding: "8px 11px 9px", borderRadius: 12, background: `${stage.color}1A`, border: `1px solid ${stage.color}40`, borderTop: `3px solid ${stage.color}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
                 <span title={stage.label} style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{stage.label}</span>
                 <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: stage.color, background: `${stage.color}24`, padding: "1px 8px", borderRadius: 20, flexShrink: 0 }}>{leadsByStage[stage.key].length}</span>
               </div>
-              <div title={`Bosqichdagi lidlar summasi: ${money(stageSums[stage.key])}`} style={{ marginTop: 6, fontSize: 17, fontWeight: 800, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: stageSums[stage.key] ? stage.color : THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <div title={`Bosqichdagi lidlar summasi: ${money(stageSums[stage.key])}`} style={{ marginTop: 4, fontSize: 15, fontWeight: 800, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: stageSums[stage.key] ? stage.color : THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {moneyCompact(stageSums[stage.key])}
               </div>
+              {(stage.key === "won" || stage.key === "lost") && (
+                <button type="button" onClick={() => setTab("archive")} style={{ marginTop: 4, padding: 0, border: 0, background: "none", cursor: "pointer", fontSize: 11, color: THEME.muted, fontFamily: "inherit" }}>
+                  {period.label} · {archivedCount ? "qolganlari Arxivda →" : "Arxiv →"}
+                </button>
+              )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 60 }}>
               {leadsByStage[stage.key].length === 0 ? (
@@ -315,6 +372,7 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
                       {lead.estimatedValue > 0 && (
                         <div style={{ fontSize: 12.5, fontWeight: 700, color: THEME.violet }}>{money(lead.estimatedValue)}</div>
                       )}
+                      <StaleBadge lead={lead} />
                       {lead.manager && <div style={{ fontSize: 11, color: THEME.muted }}>Menejer: {lead.manager}</div>}
                       {lead.source && <div style={{ fontSize: 11, color: THEME.muted }}>Manba: {lead.source}</div>}
                       {lead.notes && <div style={{ fontSize: 11, color: THEME.muted, fontStyle: "italic" }}>{lead.notes}</div>}
@@ -358,6 +416,7 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
         ))}
       </div>
       )}
+      </>)}
 
       {modal && (
         <LeadForm
@@ -448,6 +507,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
                     <div style={{ fontSize: 14.5, fontWeight: 700, color: THEME.violet, whiteSpace: "nowrap" }}>{money(lead.estimatedValue)}</div>
                   )}
                 </div>
+                <StaleBadge lead={lead} big />
                 {lead.notes && <div style={{ fontSize: 13, color: THEME.mutedDark, lineHeight: 1.45 }}>{lead.notes}</div>}
                 <TaskChips lead={lead} employees={employees} onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
 

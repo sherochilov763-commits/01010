@@ -68,3 +68,13 @@ export async function exportWorkbook(orders, expenses, categories, label, filena
   const XLSX = await loadXLSX();
   XLSX.writeFile(buildExcelWorkbookWith(XLSX, orders, expenses, categories, label), filename);
 }
+
+// Oddiy jadvalni (qatorlar ro'yxati) bitta varaqli Excel faylga yuklab beradi
+export async function exportRows(rows, sheetName, filename) {
+  const XLSX = await loadXLSX();
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows);
+  if (rows.length) ws["!cols"] = Object.keys(rows[0]).map((k) => ({ wch: Math.max(12, k.length + 2) }));
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  XLSX.writeFile(wb, filename);
+}

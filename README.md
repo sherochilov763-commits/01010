@@ -488,3 +488,23 @@ Menyu pastidagi **«Menyuni sozlash»** (ixcham va tepa panelda — ⚙ belgisi)
   belgilaydi (`settings.navDefaults`) — o'z menyusini o'zgartirmagan xodimlarga qo'llanadi. «Standart» tugmasi shaxsiy sozlamani o'chiradi.
 - Kod: `frontend/src/components/Nav.jsx` (useNavPrefs, NavEditor, RailNav, TopNav, NAV_CSS).
 - Tepa panel sahifa aylantirilganda ham ko'rinib turadi (`html, body { overflow-x: clip }`).
+- **PIN klaviaturasida Face ID tugmasi** (pastki chap katak, telefonda doim): yoqilgan bo'lsa — bosib kiriladi;
+  yoqilmagan bo'lsa — "PIN'ni kiriting, kirgach yoqamiz" deb belgilanadi va PIN'dan keyin (oldin "Hozir emas" deyilgan bo'lsa ham) yoqish taklif qilinadi.
+
+## CRM: yopilgan lidlar arxivi va eskirgan lidlar
+
+- **Davr tanlagich** (Joriy oy · O'tgan oy · Chorak · Yil · Oraliq; tanlov qurilmada eslab qolinadi) — faqat natijalarga ta'sir qiladi:
+  «Yopilgan»/«Yo'qotilgan» ustunlari, tepadagi ko'rsatkichlar va Arxiv. **Faol bosqichlar doim to'liq** (eski faol lid yashirinib qolmasin).
+  Standart — joriy oy: 1-sanada yopilgan ustunlar o'zi bo'shaydi, eskilari **Arxiv**da (hech narsa o'chmaydi).
+- **Ko'rsatkichlar** — davr tanlagichi bilan bitta ixcham qatorda (kartalar emas, ~50px): Voronkada (faol, davrga bog'liq emas) ·
+  Yangi lidlar (davrda kelgan) · O'rtacha yopilish (kun). Yopilganlar summasi takrorlanmaydi — u «Yopilgan» ustuni sarlavhasida.
+  Telefonda qator gorizontal suriladi, «Yangi lid» tugmasi Voronka/Arxiv qatorida.
+- **Yopilish sanasi:** lid «Yopilgan»/«Yo'qotilgan»ga o'tganda `closedAt`, har bosqich o'zgarishida `stageAt` yoziladi
+  (pechatchi ishni tugatib avtomatik yopilganda ham — `backend/tasks.js`). Eski lidlarda sana bog'langan buyurtmadan
+  yoki yaratilgan kundan olinadi.
+- **Arxiv** (CRM → «Arxiv»): o'sha davr tanlagichi (+ «Barchasi»), Hammasi/Yopilgan/Yo'qotilgan, qidiruv (mijoz, telefon, menejer), yillik jami
+  (soni, summa, konversiya %), oylar bo'yicha guruhlar va har oy statistikasi, **«Qayta ochish»** (lid «Yangi lid»ga qaytadi), **Excel**.
+- **Eskirgan lid belgisi:** faol bosqichda 14+ kun harakatsiz — sariq, 30+ kun — qizil («⏱ N kun harakatsiz»).
+  Harakat = bosqich o'zgarishi, tahrir, dizayn/pechat vazifasi holati.
+- **Tuzatildi:** lidni tahrirlash endi Telegram bog'lanishi, dizayn/pechat vazifalari va sanalarni o'chirib yubormaydi.
+- Kod: `frontend/src/lib/leads.js`, `frontend/src/views/crm/LeadArchive.jsx`.

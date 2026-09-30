@@ -225,3 +225,7 @@
 .ul-quick-bio:active { transform: scale(0.96); }
 .ul-quick-bio:disabled { cursor: default; }
 .ul-offer .ul-primary.bio { margin: 18px 0 10px; }
+
+/* PIN klaviaturasidagi Face ID tugmasi */
+.ul-key.ghost.bio { color: var(--cyan); }
+.ul-key.ghost.bio.armed { box-shadow: inset 0 0 0 1.5px var(--cyan); background: rgba(45, 212, 238, 0.1); }

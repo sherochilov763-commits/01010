@@ -37,6 +37,8 @@ function mergeLeadTaskState(incoming, current) {
     if (db.stageAutoAt && (!out.stageAutoAt || db.stageAutoAt > out.stageAutoAt)) {
       out.stage = db.stage;
       out.stageAutoAt = db.stageAutoAt;
+      if (db.stageAt) out.stageAt = db.stageAt;
+      if (db.closedAt) out.closedAt = db.closedAt;
     }
     return out;
   });
@@ -129,6 +131,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
       if (lead.stage === "design" || lead.stage === "negotiation" || lead.stage === "new") {
         lead.stage = "printing";
         lead.stageAutoAt = now;
+        lead.stageAt = now;
       }
       if (!lead.print) {
         lead.print = { status: "unassigned", statusAt: now, autoCreated: true };
@@ -141,6 +144,8 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
     if (kind === "print" && status === "done" && lead.stage === "printing") {
       lead.stage = "won";
       lead.stageAutoAt = now;
+      lead.stageAt = now;
+      lead.closedAt = now;
       autoNote = " → Yopilgan";
     }
     upsertStmt.run("uvix:leads", JSON.stringify(leads));

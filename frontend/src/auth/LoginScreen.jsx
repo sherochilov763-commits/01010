@@ -80,8 +80,9 @@ export default function LoginScreen({ employees, onAuthenticated, onRequestPinRe
   }
 
   // PIN yoki Face ID bilan muvaffaqiyatli kirilgandan keyin
-  const afterLogin = useCallback(async (user, via) => {
-    if (via === "pin" && bioAvailable && !isEnrolledHere(user.id) && !wasSkipped(user.id)) {
+  const afterLogin = useCallback(async (user, via, opts = {}) => {
+    // PIN oynasidagi Face ID belgisi bosilgan bo'lsa — "Hozir emas" deyilgan bo'lsa ham yoqishni taklif qilamiz
+    if (via === "pin" && bioAvailable && !isEnrolledHere(user.id) && (opts.wantBio || !wasSkipped(user.id))) {
       setSelected((s) => ({ ...(s || {}), ...user }));
       setStep("offer");
       return;
@@ -148,6 +149,7 @@ export default function LoginScreen({ employees, onAuthenticated, onRequestPinRe
             canGoBack={employees.length > 1 || employees.length === 0}
             onBack={back}
             bio={bio}
+            bioAvailable={bioAvailable}
             bioReady={bioAvailable && !!selected.hasPasskey}
             onSuccess={afterLogin}
             onForgot={onRequestPinReset ? () => setStep("forgot") : null}
@@ -249,14 +251,14 @@ function QuickStep({ employee, bio, onSuccess, onPin, onOther }) {
 }
 
 /* ================= PIN + Face ID ================= */
-function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForgot }) {
+function PinStep({ employee, canGoBack, onBack, bio, bioAvailable, bioReady, onSuccess, onForgot }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [shake, setShake] = useState(false);
   const [busy, setBusy] = useState(false);
   const [locked, setLocked] = useState(false);
   const [pressed, setPressed] = useState(null);
-  const enrolledHere = isEnrolledHere(employee.id);
+  const [wantBio, setWantBio] = useState(false); // Face ID belgisi bosildi, lekin hali yoqilmagan
   const preparer = usePreparer(bioReady ? () => prepareLogin(employee.id) : null);
 
   function fail(msg) {
@@ -273,13 +275,20 @@ function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForg
     setError("");
     try {
       const user = employee.manual ? await authLoginByName(employee.name, value) : await authLogin(employee.id, value);
-      await onSuccess(user, "pin");
+      await onSuccess(user, "pin", { wantBio });
     } catch (e) {
       if (e.status === 429) { setLocked(true); fail(e.message || "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring."); }
       else fail("PIN noto'g'ri. Qaytadan kiriting.");
     } finally {
       setBusy(false);
     }
+  }
+
+  // PIN klaviaturasidagi Face ID tugmasi: yoqilgan bo'lsa — kiradi, bo'lmasa — PIN'dan keyin yoqishni tayyorlaydi
+  function bioKey() {
+    if (bioReady) return biometric();
+    setWantBio(true);
+    setError("");
   }
 
   async function biometric() {
@@ -293,7 +302,7 @@ function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForg
       const user = await loginWithPrepared(p);
       await onSuccess(user, "bio");
     } catch (e) {
-      if (isCancel(e)) setError("Bekor qilindi. PIN bilan ham kirishingiz mumkin.");
+      if (isCancel(e)) { setError(`Bekor qilindi yoki bu telefonda ${bio.name} topilmadi. PIN bilan kiring — kerak bo'lsa qayta yoqamiz.`); setWantBio(true); }
       else setError(e.message || `${bio.name} bilan kirib bo'lmadi`);
     } finally {
       setBusy(false);
@@ -339,22 +348,16 @@ function PinStep({ employee, canGoBack, onBack, bio, bioReady, onSuccess, onForg
         {Array.from({ length: slots }).map((_, i) => <span key={i} className={`ul-dot${i < pin.length ? " on" : ""}`} />)}
       </div>
       <div className={`ul-msg${error ? " err" : ""}`} aria-live="polite">
-        {error || (busy ? "Tekshirilmoqda…" : "PIN kodingizni kiriting")}
+        {error || (busy ? "Tekshirilmoqda…" : wantBio && !bioReady ? `${bio.name} hali yoqilmagan — PIN'ni kiriting, kirgach bir bosishda yoqamiz` : "PIN kodingizni kiriting")}
       </div>
 
-      {bioReady && enrolledHere && (
-        <button className="ul-primary bio" onClick={biometric} disabled={busy}>
-          <BioIcon kind={bio.kind} size={20} /> {bio.name} bilan kirish
-        </button>
-      )}
-
-      <div className={`ul-pad${bioReady && enrolledHere ? " compact" : ""}`}>
+      <div className="ul-pad">
         {keys.map((k) => (
           <button key={k} className={`ul-key${pressed === k ? " pressed" : ""}`} onClick={() => press(k)} disabled={locked} aria-label={k}>{k}</button>
         ))}
-        {bioReady && !enrolledHere ? (
-          <button className="ul-key ghost bio" onClick={biometric} disabled={busy} aria-label={`${bio.name} bilan kirish`}>
-            <BioIcon kind={bio.kind} size={26} />
+        {bioAvailable && !employee.manual ? (
+          <button className={`ul-key ghost bio${wantBio ? " armed" : ""}`} onClick={bioKey} disabled={busy} aria-label={`${bio.name} bilan kirish`} title={`${bio.name} bilan kirish`}>
+            <BioIcon kind={bio.kind} size={30} />
           </button>
         ) : <span className="ul-key ul-key-spacer" aria-hidden="true" />}
         <button className={`ul-key${pressed === "0" ? " pressed" : ""}`} onClick={() => press("0")} disabled={locked} aria-label="0">0</button>

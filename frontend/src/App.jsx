@@ -368,11 +368,13 @@ export default function App() {
   function saveLead(lead, isEdit) {
     let next;
     if (isEdit) {
-      next = leads.map((l) => (l.id === lead.id ? lead : l));
+      // Formadagi maydonlargina yangilanadi — Telegram bog'lanishi, dizayn/pechat vazifalari va sanalar saqlanib qoladi
+      next = leads.map((l) => (l.id === lead.id ? { ...l, ...lead, createdBy: l.createdBy, createdAt: l.createdAt, updatedAt: new Date().toISOString() } : l));
       addLog(`Lid tahrirlandi: ${lead.customer}`);
     } else {
       lead.createdBy = currentUser.name;
       lead.createdAt = new Date().toISOString();
+      lead.stageAt = lead.createdAt;
       next = [lead, ...leads];
       addLog(`Yangi lid qo'shildi: ${lead.customer}`);
     }
@@ -401,6 +403,7 @@ export default function App() {
         ...l,
         jobTitle,
         stage: targetStage || l.stage,
+        ...(targetStage && targetStage !== l.stage ? { stageAt: now } : {}),
         [kind]: { ...prev, ...task, status, statusAt: now, assignedAt: reassigned || !prev.assignedAt ? now : prev.assignedAt, autoCreated: undefined },
       };
       if (kind === "design" && preassignPrinter && !(l.print?.status && l.print.status !== "unassigned")) {
@@ -421,7 +424,11 @@ export default function App() {
     if (newStage === "printing" && !lead.print?.assigneeId) return setTaskAssign({ lead, kind: "print", targetStage: newStage });
     const next = leads.map((l) => {
       if (l.id !== lead.id) return l;
-      const upd = { ...l, stage: newStage };
+      const nowIso = new Date().toISOString();
+      const upd = { ...l, stage: newStage, stageAt: nowIso };
+      // Yopilish sanasi — arxiv va oylik statistika shu bo'yicha ishlaydi
+      if (newStage === "won" || newStage === "lost") upd.closedAt = nowIso;
+      else delete upd.closedAt;
       // Pechatga oldindan tayinlangan (navbatdagi) ish qo'lda shu bosqichga o'tkazilsa — faollashtiramiz
       if (newStage === "printing" && l.print?.assigneeId && (!l.print.status || l.print.status === "unassigned")) {
         upd.print = { ...l.print, status: "new", statusAt: new Date().toISOString(), assignedAt: new Date().toISOString() };
