@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const express = require("express");
+const compression = require("compression");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -39,6 +40,8 @@ const upload = multer({
 
 const PORT = process.env.PORT || 4000;
 const app = express();
+// Javoblarni siqib yuborish (JSON va JS fayllar 3–5 barobar kichrayadi — telefonda sezilarli tezlik)
+app.use(compression({ threshold: 1024 }));
 
 // CORS — standart holatda o'chiq (frontend shu serverning o'zidan beriladi).
 // Frontend boshqa domenda bo'lsa: CORS_ORIGIN="https://a.uz,https://b.uz"
@@ -82,9 +85,11 @@ app.get("/api/health", (req, res) => {
 // ==================== Ma'lumotlar bazasi bilan ishlash (kv_store) ====================
 const getStmt = db.prepare("SELECT key, value FROM kv_store WHERE key = ?");
 const upsertStmt = db.prepare(`
-  INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, datetime('now'))
-  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')
+  INSERT INTO kv_store (key, value, updated_at, rev) VALUES (?, ?, datetime('now'), 1)
+  ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), rev = kv_store.rev + 1
 `);
+const revStmt = db.prepare("SELECT rev FROM kv_store WHERE key = ?");
+const revOf = (key) => revStmt.get(key)?.rev || 0;
 const deleteStmt = db.prepare("DELETE FROM kv_store WHERE key = ?");
 const listStmt = db.prepare("SELECT key FROM kv_store WHERE key LIKE ?");
 
@@ -339,7 +344,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys";
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:");
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -414,16 +419,19 @@ app.get("/api/kv/:key", (req, res) => {
   if (isWorker(req.user) && !WORKER_READ_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
   const row = getStmt.get(key);
   if (!row) return res.status(404).json({ error: "not_found" });
+  const rev = revOf(key);
+  // ?rev=N — brauzerdagi nusxa hali eskirmagan bo'lsa, ma'lumotni qayta yubormaymiz
+  if (req.query.rev != null && Number(req.query.rev) === rev) return res.json({ key, unchanged: true, rev });
   const isAdmin = req.user.role === "admin";
   if (key === "uvix:employees") {
-    return res.json({ key, value: JSON.stringify(sanitizeEmployeesForClient(readEmployees(), req.user)) });
+    return res.json({ key, rev, value: JSON.stringify(sanitizeEmployeesForClient(readEmployees(), req.user)) });
   }
   if (key === "uvix:settings") {
     try {
-      return res.json({ key, value: JSON.stringify(sanitizeSettingsForClient(JSON.parse(row.value), isAdmin, req.user)) });
+      return res.json({ key, rev, value: JSON.stringify(sanitizeSettingsForClient(JSON.parse(row.value), isAdmin, req.user)) });
     } catch { /* buzilgan JSON — pastda xom holda qaytaramiz */ }
   }
-  res.json({ key: row.key, value: row.value });
+  res.json({ key: row.key, rev, value: row.value });
 });
 
 // ==================== Telegram xabarnomalari ====================
@@ -638,6 +646,80 @@ function mergeEmployees(incoming, user) {
   return { list: result };
 }
 
+// ---- Har bir xodimning o'z dashboard ko'rinishi (tartib, o'lcham, ranglar) ----
+// Umumiy ko'rinishni administrator belgilaydi (settings.dashboardLayout), xodim uni o'zi uchun moslashtirsa — shu yerda saqlanadi.
+app.get("/api/me/dashboard", requireAuth, (req, res) => {
+  const row = getStmt.get(`uvix:dash:${req.user.id}`);
+  let prefs = null;
+  try { prefs = row ? JSON.parse(row.value) : null; } catch { prefs = null; }
+  res.json({ prefs });
+});
+app.put("/api/me/dashboard", requireAuth, (req, res) => {
+  const prefs = req.body?.prefs;
+  const key = `uvix:dash:${req.user.id}`;
+  if (prefs === null) { deleteStmt.run(key); return res.json({ prefs: null }); }
+  if (!prefs || typeof prefs !== "object" || !Array.isArray(prefs.layout)) return res.status(400).json({ error: "invalid_prefs" });
+  const layout = prefs.layout.slice(0, 100).filter((w) => w && typeof w.id === "string").map((w) => ({ id: w.id.slice(0, 60), visible: !!w.visible, size: ["sm", "md", "lg", "full"].includes(w.size) ? w.size : "md" }));
+  const cardStyles = {};
+  Object.entries(prefs.cardStyles || {}).slice(0, 100).forEach(([id, st]) => {
+    if (st && typeof st === "object" && (!st.color || /^#[0-9A-Fa-f]{6}$/.test(st.color))) cardStyles[id.slice(0, 60)] = { filled: !!st.filled, color: st.color || null };
+  });
+  const clean = { layout, cardStyles };
+  upsertStmt.run(key, JSON.stringify(clean));
+  res.json({ prefs: clean });
+});
+
+// ---- Birlashtirib saqlash: faqat o'zgargan yozuvlar yuboriladi ----
+// Ikki xodim bir vaqtda ishlasa ham bir-birining o'zgarishini o'chirib yubormaydi:
+// server hozirgi ro'yxatga faqat shu xodim qo'shgan/o'zgartirgan/o'chirgan yozuvlarni qo'llaydi.
+const MERGE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit"]);
+const MAX_ITEMS = { "uvix:audit": 500 };
+app.post("/api/kv/:key/merge", (req, res) => {
+  const key = req.params.key;
+  if (!MERGE_KEYS.has(key)) return res.status(400).json({ error: "merge_not_supported" });
+  if (isWorker(req.user)) return res.status(403).json({ error: "forbidden" });
+  const { upserts = [], deletes = [] } = req.body || {};
+  if (!Array.isArray(upserts) || !Array.isArray(deletes) || upserts.length > 20000 || deletes.length > 20000) {
+    return res.status(400).json({ error: "invalid_patch" });
+  }
+  if (upserts.some((u) => !u || typeof u.item !== "object" || u.item === null || typeof u.item.id !== "string" && typeof u.item.id !== "number")) {
+    return res.status(400).json({ error: "invalid_item", message: "Har bir yozuvda id bo'lishi kerak" });
+  }
+  const tx = db.transaction(() => {
+    const oldRow = getStmt.get(key);
+    const oldValue = oldRow ? oldRow.value : null;
+    let list = [];
+    try { list = oldValue ? JSON.parse(oldValue) : []; } catch { list = []; }
+    if (!Array.isArray(list)) list = [];
+    const del = new Set(deletes.map(String));
+    list = list.filter((x) => !del.has(String(x?.id)));
+    const pos = new Map(list.map((x, i) => [String(x?.id), i]));
+    const toStart = [];
+    const toEnd = [];
+    for (const u of upserts) {
+      const id = String(u.item.id);
+      if (pos.has(id)) list[pos.get(id)] = u.item;
+      else (u.at === "start" ? toStart : toEnd).push(u.item);
+    }
+    let next = [...toStart, ...list, ...toEnd];
+    if (key === "uvix:leads") next = mergeLeadTaskState(next, oldValue ? JSON.parse(oldValue) : []);
+    if (MAX_ITEMS[key] && next.length > MAX_ITEMS[key]) next = next.slice(0, MAX_ITEMS[key]);
+    const value = JSON.stringify(next);
+    upsertStmt.run(key, value);
+    return { oldValue, value };
+  });
+  let result;
+  try {
+    result = tx();
+  } catch (e) {
+    console.error("Birlashtirib saqlashda xato:", e.message);
+    return res.status(500).json({ error: "merge_failed" });
+  }
+  res.json({ key, rev: revOf(key), value: result.value });
+  if (key === "uvix:orders") notifyOrdersDiff(result.oldValue, result.value);
+  else if (key === "uvix:transactions") notifyExpensesDiff(result.oldValue, result.value);
+});
+
 app.put("/api/kv/:key", (req, res) => {
   const key = req.params.key;
   const { value } = req.body || {};
@@ -664,7 +746,7 @@ app.put("/api/kv/:key", (req, res) => {
     if (merged.error) return res.status(400).json({ error: "invalid_employees", message: merged.error });
     writeEmployees(merged.list);
     passkeyApi.removeForMissingEmployees(new Set(merged.list.map((e) => e.id)));
-    return res.json({ key, value: JSON.stringify(sanitizeEmployeesForClient(merged.list, req.user)) });
+    return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeEmployeesForClient(merged.list, req.user)) });
   }
 
   if (key === "uvix:settings" && !isAdmin) {
@@ -676,7 +758,7 @@ app.put("/api/kv/:key", (req, res) => {
       if (f in prev) next[f] = prev[f]; else delete next[f];
     });
     upsertStmt.run(key, JSON.stringify(next));
-    return res.json({ key, value: JSON.stringify(sanitizeSettingsForClient(next, false)) });
+    return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeSettingsForClient(next, false)) });
   }
 
   if (key === "uvix:leads") {
@@ -684,11 +766,11 @@ app.put("/api/kv/:key", (req, res) => {
     try {
       const merged = mergeLeadTaskState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []);
       upsertStmt.run(key, JSON.stringify(merged));
-      return res.json({ key, value: JSON.stringify(merged) });
+      return res.json({ key, rev: revOf(key), value: JSON.stringify(merged) });
     } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
   upsertStmt.run(req.params.key, value);
-  res.json({ key: req.params.key, value });
+  res.json({ key: req.params.key, rev: revOf(req.params.key), value });
 
   // Telegram xabarnomalari — javob yuborilgandan keyin, orqa fonda (foydalanuvchini kutdirmasdan)
   if (req.params.key === "uvix:orders") {
@@ -780,8 +862,11 @@ app.post("/api/backup/restore", requireAuth, requireAdmin, restoreUpload.single(
     fs.writeFileSync(safety, db.serialize());
     const insert = db.prepare("INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)");
     db.transaction(() => {
+      // Versiya raqamlari oldingilaridan katta bo'lsin — ochiq brauzerlar o'zgarishni sezsin
+      const maxRev = db.prepare("SELECT COALESCE(MAX(rev), 0) AS m FROM kv_store").get().m;
       db.prepare("DELETE FROM kv_store").run();
       for (const r of rows) insert.run(r.key, r.value, r.updated_at || new Date().toISOString());
+      db.prepare("UPDATE kv_store SET rev = ?").run(maxRev + 1);
     })();
     dialogsCache = { at: 0, list: [] };
     historySyncedAt.clear();
@@ -802,9 +887,17 @@ app.post("/api/backup/restore", requireAuth, requireAdmin, restoreUpload.single(
 
 // ---- (ixtiyoriy) frontend build'ini shu serverdan ham berish uchun ----
 const FRONTEND_DIST = path.join(__dirname, "..", "frontend", "dist");
-app.use(express.static(FRONTEND_DIST));
+// /assets/ ichidagi fayllar nomida xesh bor (index-AbC123.js) — ular hech qachon o'zgarmaydi,
+// shuning uchun brauzer ularni 1 yil keshda saqlaydi. index.html esa har doim yangisi olinadi.
+app.use("/assets", express.static(path.join(FRONTEND_DIST, "assets"), { immutable: true, maxAge: "1y", fallthrough: false }));
+app.use(express.static(FRONTEND_DIST, {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
+  },
+}));
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api/")) return next();
+  res.setHeader("Cache-Control", "no-cache");
   res.sendFile(path.join(FRONTEND_DIST, "index.html"), (err) => {
     if (err) res.status(404).send("Frontend build topilmadi. Avval `npm run build` qiling.");
   });

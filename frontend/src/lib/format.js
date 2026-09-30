@@ -37,6 +37,15 @@ export function fmt(n) {
 export function money(n) {
   return fmt(n) + " so'm";
 }
+// Tor joylar uchun qisqa ko'rinish: 211 500 000 → "211,5 mln so'm"
+export function moneyCompact(n) {
+  const v = Math.abs(n || 0);
+  const sign = n < 0 ? "-" : "";
+  const f = (x) => (Math.round(x * 10) / 10).toString().replace(".", ",");
+  if (v >= 1e9) return `${sign}${f(v / 1e9)} mlrd so'm`;
+  if (v >= 1e6) return `${sign}${f(v / 1e6)} mln so'm`;
+  return money(n);
+}
 export function usd(n) {
   if (n === null || n === undefined || isNaN(n)) return "$0";
   return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

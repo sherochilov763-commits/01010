@@ -41,6 +41,11 @@ db.exec(`
   );
 `);
 
+// Har bir kalitning versiya raqami (rev): har yozishda +1. Brauzer o'zgarish bo'lganini
+// butun ma'lumotni yuklamasdan bilib oladi.
+const cols = db.prepare("PRAGMA table_info(kv_store)").all().map((c) => c.name);
+if (!cols.includes("rev")) db.exec("ALTER TABLE kv_store ADD COLUMN rev INTEGER NOT NULL DEFAULT 1");
+
 module.exports = db;
 module.exports.DB_PATH = DB_PATH;
 module.exports.STORAGE = STORAGE;

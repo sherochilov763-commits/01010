@@ -371,3 +371,72 @@ API: `GET /api/health` (storage.persistent), `GET /api/system/status` (admin), `
 - Ismlar `uvix:telegramContacts`da eslab qolinadi — Telegram vaqtincha uzilsa ham ro'yxatda ism turadi.
 
 API: `GET /api/telegram-user/messages/:chatId/older?before=<tgId>`, `POST /api/telegram-user/create-lead`.
+
+## 🛡️ Ishonchli saqlash (2026-09, 1-bosqich)
+
+**Muammo edi:** buyurtma/rasxod/lid ro'yxatlari serverga butunligicha yozilardi. Ikki xodim bir vaqtda
+ishlasa, keyin saqlagan birinchisining o'zgarishini o'chirib yuborardi. Saqlash xatosi esa ko'rinmasdi.
+
+**Endi:**
+- **Faqat o'zgargan yozuvlar yuboriladi** (`POST /api/kv/:key/merge` — `upserts` va `deletes`).
+  Server ularni hozirgi ro'yxatga qo'llaydi, shuning uchun bir vaqtda ishlagan xodimlar bir-birini o'chirmaydi.
+  Buyurtmalar, rasxodlar, lidlar va o'zgarishlar tarixi uchun ishlaydi. Bir yozuvni ikki kishi bir paytda
+  tahrirlasa — oxirgisi qoladi.
+- **Versiya raqami (`rev`)**: har kalit yozilganda +1. Brauzer har 20 soniyada (va oynaga qaytganda)
+  `GET /api/kv/:key?rev=N` so'raydi — o'zgarmagan bo'lsa ma'lumot qayta yuklanmaydi. Boshqa xodimlar
+  kiritganlari o'zi ko'rinadi.
+- **Saqlash holati** ekranning pastki chap burchagida: "Saqlanmoqda…", "Saqlandi", "Saqlanmadi — qayta
+  urinilmoqda" (+ "Qayta urinish" tugmasi).
+- **Internet uzilsa** — o'zgarish navbatda turadi, o'zi qayta yuboriladi (1.5 s → 30 s oraliqda), internet
+  qaytishi bilan darhol. Sahifa yopilib qolsa ham brauzerda saqlanadi va keyingi kirishda yuboriladi.
+  Saqlanmagan o'zgarish bor paytda sahifani yopmoqchi bo'lsangiz, brauzer ogohlantiradi.
+- Tizimdan chiqishda brauzerdagi saqlanmagan nusxalar tozalanadi (umumiy kompyuter uchun).
+
+## CRM: bosqichlar summasi va qorong'i mavzu tuzatishlari (2026-09)
+- CRM doskasida har bir bosqich sarlavhasi o'z rangidagi kartochka: lidlar soni va **summasi**.
+  Tepada: "Voronkada" (yopilmagan bosqichlar jami) va "Yopilgan" summa.
+- "Tungi" mavzuda jadval qatoriga sichqoncha olib borilganda qator oppoq bo'lib, matn ko'rinmay qolardi —
+  tuzatildi. Xuddi shu muammo tugmalar (Excel, xavfli tugmalar), kartochka chegaralari va aylantirish
+  chizig'ida ham bor edi — hammasi endi mavzuga mos.
+
+## Dashboard: kartochka rangini sozlash (2026-09)
+- Har bir ko'rsatkich kartochkasining pastki o'ng burchagida shesterenka (faqat administratorga).
+  Bosilganda: "Oddiy" yoki "To'liq rang" ko'rinishi, 9 ta tayyor rang yoki istalgan boshqa rang, "Asl holiga qaytarish".
+- Tanlov `settings.cardStyles` da saqlanadi — barcha xodimlarda bir xil ko'rinadi.
+- To'liq rangli kartochkada yozuv rangi avtomatik tanlanadi: och rangda (sariq kabi) — qora, to'q rangda — oq.
+
+## Dashboard: kartaning o'zida sozlash (konstruktor o'rniga) (2026-09)
+Eski "Dashboard konstruktori" ro'yxati olib tashlandi (`DashboardConstructorSection.jsx` o'chirildi). Endi:
+- **"Dashboardni sozlash"** tugmasi → tahrirlash rejimi: kartalar ramkaga olinadi, mazmuni sekin tebranadi,
+  pastda suzuvchi panel chiqadi ("Tayyor", "Ko'rsatkich qo'shish", "⋯").
+- **Tutqich** (kartaning tepa o'rtasi) — sichqoncha yoki barmoq bilan sudrab joyini almashtirish (faqat o'z bo'limi ichida).
+- **Shesterenka** (pastki o'ng burchak) — o'lcham (Kichik/O'rta/Katta/To'liq), rang (raqamli kartalarda),
+  joyi (Oldinga/Keyinga), "Yashirish". Grafiklar, qarzdorlar ro'yxati va asosiy kartaga ham ishlaydi.
+- **"Ko'rsatkich qo'shish"** — yashirilgan kartalar galereyasi, bosilsa o'z bo'limining oxiriga qaytadi.
+- O'zgarishlar **darhol saqlanadi** — alohida "Saqlash" tugmasi yo'q.
+- **Kim uchun:** administrator — "Hamma uchun" (umumiy ko'rinish, `settings.dashboardLayout` + `settings.cardStyles`)
+  yoki "Faqat men uchun". Boshqa xodimlar faqat o'zi uchun moslashtiradi. Shaxsiy ko'rinish serverda
+  `GET/PUT /api/me/dashboard` orqali (`uvix:dash:<xodimId>`) saqlanadi; "⋯ → Umumiy ko'rinishga qaytish".
+- **Telefonda:** karta ustida uzoq bosib turilsa — tahrirlash rejimi va shu kartaning menyusi ochiladi.
+
+## Tezlik (2-bosqich)
+
+Sekin mobil internetda o'lchangan (200 KB/s, 150 ms kechikish, 4× sekin protsessor, 3000 buyurtma + 600 lid):
+
+| | Oldin | Hozir |
+|---|---|---|
+| Kirish ekrani ochilishi | 8,0 s | 1,3 s |
+| Birinchi yuklanadigan JS (siqilgan) | 392 KB | 92 KB |
+| Kirgandan so'ng ma'lumot tayyor | 12,3 s | 4,2 s |
+| Jami yuklangan hajm | 3,2 MB | 0,23 MB |
+
+Nima qilindi:
+- **Sahifalar bo'laklarga ajratildi** (`React.lazy`): har bir bo'lim faqat ochilganda yuklanadi. Kirgandan so'ng brauzer bo'sh turganda qolganlari oldindan yuklab qo'yiladi — menyudan o'tish kutishsiz.
+- **Og'ir kutubxonalar alohida**: Excel (`xlsx`, ~430 KB) faqat eksport/import bosilganda, grafiklar (`recharts`) dashboard raqamlaridan keyin yuklanadi. React va ikonkalar alohida bo'lakda — ilova yangilanganda brauzer ularni qayta yuklamaydi.
+- **Server javoblarni siqadi** (`compression`, brotli/gzip): 3000 ta buyurtma 1,37 MB → 99 KB.
+- **Keshlash**: `/assets/*` fayllar 1 yil keshda (`immutable`), `index.html` har doim yangisi.
+- **Deploydan keyingi himoya**: eski ochiq sahifa endi yo'q bo'lakni so'rasa, sahifa o'zi bir marta yangilanadi (saqlanmagan o'zgarish bo'lsa — avval saqlanishini kutadi).
+- **Uzun ro'yxatlar** (CRM ustunlari, lidlar ro'yxati, chatlar): avval 25–40 ta chiziladi, pastga aylantirganda qo'shib boriladi (`Incremental` komponenti, `components/ui.jsx`).
+- CRM ustun sarlavhalarida summa qisqa ko'rinishda ("211,5 mln so'm"), to'liq qiymat — kursor olib borilganda.
+
+Yangi bog'liqlik: backend `compression` — Railway `npm install` paytida o'zi o'rnatadi.

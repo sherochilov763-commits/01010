@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Pagination, getIconBtn, usePagination, useIsMobile, MobileRow } from "../../components/ui.jsx";
-import { buildExcelWorkbook, downloadWorkbook } from "../../lib/excel.js";
+import { exportWorkbook } from "../../lib/excel.js";
 import { money, paymentTypeBadgeColors, paymentTypeLabel, todayStr, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { TransactionForm } from "./TransactionForm.jsx";
@@ -27,8 +27,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
   }, [orders]);
 
   function exportExcel() {
-    const wb = buildExcelWorkbook([], list, categories, "Rasxodlar");
-    downloadWorkbook(wb, `UVIX_rasxodlar_${todayStr()}.xlsx`);
+    exportWorkbook([], list, categories, "Rasxodlar", `UVIX_rasxodlar_${todayStr()}.xlsx`);
   }
 
   return (

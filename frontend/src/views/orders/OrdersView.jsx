@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Download, FileBarChart2, Landmark, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
-import * as XLSX from "xlsx";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile, MobileRow } from "../../components/ui.jsx";
-import { buildExcelWorkbook, downloadWorkbook } from "../../lib/excel.js";
+import { exportWorkbook, loadXLSX } from "../../lib/excel.js";
 import { generateOrderNumber, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { money, todayStr, uid, usd, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
@@ -44,11 +43,11 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const { page, setPage, totalPages, pageItems } = usePagination(list, [search, onlyDebt, onlyPaid, orders.length]);
 
   function exportExcel() {
-    const wb = buildExcelWorkbook(list, [], categories, "Buyurtmalar");
-    downloadWorkbook(wb, `UVIX_buyurtmalar_${todayStr()}.xlsx`);
+    exportWorkbook(list, [], categories, "Buyurtmalar", `UVIX_buyurtmalar_${todayStr()}.xlsx`);
   }
 
-  function downloadImportTemplate() {
+  async function downloadImportTemplate() {
+    const XLSX = await loadXLSX();
     const wb = XLSX.utils.book_new();
     const rows = [{
       "Sana": todayStr(), "Mijoz": "Namuna Mijoz", "Sub kategoriya": "UVIXPRINT", "Material turi": "Shisha",
@@ -63,7 +62,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     XLSX.writeFile(wb, "UVIX_buyurtma_namunasi.xlsx");
   }
 
-  function parseExcelDate(val) {
+  function parseExcelDate(XLSX, val) {
     // Excel'dan kelgan Date obyektlari odatda UTC-asosli bo'ladi (XLSX kutubxonasi shunday hosil qiladi),
     // shuning uchun bu yerda getUTC* metodlari ishlatiladi — mahalliy vaqt bilan aralashtirilsa,
     // sana bir kun siljib ketishi mumkin edi.
@@ -87,8 +86,9 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await loadXLSX();
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: "array" });
         const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -102,7 +102,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             errors.push(`${idx + 2}-qator: "Mijoz" yoki "Umumiy buyurtma summasi (so'm)" to'g'ri emas`);
             return;
           }
-          const dateStr = parseExcelDate(row["Sana"]);
+          const dateStr = parseExcelDate(XLSX, row["Sana"]);
           const kraskaSum = parseNum(row["Kraska summasi (so'm)"]);
           const materialSum = parseNum(row["Material summasi (so'm)"]);
           const advance = parseNum(row["Avans (so'm)"]);

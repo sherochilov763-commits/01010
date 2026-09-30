@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, FolderTree, Plus, X } from "lucide-react";
 import { PAGE_SIZE, PAYMENT_TYPES } from "../constants.js";
 import { fmt, money, uid } from "../lib/format.js";
 import { THEME, mixColors, shadeColor } from "../theme.js";
 import { useBackToClose } from "../lib/history.js";
+import { readableOn, useCardStyle } from "./CardStyleMenu.jsx";
 
 /* ---------------- SHARED UI ---------------- */
 export function Card({ children, style, className, onClick, ...rest }) {
@@ -13,9 +14,18 @@ export function Card({ children, style, className, onClick, ...rest }) {
     </div>
   );
 }
-export function MetricCard({ label, value, sub, accent, bg, icon: Icon, onClick, pctBadge, progressPct, trendPct, goodDirection = "up", variant = "default" }) {
+export function MetricCard({ label, value, sub, accent: accentProp, bg: bgProp, icon: Icon, onClick, pctBadge, progressPct, trendPct, goodDirection = "up", variant = "default" }) {
   const trendGood = goodDirection === "up" ? trendPct >= 0 : trendPct <= 0;
-  const isFilled = variant === "filled";
+  // Administrator shesterenka orqali tanlagan rang va ko'rinish (Sozlamalar → cardStyles)
+  const styleCtx = useCardStyle();
+  const custom = styleCtx?.style;
+  const gearPad = styleCtx?.editing ? 34 : 0; // shesterenka pastki o'ng burchakda — chiziq va izoh unga tegmasin
+  const isFilled = custom ? !!custom.filled : variant === "filled";
+  const accent = custom?.color || accentProp;
+  const bg = custom?.color && !isFilled ? `${custom.color}22` : bgProp;
+  const fg = isFilled ? readableOn(accent || THEME.violet) : null; // to'liq rangli kartochkadagi yozuv rangi
+  const onDark = fg === "#fff";
+  const soft = (a) => (onDark ? `rgba(255,255,255,${a})` : `rgba(22,19,31,${a})`);
   return (
     <Card
       className="uvix-metric uvix-dash-card"
@@ -25,37 +35,37 @@ export function MetricCard({ label, value, sub, accent, bg, icon: Icon, onClick,
         borderRadius: 22, border: isFilled ? "none" : `1px solid ${THEME.border}`,
         background: isFilled ? `linear-gradient(135deg, ${accent || THEME.violet}, ${shadeColor(accent || THEME.violet, -18)})` : THEME.card,
         boxShadow: isFilled ? `0 10px 28px ${accent || THEME.violet}55` : "0 1px 2px rgba(20,16,40,0.04)",
-        padding: 18,
+        padding: 18, position: "relative",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11.5, color: isFilled ? "rgba(255,255,255,0.85)" : THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</span>
+        <span style={{ fontSize: 11.5, color: isFilled ? soft(0.85) : THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</span>
         {Icon && (
-          <div style={{ width: 34, height: 34, borderRadius: "50%", background: isFilled ? "rgba(255,255,255,0.22)" : (bg || THEME.violetSoft), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Icon size={15} color={isFilled ? "#fff" : (accent || THEME.violet)} />
+          <div style={{ width: 34, height: 34, borderRadius: "50%", background: isFilled ? soft(0.18) : (bg || THEME.violetSoft), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon size={15} color={isFilled ? fg : (accent || THEME.violet)} />
           </div>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: THEME.isDark ? 21 : 25, fontFamily: THEME.fontNum, fontWeight: THEME.isDark ? 500 : 700, color: isFilled ? "#fff" : THEME.text, letterSpacing: THEME.isDark ? -0.3 : -0.5, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+        <span style={{ fontSize: THEME.isDark ? 21 : 25, fontFamily: THEME.fontNum, fontWeight: THEME.isDark ? 500 : 700, color: isFilled ? fg : THEME.text, letterSpacing: THEME.isDark ? -0.3 : -0.5, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{value}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 20 }}>
         {pctBadge && (
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: isFilled ? "#fff" : (accent || THEME.violet), background: isFilled ? "rgba(255,255,255,0.22)" : (bg || THEME.violetSoft), padding: "3px 9px", borderRadius: 20 }}>{pctBadge}</span>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: isFilled ? fg : (accent || THEME.violet), background: isFilled ? soft(0.18) : (bg || THEME.violetSoft), padding: "3px 9px", borderRadius: 20 }}>{pctBadge}</span>
         )}
         {trendPct !== undefined && (
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: isFilled ? "#fff" : (trendGood ? THEME.green : THEME.rose), background: isFilled ? "rgba(255,255,255,0.22)" : (trendGood ? THEME.greenBg : THEME.roseBg), padding: "3px 9px", borderRadius: 20, display: "flex", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: isFilled ? fg : (trendGood ? THEME.green : THEME.rose), background: isFilled ? soft(0.18) : (trendGood ? THEME.greenBg : THEME.roseBg), padding: "3px 9px", borderRadius: 20, display: "flex", alignItems: "center", gap: 2 }}>
             {trendPct >= 0 ? "↑" : "↓"} {Math.abs(trendPct).toFixed(1)}%
           </span>
         )}
-        {sub && !pctBadge && trendPct === undefined && <span style={{ fontSize: 11.5, color: isFilled ? "rgba(255,255,255,0.75)" : THEME.muted }}>{sub}</span>}
+        {sub && !pctBadge && trendPct === undefined && <span style={{ fontSize: 11.5, color: isFilled ? soft(0.75) : THEME.muted }}>{sub}</span>}
       </div>
       {progressPct !== undefined && (
-        <div style={{ height: 7, borderRadius: 10, background: isFilled ? "rgba(255,255,255,0.25)" : THEME.surface, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, progressPct))}%`, background: isFilled ? "#fff" : (accent || THEME.violet), borderRadius: 10, transition: "width 0.3s ease" }} />
+        <div style={{ height: 7, borderRadius: 10, background: isFilled ? soft(0.25) : THEME.surface, overflow: "hidden", marginRight: gearPad }}>
+          <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, progressPct))}%`, background: isFilled ? fg : (accent || THEME.violet), borderRadius: 10, transition: "width 0.3s ease" }} />
         </div>
       )}
-      {sub && (pctBadge || trendPct !== undefined) && <div style={{ fontSize: 11, color: isFilled ? "rgba(255,255,255,0.7)" : THEME.muted, marginTop: -4 }}>{sub}</div>}
+      {sub && (pctBadge || trendPct !== undefined) && <div style={{ fontSize: 11, color: isFilled ? soft(0.7) : THEME.muted, marginTop: -4, paddingRight: gearPad }}>{sub}</div>}
     </Card>
   );
 }
@@ -145,6 +155,34 @@ export function EmptyState({ text }) {
     </div>
   );
 }
+// Uzun ro'yxatlarni bo'lib chizish: avval `step` ta element, pastga yaqinlashganda yana qo'shiladi.
+// 500 ta lid yoki chat bo'lsa ham sahifa bir zumda ochiladi va aylantirish qotmaydi.
+export function Incremental({ list, step = 40, render }) {
+  const [count, setCount] = useState(step);
+  const ref = useRef(null);
+  const hasMore = count < list.length;
+  useEffect(() => {
+    if (!hasMore || !ref.current || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setCount((c) => c + step);
+    }, { rootMargin: "600px 0px" });
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [hasMore, count, step]);
+  return (
+    <>
+      {list.slice(0, count).map(render)}
+      {hasMore && (
+        <div ref={ref} style={{ padding: "10px 0", textAlign: "center", fontSize: 11.5, color: THEME.muted }}>
+          <button type="button" onClick={() => setCount((c) => c + step)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", font: "inherit" }}>
+            Yana {Math.min(step, list.length - count)} ta ko'rsatish ({list.length - count} qoldi)
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function usePagination(list, deps) {
   const [page, setPage] = useState(1);
   useEffect(() => { setPage(1); }, deps); // eslint-disable-line react-hooks/exhaustive-deps

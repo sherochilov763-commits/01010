@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Download, Search, Trash2 } from "lucide-react";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile, MobileRow } from "../components/ui.jsx";
-import { buildExcelWorkbook, downloadWorkbook } from "../lib/excel.js";
+import { exportWorkbook } from "../lib/excel.js";
 import { inRange, money, paymentTypeLabel, todayStr, shortDateUz } from "../lib/format.js";
 import { THEME } from "../theme.js";
 
@@ -57,8 +57,7 @@ export function OperationsView({ orders, transactions, isAdmin, onDeletePayment,
     const filteredOrderIds = new Set(filtered.filter((o) => o.type === "kirim").map((o) => o.orderId));
     const relatedOrders = orders.filter((o) => filteredOrderIds.has(o.id));
     const filteredExpenses = transactions.filter((t) => filtered.some((f) => f.type === "chiqim" && f.txId === t.id));
-    const wb = buildExcelWorkbook(relatedOrders, filteredExpenses, categories, "Operatsiyalar");
-    downloadWorkbook(wb, `UVIX_operatsiyalar_${todayStr()}.xlsx`);
+    exportWorkbook(relatedOrders, filteredExpenses, categories, "Operatsiyalar", `UVIX_operatsiyalar_${todayStr()}.xlsx`);
   }
 
   return (

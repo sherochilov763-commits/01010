@@ -217,15 +217,19 @@ export async function sendTelegramUserMessage(chatId, text, replyToTgId) {
 
 export function authLogout() {
   clearToken();
+  // Umumiy kompyuterda keyingi odamga saqlanmay qolgan ma'lumot qolmasin
+  try { Object.keys(localStorage).filter((k) => k.startsWith("uvix-pending:")).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
 }
 
 // ---- Himoyalangan kv API (token talab qiladi) ----
-export async function apiGet(key) {
-  const res = await fetch(`${API_BASE}/kv/${encodeURIComponent(key)}`, { headers: authHeaders() });
+function httpError(msg, status) { const e = new Error(msg); e.status = status; return e; }
+export async function apiGet(key, rev) {
+  const q = rev != null ? `?rev=${encodeURIComponent(rev)}` : "";
+  const res = await fetch(`${API_BASE}/kv/${encodeURIComponent(key)}${q}`, { headers: authHeaders() });
   if (res.status === 404) return null;
-  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
-  if (!res.ok) throw new Error(`GET ${key} failed: ${res.status}`);
-  return res.json(); // { key, value }
+  if (res.status === 401) { clearToken(); throw httpError("unauthorized", 401); }
+  if (!res.ok) throw httpError(`GET ${key} failed: ${res.status}`, res.status);
+  return res.json(); // { key, value, rev } yoki { unchanged: true, rev }
 }
 
 export async function apiSet(key, value) {
@@ -234,8 +238,26 @@ export async function apiSet(key, value) {
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ value }),
   });
-  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
-  if (!res.ok) throw new Error(`PUT ${key} failed: ${res.status}`);
+  if (res.status === 401) { clearToken(); throw httpError("unauthorized", 401); }
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw httpError(d.message || `PUT ${key} failed: ${res.status}`, res.status);
+  }
+  return res.json();
+}
+
+// Faqat o'zgargan yozuvlarni yuborish — server ularni hozirgi ro'yxatga qo'llaydi
+export async function apiMerge(key, patch) {
+  const res = await fetch(`${API_BASE}/kv/${encodeURIComponent(key)}/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  if (res.status === 401) { clearToken(); throw httpError("unauthorized", 401); }
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw httpError(d.message || `MERGE ${key} failed: ${res.status}`, res.status);
+  }
   return res.json();
 }
 
@@ -343,4 +365,20 @@ export async function restoreBackup(file, apply) {
   form.append("file", file, file.name || "backup.db");
   const res = await fetch(`${API_BASE}/backup/restore${apply ? "?apply=1" : ""}`, { method: "POST", headers: authHeaders(), body: form });
   return tgJson(res, "Zaxirani tiklab bo'lmadi");
+}
+
+// ---- Xodimning o'z dashboard ko'rinishi ----
+export async function fetchMyDashboard() {
+  const res = await fetch(`${API_BASE}/me/dashboard`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  return (await res.json().catch(() => ({}))).prefs || null;
+}
+export async function saveMyDashboard(prefs) {
+  const res = await fetch(`${API_BASE}/me/dashboard`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ prefs }),
+  });
+  if (!res.ok) throw new Error("Ko'rinishni saqlab bo'lmadi");
+  return (await res.json()).prefs;
 }

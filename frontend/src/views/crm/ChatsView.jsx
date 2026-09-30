@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Info, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, UserPlus, X } from "lucide-react";
 import { LAYOUT_CSS, Resizer, useChatLayout } from "./chatLayout.jsx";
-import { useIsMobile } from "../../components/ui.jsx";
+import { Incremental, useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
 import { createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
 import { CHAT_CSS, Composer, MessageList } from "./ChatConversation.jsx";
@@ -198,8 +198,14 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     }
   }
 
+  // chatId -> lid (har bir suhbat uchun butun ro'yxatni qidirmaslik uchun)
+  const leadByChat = useMemo(() => {
+    const m = new Map();
+    (leads || []).forEach((l) => { if (l.telegramChatId && !m.has(String(l.telegramChatId))) m.set(String(l.telegramChatId), l); });
+    return m;
+  }, [leads]);
   function leadForChat(chatId) {
-    return (leads || []).find((l) => String(l.telegramChatId) === String(chatId));
+    return leadByChat.get(String(chatId));
   }
   // Ism: CRM'dagi mijoz nomi, bo'lmasa Telegram'dagi ismi
   function chatName(chatId) {
@@ -331,7 +337,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               {chats.length === 0 ? "Suhbatlar yo'q. Sozlamalarda Telegram akkaunt ulanganini tekshiring." : "Hech narsa topilmadi"}
             </div>
           ) : (
-            filteredChats.map((chat) => {
+            <Incremental list={filteredChats} step={40} render={(chat) => {
               const lead = leadForChat(chat.chatId);
               const name = lead?.customer || chat.name || "Noma'lum";
               const isSelected = selectedChatId === chat.chatId;
@@ -363,7 +369,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                   </div>
                 </div>
               );
-            })
+            }} />
           )}
         </div>
       </div>

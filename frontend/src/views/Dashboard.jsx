@@ -1,12 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Banknote, CreditCard, FileBarChart2, FolderTree, Landmark, ListChecks, Package, Settings, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button, Card, EmptyState, MetricCard, SectionTitle, getInputStyle } from "../components/ui.jsx";
 import { DASHBOARD_GROUPS, DASHBOARD_SIZE_SPANS, DASHBOARD_WIDGET_CATALOG } from "../constants.js";
-import { computeFinanceStats, getEffectiveDashboardLayout, orderDebt } from "../lib/finance.js";
+import { computeFinanceStats, orderDebt } from "../lib/finance.js";
 import { dateLabel, fmt, localDateStr, money, monthKey, monthLabel, todayStr, usd } from "../lib/format.js";
 import { THEME } from "../theme.js";
-import { DashboardConstructorSection } from "./settings/DashboardConstructorSection.jsx";
+import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardConfig, useDragReorder } from "./dashboard/DashboardEditor.jsx";
+import { CardStyleContext } from "../components/CardStyleMenu.jsx";
+
+// Grafiklar alohida bo'lakda — dashboard raqamlari grafik kutubxonasini kutmasdan chiqadi
+const MoneyBarChart = lazy(() => import("./dashboard/Charts.jsx").then((m) => ({ default: m.MoneyBarChart })));
+const DonutChart = lazy(() => import("./dashboard/Charts.jsx").then((m) => ({ default: m.DonutChart })));
+function ChartSkeleton() {
+  return <div className="uvix-skeleton" style={{ width: "100%", height: "100%", borderRadius: 10, background: THEME.surface }} />;
+}
+function Chart({ kind, ...props }) {
+  const C = kind === "donut" ? DonutChart : MoneyBarChart;
+  return <Suspense fallback={<ChartSkeleton />}><C {...props} /></Suspense>;
+}
 
 export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onSaveSettings }) {
   const [subFilter, setSubFilter] = useState("all");
@@ -156,7 +167,15 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
 
   const PIE_COLORS = ["#7C3AED", "#22D3EE", "#F59E0B", "#E11D48", "#16A34A", "#3B82F6", "#EC4899", "#8B5CF6", "#0EA5E9", "#F97316"];
 
-  const layout = useMemo(() => getEffectiveDashboardLayout(settings), [settings]);
+  // Ko'rinish: administrator belgilagan umumiy yoki xodimning o'zi moslashtirgan
+  const cfg = useDashboardConfig({ settings, onSaveSettings, isAdmin });
+  const view = editMode ? cfg.editing : cfg.shown;
+  const layout = view.layout;
+  const cardStyles = view.cardStyles || {};
+  const { dragId, onDragStart } = useDragReorder(cfg);
+  const [openMenu, setOpenMenu] = useState(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  useEffect(() => { if (!editMode) { setOpenMenu(null); setGalleryOpen(false); } }, [editMode]);
 
   const WIDGETS = {
     hero: () => (
@@ -371,17 +390,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
           <div style={{ fontSize: 12.5, color: THEME.muted, textAlign: "center", padding: "24px 0" }}>Tanlangan davr juda uzun — kunlik grafik ko'rsatilmaydi, "Oylik" grafikka qarang</div>
         ) : (
           <div style={{ width: "100%", height: 240 }}>
-            <ResponsiveContainer>
-              <BarChart data={dailyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={THEME.chartGrid} vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 10, fill: THEME.muted }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: THEME.muted }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmt(v)} />
-                <Tooltip formatter={(v) => money(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="To'lov" fill={THEME.violet} radius={[8, 8, 0, 0]} />
-                <Bar dataKey="Rasxod" fill={THEME.rose} radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <Chart kind="bar" data={dailyData} bars={[{ key: "To'lov", color: THEME.violet }, { key: "Rasxod", color: THEME.rose }]} xTickSize={10} />
           </div>
         )}
       </Card>
@@ -392,14 +401,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
         {categoryPie.length === 0 ? <EmptyState text="Rasxod yo'q" /> : (
           <>
             <div style={{ width: "100%", height: 200 }}>
-              <ResponsiveContainer>
-                <PieChart>
-                  <Pie data={categoryPie} dataKey="value" nameKey="name" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                    {categoryPie.map((entry, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v) => money(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <Chart kind="donut" data={categoryPie} colors={PIE_COLORS} />
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 8, maxHeight: 130, overflowY: "auto" }} className="uvix-scroll">
               {categoryPie.map((c, i) => {
@@ -424,17 +426,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
       <Card className="uvix-dash-card">
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Oylik to'lov va rasxod (6 oy)</div>
         <div style={{ width: "100%", height: 220 }}>
-          <ResponsiveContainer>
-            <BarChart data={monthlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke={THEME.chartGrid} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: THEME.muted }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: THEME.muted }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmt(v)} />
-              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="To'lov" fill={THEME.cyan} radius={[8, 8, 0, 0]} />
-              <Bar dataKey="Rasxod" fill={THEME.amber} radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <Chart kind="bar" data={monthlyData} bars={[{ key: "To'lov", color: THEME.cyan }, { key: "Rasxod", color: THEME.amber }]} xTickSize={10} />
         </div>
       </Card>
     ),
@@ -456,21 +448,11 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
           ))}
         </div>
         <div style={{ width: "100%", height: 200 }}>
-          <ResponsiveContainer>
-            <BarChart data={[
+          <Chart kind="bar" data={[
               { label: "Karta", "To'lov": stats.cardPaid, Rasxod: stats.cardExpense },
               { label: "Naqd", "To'lov": stats.cashPaid, Rasxod: stats.cashExpense },
               { label: "Bank", "To'lov": stats.bankPaid, Rasxod: stats.bankExpense },
-            ]}>
-              <CartesianGrid strokeDasharray="3 3" stroke={THEME.chartGrid} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: THEME.muted }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: THEME.muted }} axisLine={false} tickLine={false} width={40} tickFormatter={(v) => fmt(v)} />
-              <Tooltip formatter={(v) => money(v)} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="To'lov" fill={THEME.green} radius={[8, 8, 0, 0]} />
-              <Bar dataKey="Rasxod" fill={THEME.rose} radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+            ]} bars={[{ key: "To'lov", color: THEME.green }, { key: "Rasxod", color: THEME.rose }]} xTickSize={11} />
         </div>
       </Card>
     ),
@@ -577,16 +559,18 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
             </div>
           ))}
         </div>
-        {isAdmin && (
-          <Button variant={editMode ? "primary" : "ghost"} onClick={() => setEditMode((v) => !v)}>
-            <Settings size={14} /> {editMode ? "Tahrirlashni tugatish" : "Dashboardni tahrirlash"}
+        {!editMode && (
+          <Button variant="ghost" onClick={() => setEditMode(true)}>
+            <Settings size={14} /> Dashboardni sozlash
           </Button>
         )}
       </div>
 
-      {editMode && isAdmin && (
-        <DashboardConstructorSection settings={settings} onSaveSettings={onSaveSettings} />
+      <style>{EDITOR_CSS}</style>
+      {editMode && (
+        <EditToolbar isAdmin={isAdmin} cfg={cfg} onDone={() => setEditMode(false)} onAdd={() => setGalleryOpen(true)} hiddenCount={cfg.editing.layout.filter((w) => !w.visible).length} />
       )}
+      {galleryOpen && <AddWidgetGallery cfg={cfg} onClose={() => setGalleryOpen(false)} />}
 
       {DASHBOARD_GROUPS.map((g) => {
         const groupIds = new Set(DASHBOARD_WIDGET_CATALOG.filter((c) => c.group === g.id).map((c) => c.id));
@@ -597,7 +581,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
         return (
           <div key={g.id} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {Icon && <SectionTitle icon={Icon} text={g.label} />}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 14 }} className="uvix-dash-grid">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: editMode ? "28px 14px" : 14, paddingTop: editMode ? 14 : 0 }} className="uvix-dash-grid">
               {items.map((w) => {
                 const renderFn = WIDGETS[w.id];
                 if (!renderFn) return null;
@@ -606,7 +590,13 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
                 const span = DASHBOARD_SIZE_SPANS[w.size] || 12;
                 return (
                   <div key={w.id} style={{ gridColumn: `span ${span}`, minWidth: 0 }}>
-                    {content}
+                    <CardStyleContext.Provider value={{ id: w.id, style: cardStyles[w.id] || null, editing: editMode }}>
+                      <WidgetFrame id={w.id} editing={editMode} cfg={cfg} dragging={dragId === w.id}
+                        onDragStart={onDragStart} menuOpen={openMenu === w.id} onMenu={setOpenMenu}
+                        onLongPress={(id) => { setEditMode(true); setOpenMenu(id); }}>
+                        {content}
+                      </WidgetFrame>
+                    </CardStyleContext.Provider>
                   </div>
                 );
               })}
@@ -614,6 +604,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
           </div>
         );
       })}
+      {editMode && <div className="uvix-edit-spacer" aria-hidden="true" />}
     </div>
   );
 }

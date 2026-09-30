@@ -1,8 +1,9 @@
-import * as XLSX from "xlsx";
+// xlsx kutubxonasi og'ir (~400 KB) — faqat Excel bilan ishlaganda yuklanadi
+export const loadXLSX = () => import("xlsx");
 import { orderAddedValue, orderDebt, orderTotalPaid } from "./finance.js";
 import { paymentTypeLabel } from "./format.js";
 
-export function buildExcelWorkbook(orders, expenses, categories, rangeLabel) {
+function buildExcelWorkbookWith(XLSX, orders, expenses, categories, rangeLabel) {
   const totalOrderUzs = orders.reduce((s, o) => s + (o.agreementUzs || 0), 0);
   const totalPaid = orders.reduce((s, o) => s + orderTotalPaid(o), 0);
   const totalDebt = orders.reduce((s, o) => s + orderDebt(o), 0);
@@ -62,6 +63,8 @@ export function buildExcelWorkbook(orders, expenses, categories, rangeLabel) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catRows), "Kategoriyalar");
   return wb;
 }
-export function downloadWorkbook(wb, filename) {
-  XLSX.writeFile(wb, filename);
+// Hisobotni tuzib, faylga yuklab beradi (async — kutubxona birinchi marta shu yerda yuklanadi)
+export async function exportWorkbook(orders, expenses, categories, label, filename) {
+  const XLSX = await loadXLSX();
+  XLSX.writeFile(buildExcelWorkbookWith(XLSX, orders, expenses, categories, label), filename);
 }

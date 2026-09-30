@@ -1,7 +1,5 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import LoginScreen from "./auth/LoginScreen.jsx";
-import { WorkerApp } from "./views/tasks/WorkerApp.jsx";
-import { TaskAssignModal } from "./views/crm/TaskAssignModal.jsx";
 import { authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
@@ -9,19 +7,35 @@ import { StorageWarning } from "./components/StorageWarning.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } from "./constants.js";
 import { generateOrderNumber } from "./lib/finance.js";
 import { money, paymentTypeLabel, uid } from "./lib/format.js";
-import { storageGet, storageSet } from "./lib/kv.js";
+import { resumePending, storageGet, storageRefresh, storageSet, subscribeRemote } from "./lib/kv.js";
+import { SaveStatus } from "./components/SaveStatus.jsx";
 import { useBackToClose, useHistoryView } from "./lib/history.js";
 import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme } from "./theme.js";
-import { CategoriesView } from "./views/CategoriesView.jsx";
 import { Dashboard } from "./views/Dashboard.jsx";
-import { EmployeesView } from "./views/EmployeesView.jsx";
-import { OperationsView } from "./views/OperationsView.jsx";
-import { ReportView } from "./views/ReportView.jsx";
-import { CRMView } from "./views/crm/CRMView.jsx";
-import { ChatsView } from "./views/crm/ChatsView.jsx";
-import { ExpenseView } from "./views/expenses/ExpenseView.jsx";
-import { OrdersView } from "./views/orders/OrdersView.jsx";
-import { SettingsView } from "./views/settings/SettingsView.jsx";
+
+// Sahifalar alohida bo'laklarda: faqat ochilganda yuklanadi (birinchi ochilish tezroq).
+// Dashboard darhol kerak bo'lgani uchun asosiy faylda qoladi.
+const WorkerApp = lazy(() => import("./views/tasks/WorkerApp.jsx").then((m) => ({ default: m.WorkerApp })));
+const TaskAssignModal = lazy(() => import("./views/crm/TaskAssignModal.jsx").then((m) => ({ default: m.TaskAssignModal })));
+const CategoriesView = lazy(() => import("./views/CategoriesView.jsx").then((m) => ({ default: m.CategoriesView })));
+const EmployeesView = lazy(() => import("./views/EmployeesView.jsx").then((m) => ({ default: m.EmployeesView })));
+const OperationsView = lazy(() => import("./views/OperationsView.jsx").then((m) => ({ default: m.OperationsView })));
+const ReportView = lazy(() => import("./views/ReportView.jsx").then((m) => ({ default: m.ReportView })));
+const CRMView = lazy(() => import("./views/crm/CRMView.jsx").then((m) => ({ default: m.CRMView })));
+const ChatsView = lazy(() => import("./views/crm/ChatsView.jsx").then((m) => ({ default: m.ChatsView })));
+const ExpenseView = lazy(() => import("./views/expenses/ExpenseView.jsx").then((m) => ({ default: m.ExpenseView })));
+const OrdersView = lazy(() => import("./views/orders/OrdersView.jsx").then((m) => ({ default: m.OrdersView })));
+const SettingsView = lazy(() => import("./views/settings/SettingsView.jsx").then((m) => ({ default: m.SettingsView })));
+const VIEW_PRELOADERS = [() => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
+function ViewFallback() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }} aria-busy="true">
+      <div className="uvix-skeleton" style={{ height: 28, width: 220, borderRadius: 8 }} />
+      <div className="uvix-skeleton" style={{ height: 120, borderRadius: 14 }} />
+      <div className="uvix-skeleton" style={{ height: 320, borderRadius: 14 }} />
+    </div>
+  );
+}
 
 export default function App() {
   const [ready, setReady] = useState(false);
@@ -35,6 +49,15 @@ export default function App() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
   const [currentUser, setCurrentUser] = useState(null);
+  // Kirgandan so'ng, brauzer bo'sh turganda qolgan sahifalarni oldindan yuklab qo'yamiz —
+  // birinchi ochilish yengil, keyin menyudan o'tish esa kutishsiz bo'ladi.
+  useEffect(() => {
+    if (!currentUser || isWorkerRole(currentUser.role)) return;
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1200));
+    const cancel = window.cancelIdleCallback || clearTimeout;
+    const h = idle(() => VIEW_PRELOADERS.forEach((load) => load().catch(() => {})), { timeout: 4000 });
+    return () => cancel(h);
+  }, [currentUser?.id]);
   // Bo'limlar tarixi: ← strelka va telefonning "orqaga" harakati oldingi bo'limga qaytaradi
   const { view, go: setView, back: goBack, canGoBack } = useHistoryView("dashboard", !!currentUser && !isWorkerRole(currentUser.role));
   const [navFilter, setNavFilter] = useState(null);
@@ -143,7 +166,32 @@ export default function App() {
       setCategories(cats);
       setSettings(sett);
       setAppearance(appr);
+      // Oldingi safar internet uzilib saqlanmay qolgan o'zgarishlar bo'lsa — endi yuboramiz
+      resumePending().then((keys) => keys.length && showToast("Saqlanmay qolgan o'zgarishlar serverga yuborildi"));
     })();
+  }, [currentUser]);
+
+  // Server birlashtirgan natija (boshqa xodimning o'zgarishlari bilan) — ekranga qo'llaymiz
+  useEffect(() => {
+    const setters = { "uvix:orders": setOrders, "uvix:transactions": setTransactions, "uvix:leads": setLeads, "uvix:audit": setAuditLog };
+    return subscribeRemote((key, value) => setters[key]?.(value));
+  }, []);
+
+  // Boshqa xodimlar kiritgan o'zgarishlarni vaqti-vaqti bilan tortib olamiz (faqat o'zgargan bo'lsa yuklanadi)
+  useEffect(() => {
+    if (!currentUser || isWorkerRole(currentUser.role)) return;
+    const setters = { "uvix:orders": setOrders, "uvix:transactions": setTransactions, "uvix:leads": setLeads, "uvix:audit": setAuditLog };
+    const tick = async () => {
+      if (document.visibilityState !== "visible") return;
+      for (const key of Object.keys(setters)) {
+        const fresh = await storageRefresh(key);
+        if (Array.isArray(fresh)) setters[key](fresh);
+      }
+    };
+    const t = setInterval(tick, 20000);
+    const onFocus = () => tick();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(t); window.removeEventListener("focus", onFocus); };
   }, [currentUser]);
 
   function applyAppearance(next) {
@@ -250,7 +298,7 @@ export default function App() {
       addLog(`Rasxod qo'shildi: ${money(tx.amount)} (${tx.date})`);
     }
     persistTx(next);
-    showToast(isEdit ? "Yangilandi" : "Saqlandi");
+    showToast(isEdit ? "O‘zgartirildi" : "Qo‘shildi");
   }
   function deleteTransaction(tx) {
     const next = transactions.map((t) => (t.id === tx.id ? { ...t, deletedAt: new Date().toISOString(), deletedBy: currentUser.name } : t));
@@ -299,7 +347,7 @@ export default function App() {
         ? `Buyurtmaga bog'liq material xarajati yangilandi: ${money(linkedExpenseTx.amount)} (${linkedExpenseTx.date})`
         : `Buyurtmaga bog'liq material xarajati qo'shildi: ${money(linkedExpenseTx.amount)} (${linkedExpenseTx.date})`);
     }
-    showToast(isEdit ? "Yangilandi" : "Saqlandi");
+    showToast(isEdit ? "O‘zgartirildi" : "Qo‘shildi");
   }
   function deleteOrder(order) {
     const next = orders.map((o) => (o.id === order.id ? { ...o, deletedAt: new Date().toISOString(), deletedBy: currentUser.name } : o));
@@ -326,7 +374,7 @@ export default function App() {
       addLog(`Yangi lid qo'shildi: ${lead.customer}`);
     }
     persistLeads(next);
-    showToast(isEdit ? "Yangilandi" : "Saqlandi");
+    showToast(isEdit ? "O‘zgartirildi" : "Qo‘shildi");
   }
   function deleteLead(lead) {
     const next = leads.filter((l) => l.id !== lead.id);
@@ -364,16 +412,6 @@ export default function App() {
     setTaskAssign(null);
   }
 
-  // CRM yoki Chatlar ochiq turganda dizayner/pechatchi o'zgarishlarini ko'rib turish uchun
-  useEffect(() => {
-    if (!currentUser || isWorkerRole(currentUser.role) || (view !== "crm" && view !== "chats")) return;
-    const refresh = async () => {
-      const fresh = await storageGet("uvix:leads", true, null);
-      if (Array.isArray(fresh)) setLeads(fresh);
-    };
-    const t = setInterval(refresh, 20000);
-    return () => clearInterval(t);
-  }, [view, currentUser]);
 
   function moveLead(lead, newStage) {
     if (newStage === "design" && !lead.design?.assigneeId) return setTaskAssign({ lead, kind: "design", targetStage: newStage });
@@ -469,7 +507,7 @@ export default function App() {
   }
 
   if (isWorkerRole(currentUser.role)) {
-    return <WorkerApp currentUser={currentUser} onLogout={() => { authLogout(); setCurrentUser(null); }} />;
+    return <Suspense fallback={<div style={{ padding: 24 }}><ViewFallback /></div>}><WorkerApp currentUser={currentUser} onLogout={() => { authLogout(); setCurrentUser(null); }} /></Suspense>;
   }
 
   const isAdmin = currentUser.role === "admin";
@@ -485,8 +523,8 @@ export default function App() {
         html, body { overflow-x: hidden; max-width: 100vw; overscroll-behavior-x: none; }
         * { box-sizing: border-box; }
         .uvix-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
-        .uvix-scroll::-webkit-scrollbar-thumb { background: #D8D4E8; border-radius: 4px; }
-        .uvix-scroll::-webkit-scrollbar-thumb:hover { background: #C4BEDD; }
+        .uvix-scroll::-webkit-scrollbar-thumb { background: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#D8D4E8"}; border-radius: 4px; }
+        .uvix-scroll::-webkit-scrollbar-thumb:hover { background: ${THEME.isDark ? "rgba(255,255,255,0.25)" : "#C4BEDD"}; }
         body { background: ${THEME.surface}; }
         button { font-family: inherit; }
         input, select, textarea { font-family: inherit; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
@@ -494,18 +532,18 @@ export default function App() {
         button { transition: transform 0.12s ease, box-shadow 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, border-color 0.15s ease; }
         button:active:not(:disabled) { transform: scale(0.97); }
         .uvix-card { transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
-        .uvix-card:hover { box-shadow: 0 6px 20px rgba(28,24,48,0.07); border-color: #DCD6EE; }
-        .uvix-metric:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(28,24,48,0.09); border-color: #DCD6EE; }
+        .uvix-card:hover { box-shadow: 0 6px 20px rgba(28,24,48,0.07); border-color: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#DCD6EE"}; }
+        .uvix-metric:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(28,24,48,0.09); border-color: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#DCD6EE"}; }
         .uvix-row { transition: background-color 0.12s ease; }
-        .uvix-row:hover { background-color: #FAF9FE; }
+        .uvix-row:hover { background-color: ${THEME.isDark ? "rgba(255,255,255,0.045)" : THEME.violetSoft}; }
         .uvix-iconbtn { transition: background-color 0.15s ease, transform 0.15s ease; }
-        .uvix-iconbtn:hover { background-color: #ECE7F8; transform: translateY(-1px); }
+        .uvix-iconbtn:hover { background-color: ${THEME.isDark ? "rgba(255,255,255,0.08)" : "#ECE7F8"}; transform: translateY(-1px); }
         .uvix-nav-item { transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, padding-left 0.18s ease; }
         .uvix-nav-item:hover:not(.uvix-nav-active) { background: rgba(255,255,255,0.06); color: #E5E1F5; padding-left: 15px; }
         .uvix-btn-primary { box-shadow: 0 2px 8px rgba(124,92,252,0.30); }
         .uvix-btn-primary:hover:not(:disabled) { box-shadow: 0 6px 16px rgba(124,92,252,0.40); transform: translateY(-1px); }
-        .uvix-btn-ghost:hover:not(:disabled) { background: #FAF9FE; border-color: #CFC7E8 !important; }
-        .uvix-btn-danger:hover:not(:disabled) { background: #FBDCE3; }
+        .uvix-btn-ghost:hover:not(:disabled) { background: ${THEME.isDark ? "rgba(255,255,255,0.06)" : "#FAF9FE"}; border-color: ${THEME.isDark ? "rgba(255,255,255,0.18)" : "#CFC7E8"} !important; }
+        .uvix-btn-danger:hover:not(:disabled) { background: ${THEME.isDark ? "rgba(245,69,92,0.22)" : "#FBDCE3"}; }
         .uvix-modal-backdrop { animation: uvixFadeIn 0.15s ease; }
         .uvix-modal-panel { animation: uvixScaleIn 0.18s cubic-bezier(0.16,1,0.3,1); }
         .uvix-modal-shake { animation: uvixShake 0.35s ease !important; }
@@ -515,6 +553,8 @@ export default function App() {
         @keyframes uvixSlideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .uvix-toast { animation: uvixSlideUp 0.22s cubic-bezier(0.16,1,0.3,1); }
         .uvix-view-enter { animation: uvixFadeIn 0.22s ease; }
+        .uvix-skeleton { background: linear-gradient(90deg, ${THEME.surface} 25%, ${THEME.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"} 50%, ${THEME.surface} 75%); background-size: 200% 100%; animation: uvixShimmer 1.2s ease-in-out infinite; }
+        @keyframes uvixShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
         .uvix-skeleton { background: linear-gradient(90deg, ${THEME.border} 25%, ${THEME.card} 37%, ${THEME.border} 63%); background-size: 400% 100%; animation: uvixShimmer 1.4s ease infinite; border-radius: 8px; }
         @keyframes uvixShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
         .uvix-chip { transition: all 0.15s ease; }
@@ -581,6 +621,7 @@ export default function App() {
           <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 24px 40px" }}>
+            <Suspense fallback={<ViewFallback />}>
             {view === "dashboard" && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
@@ -716,10 +757,12 @@ export default function App() {
                 onFetchTelegramUserStatus={fetchTelegramUserStatus}
               />
             )}
+            </Suspense>
           </div>
         </div>
       </div>
       {taskAssign && (
+        <Suspense fallback={null}>
         <TaskAssignModal
           lead={taskAssign.lead}
           kind={taskAssign.kind}
@@ -727,7 +770,9 @@ export default function App() {
           onSave={saveTaskAssignment}
           onCancel={() => setTaskAssign(null)}
         />
+        </Suspense>
       )}
+      <SaveStatus />
       <BottomNav
         view={view}
         onNavigate={(v) => { setNavFilter(null); setView(v); }}

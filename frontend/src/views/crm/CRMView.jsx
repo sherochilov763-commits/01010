@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Send, Trash2, X } from "lucide-react";
-import { Button, Card, ConfirmDialog, Field, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
+import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { LEAD_STAGES, ORDER_READY_STAGES, isWorkerRole } from "../../constants.js";
-import { fmt, money, uid } from "../../lib/format.js";
+import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
 import { TaskChips } from "./TaskAssignModal.jsx";
 import { THEME } from "../../theme.js";
 
@@ -183,6 +183,16 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
     return map;
   }, [leads]);
 
+  // Har bosqich bo'yicha lidlar summasi va voronkadagi (hali yopilmagan) jami
+  const stageSums = useMemo(() => {
+    const m = {};
+    LEAD_STAGES.forEach((s) => (m[s.key] = leadsByStage[s.key].reduce((a, l) => a + (Number(l.estimatedValue) || 0), 0)));
+    return m;
+  }, [leadsByStage]);
+  const openStages = LEAD_STAGES.filter((s) => s.key !== "won" && s.key !== "lost");
+  const pipelineSum = openStages.reduce((a, s) => a + stageSums[s.key], 0);
+  const pipelineCount = openStages.reduce((a, s) => a + leadsByStage[s.key].length, 0);
+
   function saveLead(lead, isEdit) {
     onSaveLead(lead, isEdit);
     setModal(null);
@@ -222,7 +232,17 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
-        {!isMobile && <div style={{ fontSize: 13, color: THEME.muted }}>Savdo voronkasi — lidlarni bosqichlar bo'yicha kuzating</div>}
+        {!isMobile && (
+          <div style={{ display: "flex", alignItems: "baseline", gap: 18, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: THEME.muted }}>
+              Voronkada: <b style={{ fontSize: 20, fontWeight: 800, color: THEME.text, fontFamily: THEME.fontNum, marginLeft: 4 }}>{money(pipelineSum)}</b>
+              <span style={{ marginLeft: 8 }}>· {pipelineCount} ta faol lid</span>
+            </div>
+            <div style={{ fontSize: 13, color: THEME.muted }}>
+              Yopilgan: <b style={{ fontSize: 16, fontWeight: 800, color: LEAD_STAGES.find((x) => x.key === "won").color, fontFamily: THEME.fontNum, marginLeft: 4 }}>{money(stageSums.won || 0)}</b>
+            </div>
+          </div>
+        )}
         <Button onClick={() => setModal(true)}><Plus size={14} /> Yangi lid</Button>
       </div>
 
@@ -255,16 +275,21 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
               padding: dragOverStage === stage.key ? 6 : 0,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
-              <span title={stage.label} style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{stage.label}</span>
-              <span style={{ fontSize: 11, color: THEME.muted, background: THEME.surface, padding: "1px 8px", borderRadius: 20, flexShrink: 0 }}>{leadsByStage[stage.key].length}</span>
+            <div style={{ marginBottom: 10, padding: "10px 12px 11px", borderRadius: 12, background: `${stage.color}1A`, border: `1px solid ${stage.color}40`, borderTop: `3px solid ${stage.color}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
+                <span title={stage.label} style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{stage.label}</span>
+                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: stage.color, background: `${stage.color}24`, padding: "1px 8px", borderRadius: 20, flexShrink: 0 }}>{leadsByStage[stage.key].length}</span>
+              </div>
+              <div title={`Bosqichdagi lidlar summasi: ${money(stageSums[stage.key])}`} style={{ marginTop: 6, fontSize: 17, fontWeight: 800, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: stageSums[stage.key] ? stage.color : THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {moneyCompact(stageSums[stage.key])}
+              </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 60 }}>
               {leadsByStage[stage.key].length === 0 ? (
                 <div style={{ fontSize: 11.5, color: THEME.muted, padding: "16px 0", textAlign: "center", border: `1.5px dashed ${THEME.border}`, borderRadius: 12 }}>Bo'sh</div>
               ) : (
-                leadsByStage[stage.key].map((lead) => {
+                <Incremental list={leadsByStage[stage.key]} step={25} render={(lead) => {
                   const idx = stageIndex(lead.stage);
                   const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
                   return (
@@ -326,7 +351,7 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
                       </div>
                     </Card>
                   );
-                })
+                }} />
               )}
             </div>
           </div>
@@ -406,7 +431,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {list.map((lead) => {
+          {<Incremental list={list} step={30} render={(lead) => {
             const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
             const tel = telLink(lead.phone);
             const tg = lead.telegramChatId && onChat ? null : telegramLink(lead);
@@ -455,7 +480,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
                 </div>
               </Card>
             );
-          })}
+          }} />}
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
 import { Button, Card, EmptyState, MetricCard, getInputStyle } from "../components/ui.jsx";
 import { PERIODS } from "../constants.js";
-import { buildExcelWorkbook, downloadWorkbook } from "../lib/excel.js";
+import { exportWorkbook } from "../lib/excel.js";
 import { orderAddedValue, periodRange } from "../lib/finance.js";
 import { inRange, money, todayStr } from "../lib/format.js";
 import { THEME } from "../theme.js";
@@ -43,12 +43,10 @@ export function ReportView({ orders, transactions, categories }) {
   }, [filteredExpenses, catNames]);
 
   function exportExcel() {
-    const wb = buildExcelWorkbook(filteredOrders, filteredExpenses, categories, `${range.from} — ${range.to}`);
-    downloadWorkbook(wb, `UVIX_hisobot_${range.from}_${range.to}.xlsx`);
+    exportWorkbook(filteredOrders, filteredExpenses, categories, `${range.from} — ${range.to}`, `UVIX_hisobot_${range.from}_${range.to}.xlsx`);
   }
   function exportExcelAll() {
-    const wb = buildExcelWorkbook(orders, transactions, categories, "Barcha vaqt");
-    downloadWorkbook(wb, `UVIX_hisobot_barcha_vaqt_${todayStr()}.xlsx`);
+    exportWorkbook(orders, transactions, categories, "Barcha vaqt", `UVIX_hisobot_barcha_vaqt_${todayStr()}.xlsx`);
   }
 
   return (
