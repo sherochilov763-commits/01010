@@ -10,6 +10,7 @@ import { storageGet, storageSet } from "../../lib/kv.js";
 import { useHistoryView } from "../../lib/history.js";
 import PasskeySection from "../../auth/PasskeySection.jsx";
 import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
+import { CheckInButton } from "../../components/CheckInButton.jsx";
 
 const COLUMNS = [
   { key: "new", label: "Yangi", color: "#3B82F6" },
@@ -96,7 +97,7 @@ export function WorkerApp({ currentUser, onLogout }) {
 
   return (
     <div style={{ minHeight: "100vh", background: THEME.surface, color: THEME.text, fontFamily: THEME.font }}>
-      <style>{`body{background:${THEME.surface}} @keyframes uvixSpin{to{transform:rotate(360deg)}} .uvix-spin{animation:uvixSpin .9s linear infinite} @media (max-width:860px){input,select,textarea{font-size:16px!important}}`}</style>
+      <style>{`body{background:${THEME.surface}} @keyframes uvixSpin{to{transform:rotate(360deg)}} .uvix-spin{animation:uvixSpin .9s linear infinite} @media (max-width:860px){input,select,textarea{font-size:16px!important}} @media (max-width:430px){.uvix-worker-name{display:none}}`}</style>
 
       {/* Yuqori panel */}
       <header style={{ position: "sticky", top: 0, zIndex: 20, background: THEME.card, borderBottom: `1px solid ${THEME.border}`, paddingTop: "env(safe-area-inset-top, 0px)" }}>
@@ -112,7 +113,8 @@ export function WorkerApp({ currentUser, onLogout }) {
             </div>
           )}
           <div style={{ flex: 1 }} />
-          <div style={{ textAlign: "right", lineHeight: 1.25 }}>
+          <CheckInButton compact />
+          <div className="uvix-worker-name" style={{ textAlign: "right", lineHeight: 1.25 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{currentUser.name}</div>
             <div style={{ fontSize: 12, color: THEME.muted }}>{roleLabel(currentUser.role)}</div>
           </div>

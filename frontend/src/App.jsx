@@ -4,6 +4,9 @@ import { authListEmployees, authLogout, confirmPinReset, connectTelegramUser, de
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { NAV_CSS, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
+import { CheckInButton } from "./components/CheckInButton.jsx";
+import { AttendanceGate } from "./components/AttendanceGate.jsx";
+import { resetAttendance } from "./lib/attendanceStore.js";
 import { StorageWarning } from "./components/StorageWarning.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } from "./constants.js";
 import { generateOrderNumber } from "./lib/finance.js";
@@ -27,7 +30,8 @@ const ChatsView = lazy(() => import("./views/crm/ChatsView.jsx").then((m) => ({ 
 const ExpenseView = lazy(() => import("./views/expenses/ExpenseView.jsx").then((m) => ({ default: m.ExpenseView })));
 const OrdersView = lazy(() => import("./views/orders/OrdersView.jsx").then((m) => ({ default: m.OrdersView })));
 const SettingsView = lazy(() => import("./views/settings/SettingsView.jsx").then((m) => ({ default: m.SettingsView })));
-const VIEW_PRELOADERS = [() => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
+const AttendanceView = lazy(() => import("./views/attendance/AttendanceView.jsx").then((m) => ({ default: m.AttendanceView })));
+const VIEW_PRELOADERS = [() => import("./views/attendance/AttendanceView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
 function ViewFallback() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }} aria-busy="true">
@@ -517,19 +521,25 @@ export default function App() {
   }
 
   if (isWorkerRole(currentUser.role)) {
-    return <Suspense fallback={<div style={{ padding: 24 }}><ViewFallback /></div>}><WorkerApp currentUser={currentUser} onLogout={() => { authLogout(); setCurrentUser(null); }} /></Suspense>;
+    const workerLogout = () => { authLogout(); resetAttendance(); setCurrentUser(null); };
+    return (
+      <AttendanceGate user={currentUser} onLogout={workerLogout}>
+        <Suspense fallback={<div style={{ padding: 24 }}><ViewFallback /></div>}><WorkerApp currentUser={currentUser} onLogout={workerLogout} /></Suspense>
+      </AttendanceGate>
+    );
   }
 
   const isAdmin = currentUser.role === "admin";
   const visibleNav = navCfg.items;
   const goView = (v) => { setNavFilter(null); setView(v); };
-  const logout = () => { authLogout(); setCurrentUser(null); };
+  const logout = () => { authLogout(); resetAttendance(); setCurrentUser(null); };
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
   const myTx = isAdmin ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
   const myOrders = isAdmin ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
 
   return (
+    <AttendanceGate user={currentUser} onLogout={logout}>
     <div style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
         html, body { overflow-x: hidden; max-width: 100vw; overscroll-behavior-x: none; }
@@ -635,7 +645,7 @@ export default function App() {
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} />
+          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} right={<CheckInButton compact={false} />} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 24px 40px" }}>
             <Suspense fallback={<ViewFallback />}>
@@ -725,6 +735,7 @@ export default function App() {
                 initialFilter={navFilter}
               />
             )}
+            {view === "attendance" && <AttendanceView currentUser={currentUser} isAdmin={isAdmin} />}
             {view === "report" && isAdmin && <ReportView orders={activeOrders} transactions={activeTransactions} categories={categories} />}
             {view === "categories" && (
               <CategoriesView
@@ -806,5 +817,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </AttendanceGate>
   );
 }

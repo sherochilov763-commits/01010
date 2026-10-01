@@ -336,6 +336,59 @@ passkeyApi = require("./passkeys")(app, {
   rateLimit: (key) => checkRateLimit(`passkey:${key}`),
 });
 
+// ==================== Davomat (keldi-ketdi) ====================
+// Bot orqali xabar: chatId berilmasa — Sozlamalardagi umumiy chat. true/false qaytaradi.
+async function sendTelegramTo(text, chatIdOverride) {
+  try {
+    const settings = JSON.parse(getStmt.get("uvix:settings")?.value || "{}");
+    const token = settings?.telegramBotToken;
+    const chatId = chatIdOverride || settings?.telegramChatId;
+    if (!token || !chatId) return false;
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    });
+    return r.ok;
+  } catch (e) {
+    console.error("Telegram xabar yuborishda xato:", e.message);
+    return false;
+  }
+}
+// Davomat selfilari — bazaning yonida (Railway'da doimiy diskda): attendance-photos/YYYY-MM/<xodim>_<sana>_in.jpg
+const ATT_PHOTO_DIR = path.join(path.dirname(db.DB_PATH), "attendance-photos");
+const attPhotoStore = {
+  save(empId, date, base64) {
+    const buf = Buffer.from(base64, "base64");
+    if (buf[0] !== 0xff || buf[1] !== 0xd8) return { error: "Selfi JPEG emas" };
+    const dir = path.join(ATT_PHOTO_DIR, date.slice(0, 7));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = `${empId}_${date}_in.jpg`;
+    fs.writeFileSync(path.join(dir, file), buf);
+    return { id: `${date.slice(0, 7)}/${file}` };
+  },
+  send(res, id) {
+    const fp = path.join(ATT_PHOTO_DIR, id);
+    if (!fp.startsWith(ATT_PHOTO_DIR) || !fs.existsSync(fp)) return res.status(404).json({ error: "not_found", message: "Rasm o'chirilgan (saqlash muddati tugagan)" });
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.sendFile(fp);
+  },
+  cleanup(cutoff) {
+    if (!fs.existsSync(ATT_PHOTO_DIR)) return 0;
+    let removed = 0;
+    for (const month of fs.readdirSync(ATT_PHOTO_DIR)) {
+      const dir = path.join(ATT_PHOTO_DIR, month);
+      if (!/^\d{4}-\d{2}$/.test(month) || !fs.statSync(dir).isDirectory()) continue;
+      for (const f of fs.readdirSync(dir)) {
+        const d = (f.match(/_(\d{4}-\d{2}-\d{2})_/) || [])[1];
+        if (d && d < cutoff) { fs.unlinkSync(path.join(dir, f)); removed++; }
+      }
+      if (!fs.readdirSync(dir).length) fs.rmdirSync(dir);
+    }
+    return removed;
+  },
+};
+const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: sendTelegramTo, photoStore: attPhotoStore });
+
 // ==================== Dizayner / Pechatchi vazifalari ====================
 registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker });
 
@@ -346,7 +399,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState";
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att");
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi

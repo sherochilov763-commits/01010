@@ -1,4 +1,4 @@
-import { Banknote, CreditCard, FileBarChart2, FolderTree, Landmark, LayoutDashboard, ListChecks, MessageCircle, Package, Settings, TrendingDown, Users, Users2 } from "lucide-react";
+import { Banknote, Clock, CreditCard, FileBarChart2, FolderTree, Landmark, LayoutDashboard, ListChecks, MessageCircle, Package, Settings, TrendingDown, Users, Users2 } from "lucide-react";
 
 export const DEFAULT_CATEGORIES = {
   "Material": ["Shisha", "MDF", "Plastik", "Alyuminiy", "Qog'oz", "Boshqa material"],
@@ -48,6 +48,7 @@ export const NAV = [
   { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true },
   { key: "categories", label: "Kategoriyalar", icon: FolderTree },
   { key: "employees", label: "Xodimlar", icon: Users, adminOnly: true },
+  { key: "attendance", label: "Davomat", icon: Clock },
   { key: "settings", label: "Sozlamalar", icon: Settings },
 ];
 

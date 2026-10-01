@@ -8,7 +8,7 @@ import { THEME } from "../theme.js";
 
 export const NAV_SHORT = {
   dashboard: "Asosiy", orders: "Buyurtma", crm: "CRM", chats: "Chatlar", expense: "Rasxod",
-  operations: "Operatsiya", report: "Hisobot", categories: "Kategoriya", employees: "Xodimlar", settings: "Sozlama",
+  operations: "Operatsiya", report: "Hisobot", categories: "Kategoriya", employees: "Xodimlar", attendance: "Davomat", settings: "Sozlama",
 };
 const ALL_KEYS = NAV.map((n) => n.key);
 const DEFAULT_BAR = ["dashboard", "orders", "expense", "crm"];

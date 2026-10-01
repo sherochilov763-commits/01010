@@ -89,7 +89,7 @@ export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarSty
 }
 
 
-export function Topbar({ user, view, onLogout, onMenuClick, onBack }) {
+export function Topbar({ user, view, onLogout, onMenuClick, onBack, right }) {
   const title = NAV.find((n) => n.key === view)?.label || "";
   return (
     <div className="no-print" style={{ padding: "18px 24px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -123,6 +123,7 @@ export function Topbar({ user, view, onLogout, onMenuClick, onBack }) {
           </div>
         </div>
       </div>
+      {right && <div style={{ flexShrink: 0 }}>{right}</div>}
     </div>
   );
 }

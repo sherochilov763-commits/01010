@@ -512,3 +512,33 @@ Menyu pastidagi **«Menyuni sozlash»** (ixcham va tepa panelda — ⚙ belgisi)
   Tavsiya, Ofisga keldi, Reklama — erkin matndan kalit so'z bo'yicha aniqlanadi (masalan "Instagram reklama" → Instagram);
   tanilmagan manba kulrang teg bilan. Lid formasida bir bosishda tanlash tugmalari.
 - **Telegram nikneymi** Telegram ko'k rangida (@username, bosilsa Telegram'da ochiladi); avtomatik "Telegram: @user" izohi takrorlanmaydi.
+
+## Davomat (keldi-ketdi)
+
+- **Belgilash:** yuqori panelda (dizayner/pechatchida — o'z ekranida) **«Keldim» / «Ketdim»** tugmasi. Bosilganda telefon joylashuvi
+  **bir marta** olinadi va sex nuqtasidan radius ichida (standart 150 m, GPS aniqligi hisobga olinadi) ekani serverda tekshiriladi.
+  Kun bo'yi kuzatilmaydi. Vaqt serverniki (telefon soatini o'zgartirib bo'lmaydi). Ish tugashidan oldin «Ketdim» — tasdiq so'raladi.
+- **Hisob:** kechikish (imtiyozdan keyin, ish boshlanishidan hisoblanadi; standart imtiyoz 15 daq), erta ketish, kech ketish
+  (qo'shimcha vaqt), kelmagan kunlar, «Ketdim» belgilanmagan kunlar, ishlangan soat. Dam kuni kelgani alohida.
+  Hisob davomat yoqilgan kundan boshlanadi (`since`). Toshkent vaqti.
+- **Davomat sahifasi** (admin): Bugun · Hafta · Oy (kunlik rangli xarita, jami ko'rsatkichlar, qatorni bosib kunlar, Excel) ·
+  Sozlamalar (sex joylashuvi — «Hozirgi joylashuvim», radius, umumiy jadval va ish kunlari, imtiyoz, xodimga alohida jadval /
+  kuzatilmasin, Telegram hisobotlari va sinab yuborish). Xodim — «Mening davomatim» (oylik tarix).
+- **Qo'lda to'g'rilash:** faqat admin, sababi majburiy; kim va nima sababdan o'zgartirgani saqlanadi.
+- **Telegram:** har ish kuni (standart 09:30) — kim keldi / kechikdi / hali belgilamadi; har dushanba 09:00 — o'tgan hafta;
+  har oyning 1-sanasi — o'tgan oy. Bot orqali; «Chat ID» yozilsa — faqat o'sha chatga. Server qayta ishga tushsa ham takrorlanmaydi.
+- Kod: `backend/attendance.js` (API: `/api/attendance/me|check|config|report|manual|send-report`),
+  `frontend/src/components/CheckInButton.jsx`, `frontend/src/views/attendance/AttendanceView.jsx`.
+  Ma'lumot: ichki kalitlar `uvix:attConfig`, `uvix:att:YYYY-MM`, `uvix:attSent`.
+- Demo'da serverning shu hisoblash kodi brauzerda ishlaydi, joylashuv sex nuqtasi deb olinadi, 35 kunlik namunaviy ma'lumot bor.
+
+### Davomat: selfi, ish vaqti taymeri, ilova yopiq ekrani
+- **Selfi** (standart yoqilgan, Davomat → Sozlamalar): «Keldim»da avval joylashuv tekshiriladi (`dryRun`), keyin old kameradan
+  **jonli** selfi olinadi (galereyadan emas), 480px JPEG, ustiga «UVIX · sana vaqt» yoziladi. Faqat admin ko'radi
+  (Bugun ro'yxatida miniatyura, kunlik tafsilotda «selfi»). `photoDays` (standart 60) kundan keyin o'zi o'chadi.
+  Saqlash: `<DB papkasi>/attendance-photos/YYYY-MM/<xodim>_<sana>_in.jpg` (server.js → `attPhotoStore`).
+- **Taymer:** kelgandan keyin yuqori paneldagi tugmada jonli `HH:MM:SS`, «18:00 gacha», pastida kun chizig'i
+  (kechikkan bo'lsa sariq, ish vaqti tugagach yashil) va «Ketdim».
+- **Ilova yopiq ekrani** (`AttendanceGate`): kuzatiladigan xodim ish kunida «Keldim» bosmaguncha boshqa bo'limlar ochilmaydi —
+  katta soat, salomlashuv, kechikish daqiqalari, katta «Keldim» tugmasi. Faqat ish boshlanishidan 2 soat oldin — ish tugaguncha;
+  ish tugagach, dam kunlari va admin uchun ilova ochiq. GPS ishlamasa — admin qo'lda belgilaydi.

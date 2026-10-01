@@ -408,3 +408,24 @@ export async function saveMyNav(prefs) {
   if (!res.ok) throw new Error("Menyuni saqlab bo'lmadi");
   return (await res.json()).prefs;
 }
+
+// ---- Davomat (keldi-ketdi) ----
+async function attReq(path, opts = {}) {
+  const res = await fetch(`${API_BASE}/attendance${path}`, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.message || data.error || `Xato: ${res.status}`), { status: res.status, data });
+  return data;
+}
+export const fetchMyAttendance = (month) => attReq(`/me${month ? `?month=${month}` : ""}`);
+export const checkAttendance = (type, pos) => attReq("/check", { method: "POST", body: JSON.stringify({ type, ...pos }) });
+export const fetchAttendanceConfig = () => attReq("/config").then((d) => d.config);
+export const saveAttendanceConfig = (config) => attReq("/config", { method: "PUT", body: JSON.stringify({ config }) }).then((d) => d.config);
+export const fetchAttendanceReport = (from, to) => attReq(`/report?from=${from}&to=${to}`);
+export const saveAttendanceManual = (payload) => attReq("/manual", { method: "POST", body: JSON.stringify(payload) });
+export const sendAttendanceReport = (type) => attReq("/send-report", { method: "POST", body: JSON.stringify({ type }) });
+// Selfi rasmini (faqat admin) avtorizatsiya bilan olib, brauzerda ko'rsatish uchun manzil qaytaradi
+export async function fetchAttendancePhoto(id) {
+  const res = await fetch(`${API_BASE}/attendance/photo/${id}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(res.status === 404 ? "Rasm o'chirilgan (saqlash muddati tugagan)" : "Rasmni olib bo'lmadi");
+  return URL.createObjectURL(await res.blob());
+}
