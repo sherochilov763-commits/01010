@@ -429,3 +429,19 @@ export async function fetchAttendancePhoto(id) {
   if (!res.ok) throw new Error(res.status === 404 ? "Rasm o'chirilgan (saqlash muddati tugagan)" : "Rasmni olib bo'lmadi");
   return URL.createObjectURL(await res.blob());
 }
+
+// ---- Xodimning Telegram'i (UVIX boti orqali shaxsiy eslatmalar) ----
+async function meTg(method = "GET", sub = "") {
+  const res = await fetch(`${API_BASE}/me/telegram${sub}`, { method, headers: { "Content-Type": "application/json", ...authHeaders() } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `Xato: ${res.status}`);
+  return data;
+}
+export const fetchMyTelegram = () => meTg();
+export const linkMyTelegram = () => meTg("POST", "/link");
+export const unlinkMyTelegram = () => meTg("DELETE");
+export async function fetchStaffTelegram() {
+  const res = await fetch(`${API_BASE}/staff-telegram`, { headers: authHeaders() });
+  if (!res.ok) return {};
+  return (await res.json()).linked || {};
+}

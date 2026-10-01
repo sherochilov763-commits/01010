@@ -24,6 +24,9 @@ const DEFAULT_CONFIG = {
   reportChatId: "", // bo'sh bo'lsa — Sozlamalardagi bot chat ID
   photo: true, // "Keldim"da selfi majburiy
   photoDays: 60, // selfilar shuncha kundan keyin o'chiriladi
+  // Xodimning o'ziga Telegram (UVIX boti orqali, xodim botni ulagan bo'lsa) va adminga shaxsiy xabarlar
+  personal: { pre: true, notStarted: true, late: true, forgotOut: true, weekly: true, adminAbsent: true },
+  appUrl: "", // xabardagi havola (admin sozlamani saqlaganda o'zi yoziladi)
   since: null, // davomat boshlangan kun (sex joylashuvi birinchi marta belgilangan) — undan oldingi kunlar hisoblanmaydi
 };
 
@@ -51,7 +54,7 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null }) {
+module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false }) {
   // Selfilar saqlash joyi tashqaridan beriladi (serverda — disk, demo'da — brauzer xotirasi):
   //   photoStore.save(empId, date, base64) -> { id } | { error }
   //   photoStore.send(res, id)              -> rasmni javob sifatida yuboradi
@@ -72,6 +75,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     const c = { ...DEFAULT_CONFIG, ...readJson("uvix:attConfig", {}) };
     c.schedule = { ...DEFAULT_CONFIG.schedule, ...(c.schedule || {}) };
     c.reports = { ...DEFAULT_CONFIG.reports, ...(c.reports || {}) };
+    c.personal = { ...DEFAULT_CONFIG.personal, ...(c.personal || {}) };
     c.overrides = c.overrides || {};
     return c;
   };
@@ -210,6 +214,53 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
       const pm = prevMonth(now.date);
       if (sent.monthly !== pm.key) { sent.monthly = pm.key; changed = true; await send(periodText(`Oylik davomat — ${pm.label}`, pm.from, pm.to)); }
     }
+    // ---- Shaxsiy eslatmalar (har xodim, har kun — bir martadan) ----
+    const P = cfg.personal;
+    sent.personal = sent.personal && sent.personal.date === now.date ? sent.personal : { date: now.date, by: {} };
+    const link = cfg.appUrl ? `\n${cfg.appUrl}` : "";
+    const absentForAdmin = [];
+    const todayData = readMonth(now.date);
+    for (const emp of readEmployees()) {
+      const sch = scheduleFor(emp, cfg);
+      if (!sch.track || !sch.days.includes(now.weekday)) continue;
+      const rec = todayData[emp.id]?.[now.date] || {};
+      const start = toMin(sch.start), end = toMin(sch.end);
+      const flags = sent.personal.by[emp.id] || (sent.personal.by[emp.id] = {});
+      const first = String(emp.name || "").split(" ")[0];
+      const mark = (k) => { flags[k] = true; changed = true; };
+      if (P.pre && !rec.in && !flags.pre && now.min >= start - 15 && now.min < start) {
+        mark("pre"); await notifyEmployee(emp.id, `⏰ ${first}, 15 daqiqadan so'ng ish boshlanadi (${sch.start}).\nSexga kelganingizda UVIX'da «Keldim»ni bosing.${link}`);
+      }
+      if (P.notStarted && !rec.in && !flags.notStarted && now.min >= start + cfg.grace && now.min < end) {
+        mark("notStarted"); await notifyEmployee(emp.id, `❗ ${first}, ish ${sch.start} da boshlangan — siz hali «Keldim» bosmadingiz.\nKechikish hisoblanmoqda: ${now.min - start} daqiqa.${link}`);
+      }
+      if (P.adminAbsent && !rec.in && !flags.adminAbsent && now.min >= start + 30 && now.min < end) {
+        mark("adminAbsent"); absentForAdmin.push(`${emp.name} (ish ${sch.start} da boshlangan)`);
+      }
+      if (P.forgotOut && rec.in && !rec.out && !flags.forgotOut && now.min >= end + 30) {
+        mark("forgotOut"); await notifyEmployee(emp.id, `🕕 ${first}, ish ${sch.end} da tugadi — «Ketdim» bosishni unutmang.\nAks holda bugungi ish vaqtingiz to'liq hisoblanmaydi.${link}`);
+      }
+    }
+    if (absentForAdmin.length) await send(`⚠️ <b>Hali kelmadi (${now.hm})</b>\n${absentForAdmin.map((x) => `• ${x}`).join("\n")}`);
+    // Haftalik shaxsiy xulosa — dushanba 09:00 dan keyin, har xodimga bir marta
+    if (P.weekly && now.weekday === 1 && now.hm >= "09:00") {
+      const w = prevWeek(now.date);
+      if (sent.weeklyPersonal !== w.key) {
+        sent.weeklyPersonal = w.key; changed = true;
+        for (const row of report(w.from, w.to).rows) {
+          const s = row.sum;
+          if (!s.workdays) continue;
+          const lines = [`📊 <b>O'tgan hafta</b> (${dayLabel(w.from)} — ${dayLabel(w.to)})`, "",
+            `✅ Keldingiz: ${s.present}/${s.workdays} kun`,
+            s.late ? `⏰ Kechikish: ${s.late} marta (${fmtDur(s.lateMin)})` : "⏰ Kechikish yo'q — barakalla!",
+            s.early ? `↩️ Erta ketish: ${s.early} marta (${fmtDur(s.earlyMin)})` : null,
+            s.overMin ? `➕ Qo'shimcha: ${fmtDur(s.overMin)}` : null,
+            s.absent ? `❌ Kelmagan kun: ${s.absent}` : null,
+            `🕒 Ishladingiz: ${fmtDur(s.workedMin)}`].filter(Boolean);
+          await notifyEmployee(row.employee.id, lines.join("\n"));
+        }
+      }
+    }
     if (sent.cleanup !== now.date) {
       sent.cleanup = now.date; changed = true;
       try { const n = cleanupPhotos(cfg.photoDays || 60); if (n) console.log(`Davomat: ${n} ta eski selfi o'chirildi`); } catch (e) { console.error("Selfilarni tozalash:", e.message); }
@@ -274,7 +325,13 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     }
     writeMonth(date, data);
     const emp = readEmployees().find((e) => e.id === req.user.id);
-    res.json({ ok: true, record: rec, today: evalDay(emp, date, rec, cfg, now) });
+    const today = evalDay(emp, date, rec, cfg, now);
+    res.json({ ok: true, record: rec, today });
+    // Kechikish qayd etildi — xodimning o'ziga (shu oydagi jami bilan)
+    if (type === "in" && today.status === "late" && cfg.personal.late) {
+      const m = report(`${date.slice(0, 7)}-01`, date, { employeeId: emp.id }).rows[0]?.sum;
+      notifyEmployee(emp.id, `⏰ Bugun <b>${today.lateMin} daqiqa</b> kechikdingiz (${today.in}).${m ? `\nBu oy: ${m.late} marta, jami ${fmtDur(m.lateMin)}.` : ""}`).catch(() => {});
+    }
   });
 
   // ---- Admin ----
@@ -295,6 +352,8 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
       reports: b.reports ? { daily: !!b.reports.daily, weekly: !!b.reports.weekly, monthly: !!b.reports.monthly } : cur.reports,
       reportChatId: b.reportChatId !== undefined ? String(b.reportChatId || "").trim().slice(0, 40) : cur.reportChatId,
       photo: b.photo !== undefined ? !!b.photo : cur.photo,
+      personal: b.personal ? Object.fromEntries(Object.keys(DEFAULT_CONFIG.personal).map((k) => [k, !!b.personal[k]])) : cur.personal,
+      appUrl: (() => { const o = req.get("origin"); return o && /^https?:\/\//.test(o) ? o : cur.appUrl; })(),
       photoDays: b.photoDays !== undefined ? Math.min(365, Math.max(7, Number(b.photoDays) || 60)) : cur.photoDays,
       since: cur.since || null,
     };

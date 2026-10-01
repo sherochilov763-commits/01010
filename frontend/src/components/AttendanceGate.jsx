@@ -4,6 +4,7 @@ import { Camera, LogOut, MapPin } from "lucide-react";
 import { gateActive, useMyAttendance } from "../lib/attendanceStore.js";
 import { useCheckIn, useTick } from "./CheckInButton.jsx";
 import { THEME } from "../theme.js";
+import { TelegramLinkCard } from "./TelegramLinkCard.jsx";
 
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 const DAYS = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
@@ -49,6 +50,7 @@ export function AttendanceGate({ user, onLogout, children }) {
           {data.config.photo ? "Joylashuv tekshiriladi va selfi olinadi." : "Joylashuv tekshiriladi."} Belgilagandan so'ng ilova ochiladi.
         </div>
         {msg && <div data-testid="gate-msg" style={{ fontSize: 13.5, color: msg.ok ? THEME.green : THEME.rose, background: msg.ok ? THEME.greenBg : THEME.roseBg, padding: "10px 14px", borderRadius: 12, lineHeight: 1.45 }}>{msg.text}</div>}
+        <div style={{ width: "100%", marginTop: 4 }}><TelegramLinkCard compact /></div>
         <div style={{ fontSize: 12, color: THEME.muted }}>Muammo bo'lsa (GPS ishlamasa va h.k.) — administratorga murojaat qiling, u qo'lda belgilaydi.</div>
         <button type="button" onClick={onLogout} style={{ marginTop: 6, border: 0, background: "none", color: THEME.muted, cursor: "pointer", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "inherit" }}><LogOut size={14} /> Chiqish</button>
       </div>

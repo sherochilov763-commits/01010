@@ -542,3 +542,16 @@ Menyu pastidagi **«Menyuni sozlash»** (ixcham va tepa panelda — ⚙ belgisi)
 - **Ilova yopiq ekrani** (`AttendanceGate`): kuzatiladigan xodim ish kunida «Keldim» bosmaguncha boshqa bo'limlar ochilmaydi —
   katta soat, salomlashuv, kechikish daqiqalari, katta «Keldim» tugmasi. Faqat ish boshlanishidan 2 soat oldin — ish tugaguncha;
   ish tugagach, dam kunlari va admin uchun ilova ochiq. GPS ishlamasa — admin qo'lda belgilaydi.
+
+### Davomat: xodimning o'ziga Telegram xabarlari (UVIX boti)
+- Telegram qoidasi: bot odamga birinchi yoza olmaydi. Xodim **bir marta** UVIX'da «Telegram'ni ulash» (Davomat → Mening davomatim,
+  «Keldim» ekrani, dizayner/pechatchida — Sozlamalar) → `t.me/<bot>?start=<kod>` → «Start». Kod 30 daqiqa amal qiladi, bir martalik.
+  `/stop` — o'chirish. Xodim botni bloklasa — bog'lanish o'zi olib tashlanadi.
+- Bot xabarlari **long polling** (`getUpdates`) orqali olinadi — webhook kerak emas (`backend/telegram-bot.js`).
+  Shu bot boshqa joyda webhook bilan ishlatilsa, polling 409 bilan to'xtab turadi.
+- Xabarlar (Davomat → Sozlamalar → «Xodimning o'ziga», har biri o'chirib-yoqiladi, har kuni bir martadan):
+  ish boshlanishidan 15 daqiqa oldin · imtiyozdan keyin hali «Keldim» bosmagan · kech kelganda («Bugun N daqiqa, bu oy: …») ·
+  ish tugab 30 daqiqa o'tib «Ketdim» bosilmagan · dushanba — shaxsiy haftalik xulosa.
+  **Adminga:** ish boshlanib 30 daqiqa o'tsa — kim hali kelmagani (bot chati yoki Davomat «Chat ID»).
+- Admin «Xodimlar» ro'yxatida kim ulaganini ko'radi: «TG ✓» / «TG yo'q».
+- Ichki kalitlar: `uvix:staffTg`, `uvix:tgLinkTokens`. Sinov uchun `TELEGRAM_API_BASE` (soxta Bot API), `UVIX_NO_BOT_POLL=1`.

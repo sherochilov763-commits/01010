@@ -6,6 +6,8 @@ import { roleLabel } from "../../constants.js";
 import { THEME } from "../../theme.js";
 import { authListEmployees, fetchAttendancePhoto, fetchAttendanceConfig, fetchAttendanceReport, fetchMyAttendance, saveAttendanceConfig, saveAttendanceManual, sendAttendanceReport } from "../../storage.js";
 import { exportRows } from "../../lib/excel.js";
+import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
+import { fetchStaffTelegram } from "../../storage.js";
 import { getPosition } from "../../lib/geo.js";
 
 // ---------- yordamchilar ----------
@@ -317,6 +319,7 @@ function MineTab() {
   const stat = (l, v, c) => <div style={{ flex: "1 1 130px", padding: "11px 14px", borderRadius: 14, background: THEME.card, border: `1px solid ${THEME.border}` }}><div style={{ fontSize: 11, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>{l}</div><div style={{ fontSize: 18, fontWeight: 800, color: c || THEME.text, marginTop: 3 }}>{v}</div></div>;
   return (
     <>
+      <TelegramLinkCard />
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <button type="button" onClick={() => shift(-1)} aria-label="Oldingi oy" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center" }}><ChevronLeft size={16} /></button>
         <div style={{ fontWeight: 800, fontSize: 15, minWidth: 150, textAlign: "center" }}>{MONTHS[m.getMonth()][0].toUpperCase() + MONTHS[m.getMonth()].slice(1)} {m.getFullYear()}</div>
@@ -352,6 +355,8 @@ function SettingsTab({ config, onSaved }) {
   const [msg, setMsg] = useState(null);
   const [locBusy, setLocBusy] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [tgLinked, setTgLinked] = useState({});
+  useEffect(() => { fetchStaffTelegram().then(setTgLinked).catch(() => {}); }, []);
   useEffect(() => {
     // Barcha xodimlar ro'yxati — kuzatilmaydiganlari ham (admin tanlashi uchun)
     authListEmployees().then((list) => setEmps(Array.isArray(list) ? list : [])).catch(() => {});
@@ -433,6 +438,8 @@ function SettingsTab({ config, onSaved }) {
                 <label style={{ display: "flex", alignItems: "center", gap: 8, flex: "1 1 160px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                   <input type="checkbox" checked={track} onChange={(ev) => setOv(e.id, { track: ev.target.checked })} />
                   {e.name} <span style={{ fontWeight: 400, color: THEME.muted, fontSize: 11.5 }}>{roleLabel(e.role)}</span>
+                  {tgLinked[e.id] ? <span title={tgLinked[e.id].username ? `@${tgLinked[e.id].username}` : "Telegram ulangan"} style={{ fontSize: 10.5, fontWeight: 700, color: "#2AABEE", background: "#2AABEE1F", padding: "1px 7px", borderRadius: 20 }}>TG ✓</span>
+                    : track && <span title="Xodim botni hali ulamagan — eslatmalar bormaydi" style={{ fontSize: 10.5, fontWeight: 600, color: THEME.muted, border: `1px dashed ${THEME.border}`, padding: "0 6px", borderRadius: 20 }}>TG yo'q</span>}
                 </label>
                 {track && <>
                   <input type="time" value={o.start || ""} onChange={(ev) => setOv(e.id, { start: ev.target.value })} title="Alohida boshlanish" style={{ ...getInputStyle(), width: 110, padding: "6px 8px" }} />
@@ -455,6 +462,16 @@ function SettingsTab({ config, onSaved }) {
           <Field label="Kunlik hisobot vaqti"><input type="time" value={c.dailyAt} onChange={(e) => set({ dailyAt: e.target.value })} style={getInputStyle()} /></Field>
           <Field label="Chat ID (ixtiyoriy)"><input value={c.reportChatId || ""} onChange={(e) => set({ reportChatId: e.target.value })} placeholder="Bo'sh — bot chati" style={getInputStyle()} /></Field>
         </div>
+        <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 12, paddingTop: 10, fontWeight: 700, fontSize: 13 }}>Xodimning o'ziga (bot orqali)</div>
+        {[["pre", "Ish boshlanishidan 15 daqiqa oldin eslatma"], ["notStarted", "Imtiyozdan keyin hali «Keldim» bosmagan bo'lsa"], ["late", "Kech kelganda: «Bugun N daqiqa kechikdingiz, bu oy: …»"], ["forgotOut", "Ish tugab 30 daqiqa o'tib ham «Ketdim» bosilmasa"], ["weekly", "Har dushanba — shaxsiy haftalik xulosa"]].map(([k, l]) => (
+          <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={!!c.personal?.[k]} onChange={(e) => set({ personal: { ...c.personal, [k]: e.target.checked } })} /> {l}
+          </label>
+        ))}
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+          <input type="checkbox" checked={!!c.personal?.adminAbsent} onChange={(e) => set({ personal: { ...c.personal, adminAbsent: e.target.checked } })} /> Sizga: ish boshlanib 30 daqiqa o'tsa — kim hali kelmagani
+        </label>
+        <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>Xodim UVIX'da bir marta «Telegram'ni ulash»ni bosib, botda «Start» qiladi. Kim ulaganini «Xodimlar» ro'yxatida «TG ✓» belgisidan ko'rasiz.</div>
         <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>Hisobotlar Sozlamalardagi Telegram bot orqali yuboriladi. Faqat sizga kelishi uchun o'z chat ID'ingizni yozing.</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
           <Button variant="ghost" onClick={() => trySend("daily")}>Bugungi — sinash</Button>

@@ -9,6 +9,7 @@ import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
 import { useHistoryView } from "../../lib/history.js";
 import PasskeySection from "../../auth/PasskeySection.jsx";
+import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
 import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
 import { CheckInButton } from "../../components/CheckInButton.jsx";
 
@@ -345,6 +346,7 @@ function WorkerSettings({ currentUser, onLogout }) {
         </Field>
         {msg && <div style={{ fontSize: 12.5, marginTop: 8, color: msg.err ? THEME.rose : THEME.green }}>{msg.t}</div>}
       </Card>
+      <TelegramLinkCard />
       <PasskeySection currentUser={currentUser} theme={THEME} Card={Card} />
       <Button variant="ghost" onClick={onLogout} style={{ alignSelf: "flex-start" }}><LogOut size={15} /> Tizimdan chiqish</Button>
     </div>

@@ -11,6 +11,7 @@ const XLSX = require("xlsx");
 const nodemailer = require("nodemailer");
 const telegramUserbot = require("./telegram-userbot");
 const telegramLogin = require("./telegram-login");
+const { TG_API } = require("./telegram-bot");
 const multer = require("multer");
 const db = require("./db");
 const { registerTaskRoutes, mergeLeadTaskState } = require("./tasks");
@@ -344,7 +345,7 @@ async function sendTelegramTo(text, chatIdOverride) {
     const token = settings?.telegramBotToken;
     const chatId = chatIdOverride || settings?.telegramChatId;
     if (!token || !chatId) return false;
-    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const r = await fetch(`${TG_API}/bot${token}/sendMessage`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
     });
@@ -387,7 +388,8 @@ const attPhotoStore = {
     return removed;
   },
 };
-const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: sendTelegramTo, photoStore: attPhotoStore });
+const staffBot = require("./telegram-bot")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin });
+const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: sendTelegramTo, photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee });
 
 // ==================== Dizayner / Pechatchi vazifalari ====================
 registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker });
@@ -399,7 +401,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att");
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens";
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -504,7 +506,7 @@ async function sendTelegramMessage(text) {
     const token = settings?.telegramBotToken;
     const chatId = settings?.telegramChatId;
     if (!token || !chatId) return;
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    await fetch(`${TG_API}/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
@@ -533,7 +535,7 @@ async function sendTelegramDocument(buffer, filename, caption) {
     form.append("chat_id", cfg.chatId);
     if (caption) form.append("caption", caption);
     form.append("document", new Blob([buffer]), filename);
-    const res = await fetch(`https://api.telegram.org/bot${cfg.token}/sendDocument`, { method: "POST", body: form });
+    const res = await fetch(`${TG_API}/bot${cfg.token}/sendDocument`, { method: "POST", body: form });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       console.error("Telegram fayl yuborishda xato:", res.status, body);
