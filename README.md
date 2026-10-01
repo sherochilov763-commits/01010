@@ -555,3 +555,22 @@ Menyu pastidagi **«Menyuni sozlash»** (ixcham va tepa panelda — ⚙ belgisi)
   **Adminga:** ish boshlanib 30 daqiqa o'tsa — kim hali kelmagani (bot chati yoki Davomat «Chat ID»).
 - Admin «Xodimlar» ro'yxatida kim ulaganini ko'radi: «TG ✓» / «TG yo'q».
 - Ichki kalitlar: `uvix:staffTg`, `uvix:tgLinkTokens`. Sinov uchun `TELEGRAM_API_BASE` (soxta Bot API), `UVIX_NO_BOT_POLL=1`.
+
+### Bo'yoq ombori (menyu → «Bo'yoq ombori»)
+
+UV bo'yoqlar qoldig'ini litrda yuritadi va qachon tugashini oldindan aytadi.
+
+- **Bo'yoqlar:** Cyan, Magenta, Yellow, Black, Oq (White), Lak, Primer, Tozalash suyuqligi. Ro'yxat, rang va normani admin Sozlamalar'da o'zgartiradi.
+- **Sarf (avtomatik):** buyurtmadagi m² × sarf normasi (ml/m²). Norma avval taxminiy. Ikki sanash orasidagi haqiqiy sarfdan tizim uni o'zi aniqlashtiradi: oxirgi 4 oraliq, m² bo'yicha og'irlik bilan. Shunda kartada «✓ o'rganilgan» belgisi chiqadi.
+- **Kirim:** Rasxod → kategoriya «Kraska» tanlanganda «Bo'yoq omboriga kirim» bloki chiqadi. Unda qaysi bo'yoqdan necha litr olinganini kiritasiz; bitta to'lovda bir nechta bo'yoq bo'lishi mumkin. Ombor sahifasidagi «Kirim» tugmasi ham shu formani ochadi.
+- **Haftalik sanash:** «Sanash» tugmasi orqali haqiqiy qoldiq kiritiladi. Hisob shu qiymatdan qayta boshlanadi, farq oylik hisobotda «Sanash tuzatishi» bo'lib ko'rinadi. Birinchi sanash — boshlang'ich qoldiq.
+- **Prognoz:** oxirgi 30 kundagi o'rtacha m²/kun × norma → litr/kun → qoldiq necha kunga yetishi va taxminiy tugash sanasi. Tavsiya: «ogohlantirish muddati + 30 kun»ga yetadigan miqdor.
+- **Ogohlantirish (Telegram):** bo'yoq 30 kundan kamroqqa yetadigan bo'lsa, adminning shaxsiy Telegram'iga xabar boradi. Har bo'yoq uchun bir marta yuboriladi, to'ldirilgach qayta yoqiladi. Sanash kuni (standart: dushanba 10:00) eslatma ham keladi.
+  - Admin o'z Telegram'ini UVIX botiga bir marta ulaydi: Bo'yoq ombori → Sozlamalar → «Telegram'ni ulash».
+  - Hech bir admin ulanmagan bo'lsa, xabar umumiy chatga ketadi.
+- **Oylik hisobot:** har bo'yoq bo'yicha oy boshi, kirim, sarf, sanash tuzatishi va oy oxiri. Kunma-kun sarf grafigi, kunlik jadval va Excel ham bor.
+- **Saqlash:** `uvix:paintConfig`, `uvix:paintCounts`, `uvix:paintSent` (ichki kalitlar). Kirim `uvix:transactions` dagi `paintLines` maydonida saqlanadi.
+- **API:**
+  - `GET /api/paint`, `GET /api/paint/month?ym=`, `GET /api/paint/counts`
+  - `POST /api/paint/count`, `DELETE /api/paint/count/:id` (admin)
+  - `PUT /api/paint/config` (admin), `POST /api/paint/test-alert` (admin)

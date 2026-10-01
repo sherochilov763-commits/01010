@@ -50,6 +50,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                       <div style={{ fontSize: 12, color: THEME.muted, marginTop: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         {shortDateUz(t.date)}
                         <Badge color={pc.color} bg={pc.bg}>{paymentTypeLabel(t.paymentType)}</Badge>
+                        {t.paintLines?.length ? <Badge color={THEME.violet} bg={THEME.violetSoft}>+{t.paintLines.reduce((s, l) => s + l.liters, 0).toLocaleString("ru-RU")} L omborga</Badge> : null}
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
@@ -86,7 +87,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                 <tr key={t.id} className="uvix-row" style={{ borderBottom: `1px solid ${THEME.border}` }}>
                   <td style={{ padding: "13px 16px", whiteSpace: "nowrap" }}>{t.date}</td>
                   <td style={{ padding: "13px 16px", fontWeight: 600 }}>{t.category}</td>
-                  <td style={{ padding: "13px 16px", color: THEME.muted }}>{t.subcategory}</td>
+                  <td style={{ padding: "13px 16px", color: THEME.muted }}>{t.subcategory}{t.paintLines?.length ? <div style={{ fontSize: 11.5, color: THEME.violet, fontWeight: 700 }}>+{t.paintLines.reduce((s, l) => s + l.liters, 0).toLocaleString("ru-RU")} L omborga</div> : null}</td>
                   <td style={{ padding: "13px 16px" }}>
                     {linkedOrder ? (
                       <span style={{ fontSize: 12.5 }}>{linkedOrder.customer} <span style={{ color: THEME.muted }}>({linkedOrder.orderNumber})</span></span>

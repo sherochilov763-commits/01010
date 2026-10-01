@@ -445,3 +445,18 @@ export async function fetchStaffTelegram() {
   if (!res.ok) return {};
   return (await res.json()).linked || {};
 }
+
+// ---- Bo'yoq ombori ----
+async function paintReq(path, opts = {}) {
+  const res = await fetch(`${API_BASE}/paint${path}`, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.message || data.error || `Xato: ${res.status}`), { status: res.status, data });
+  return data;
+}
+export const fetchPaint = () => paintReq("");
+export const fetchPaintMonth = (ym) => paintReq(`/month?ym=${ym}`);
+export const fetchPaintCounts = () => paintReq("/counts").then((d) => d.counts || []);
+export const savePaintCount = (payload) => paintReq("/count", { method: "POST", body: JSON.stringify(payload) });
+export const deletePaintCount = (id) => paintReq(`/count/${encodeURIComponent(id)}`, { method: "DELETE" });
+export const savePaintConfig = (cfg) => paintReq("/config", { method: "PUT", body: JSON.stringify(cfg) });
+export const sendPaintTest = () => paintReq("/test-alert", { method: "POST" });

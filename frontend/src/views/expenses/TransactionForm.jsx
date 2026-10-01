@@ -1,15 +1,16 @@
-import { useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Droplet, Plus, Search, X } from "lucide-react";
+import { guessPaintItem, loadPaintItems } from "../../lib/paintStore.js";
 import { Button, Field, Modal, PaymentTypeSelector, getIconBtn, getInputStyle } from "../../components/ui.jsx";
 import { fmt, todayStr, uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 
 /* ---------------- RASXOD FORMASI (faqat chiqim uchun) ---------------- */
-export function TransactionForm({ initial, currentUser, categories, orders, onAddCategory, onAddSubcategory, onClose, onSave }) {
+export function TransactionForm({ initial, preset, currentUser, categories, orders, onAddCategory, onAddSubcategory, onClose, onSave }) {
   const catNames = categories ? Object.keys(categories) : [];
   const [date, setDate] = useState(initial?.date || todayStr());
-  const [category, setCategory] = useState(initial?.category || catNames[0] || "");
-  const [subcategory, setSubcategory] = useState(initial?.subcategory || (categories?.[catNames[0]] || [])[0] || "");
+  const [category, setCategory] = useState(initial?.category || (preset?.category && catNames.includes(preset.category) ? preset.category : catNames[0]) || "");
+  const [subcategory, setSubcategory] = useState(initial?.subcategory || (preset?.category && categories?.[preset.category] ? preset.subcategory || categories[preset.category][0] : (categories?.[catNames[0]] || [])[0]) || "");
   const [amountStr, setAmountStr] = useState(initial ? fmt(initial.amount) : "");
   const [paymentType, setPaymentType] = useState(initial?.paymentType || "karta");
   const [note, setNote] = useState(initial?.note || "");
@@ -29,6 +30,23 @@ export function TransactionForm({ initial, currentUser, categories, orders, onAd
   const [showOrderSuggestions, setShowOrderSuggestions] = useState(false);
 
   const isBrak = category === "Brak";
+  const isPaint = category === "Kraska";
+  // Bo'yoq omboriga kirim: qaysi bo'yoqdan necha litr olindi (bitta to'lovda bir nechta bo'yoq bo'lishi mumkin)
+  const [paintItems, setPaintItems] = useState(null);
+  const [paintLines, setPaintLines] = useState(() => (initial?.paintLines || []).map((l) => ({ itemId: l.itemId, liters: String(l.liters).replace(".", ",") })));
+  useEffect(() => {
+    if (!isPaint || paintItems) return;
+    loadPaintItems().then((items) => {
+      setPaintItems(items.filter((i) => i.active));
+      setPaintLines((cur) => (cur.length ? cur : [{ itemId: guessPaintItem(subcategory, items), liters: "" }]));
+    }).catch(() => setPaintItems([]));
+  }, [isPaint, paintItems, subcategory]);
+  useEffect(() => {
+    // subkategoriya o'zgarsa — bitta bo'sh qatordagi bo'yoqni moslab qo'yamiz
+    if (!paintItems) return;
+    setPaintLines((cur) => (cur.length === 1 && !cur[0].liters ? [{ ...cur[0], itemId: guessPaintItem(subcategory, paintItems) || cur[0].itemId }] : cur));
+  }, [subcategory, paintItems]);
+  const setPaintLine = (i, k, v) => setPaintLines((cur) => cur.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
   const orderSuggestions = orderQuery.trim()
     ? (orders || []).filter((o) =>
         (o.customer || "").toLowerCase().includes(orderQuery.trim().toLowerCase()) ||
@@ -77,6 +95,16 @@ export function TransactionForm({ initial, currentUser, categories, orders, onAd
     if (!amount || amount <= 0) return setError("Summani to'g'ri kiriting (0 dan katta)");
     if (!category) return setError("Kategoriyani tanlang");
     if (isBrak && !linkedOrderId) return setError("Brak qaysi buyurtmaga tegishli ekanini tanlang");
+    let cleanPaint = [];
+    if (isPaint) {
+      for (const l of paintLines) {
+        const liters = Number(String(l.liters || "").replace(",", "."));
+        if (!l.itemId && !l.liters) continue;
+        if (!l.itemId) return setError("Bo'yoq omboriga: qaysi bo'yoq ekanini tanlang");
+        if (!liters || liters <= 0 || liters > 5000) return setError("Bo'yoq omboriga: litrni to'g'ri kiriting");
+        cleanPaint.push({ itemId: l.itemId, liters: Math.round(liters * 100) / 100 });
+      }
+    }
     const tx = {
       id: initial?.id || uid(),
       type: "chiqim",
@@ -89,6 +117,7 @@ export function TransactionForm({ initial, currentUser, categories, orders, onAd
       category,
       subcategory,
       relatedOrderId: isBrak ? linkedOrderId : (initial?.relatedOrderId || undefined),
+      ...(cleanPaint.length ? { paintLines: cleanPaint } : {}),
     };
     onSave(tx);
   }
@@ -185,6 +214,34 @@ export function TransactionForm({ initial, currentUser, categories, orders, onAd
               Bu summa shu buyurtmaning "Qo'shilgan qiymat" hisobidan avtomatik ayiriladi va buyurtmalar ro'yxatida ko'rsatiladi.
             </div>
           </Field>
+        )}
+        {isPaint && (
+          <div data-testid="paint-intake" style={{ border: `1px solid ${THEME.border}`, borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700 }}>
+              <Droplet size={15} style={{ color: THEME.violet }} /> Bo'yoq omboriga kirim
+              <span style={{ fontWeight: 500, color: THEME.muted, fontSize: 11.5 }}>(qoldiqqa qo'shiladi)</span>
+            </div>
+            {paintItems == null ? <div style={{ fontSize: 12, color: THEME.muted }}>Yuklanmoqda…</div> : paintLines.map((l, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 96px 30px", gap: 6, alignItems: "center" }}>
+                <select value={l.itemId} onChange={(e) => setPaintLine(i, "itemId", e.target.value)} style={getInputStyle()} data-paintline-item={i}>
+                  <option value="">— bo'yoqni tanlang —</option>
+                  {paintItems.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
+                </select>
+                <div style={{ position: "relative" }}>
+                  <input value={l.liters} onChange={(e) => setPaintLine(i, "liters", e.target.value.replace(/[^\d.,]/g, ""))} inputMode="decimal" placeholder="0" data-paintline-liters={i}
+                    style={{ ...getInputStyle(), paddingRight: 22, textAlign: "right", fontWeight: 700 }} />
+                  <span style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: THEME.muted }}>L</span>
+                </div>
+                <button type="button" onClick={() => setPaintLines((cur) => cur.filter((_, j) => j !== i))} title="Olib tashlash" style={{ ...getIconBtn(), padding: 0, width: 30, height: 30, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><X size={13} /></button>
+              </div>
+            ))}
+            {paintItems != null && (
+              <button type="button" onClick={() => setPaintLines((cur) => [...cur, { itemId: "", liters: "" }])} style={{ alignSelf: "flex-start", border: 0, background: "none", color: THEME.violet, fontWeight: 700, fontSize: 12.5, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "inherit" }}>
+                <Plus size={13} /> Yana bo'yoq
+              </button>
+            )}
+            <div style={{ fontSize: 11, color: THEME.muted }}>Omborga tegishli bo'lmasa (masalan, boshqa xarajat) — qatorni olib tashlang.</div>
+          </div>
         )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <Field label="Summa (so'm)">

@@ -389,6 +389,13 @@ const attPhotoStore = {
   },
 };
 const staffBot = require("./telegram-bot")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin });
+// Adminlarga shaxsiy xabar: Telegram'ini UVIX botiga ulagan adminlarga; hech kim ulanmagan bo'lsa — umumiy chatga
+async function notifyAdmins(text) {
+  let any = false;
+  for (const e of readEmployees().filter((x) => x.role === "admin")) if (await staffBot.sendToEmployee(e.id, text)) any = true;
+  return any || (await sendTelegramTo(text));
+}
+const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins });
 const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: sendTelegramTo, photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee });
 
 // ==================== Dizayner / Pechatchi vazifalari ====================
@@ -401,7 +408,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens";
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint");
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi

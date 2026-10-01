@@ -31,7 +31,8 @@ const ExpenseView = lazy(() => import("./views/expenses/ExpenseView.jsx").then((
 const OrdersView = lazy(() => import("./views/orders/OrdersView.jsx").then((m) => ({ default: m.OrdersView })));
 const SettingsView = lazy(() => import("./views/settings/SettingsView.jsx").then((m) => ({ default: m.SettingsView })));
 const AttendanceView = lazy(() => import("./views/attendance/AttendanceView.jsx").then((m) => ({ default: m.AttendanceView })));
-const VIEW_PRELOADERS = [() => import("./views/attendance/AttendanceView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
+const PaintView = lazy(() => import("./views/paint/PaintView.jsx").then((m) => ({ default: m.PaintView })));
+const VIEW_PRELOADERS = [() => import("./views/attendance/AttendanceView.jsx"), () => import("./views/paint/PaintView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
 function ViewFallback() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }} aria-busy="true">
@@ -736,6 +737,10 @@ export default function App() {
               />
             )}
             {view === "attendance" && <AttendanceView currentUser={currentUser} isAdmin={isAdmin} />}
+            {view === "paint" && (
+              <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
+                onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
+            )}
             {view === "report" && isAdmin && <ReportView orders={activeOrders} transactions={activeTransactions} categories={categories} />}
             {view === "categories" && (
               <CategoriesView
