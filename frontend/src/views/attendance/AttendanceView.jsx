@@ -1,3 +1,4 @@
+import { Avatar as UiAvatar } from "../../components/ui.jsx";
 // AttendanceView.jsx — Davomat: admin uchun Bugun / Hafta / Oy / Sozlamalar, xodim uchun o'z tarixi.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Clock, Download, MapPin, Pencil, RefreshCw, Send, X } from "lucide-react";
@@ -40,9 +41,7 @@ function StatusBadge({ day }) {
     <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />{s.label}{day.lateMin ? ` · ${day.lateMin} daq` : ""}
   </span>;
 }
-function Avatar({ name }) {
-  return <span style={{ width: 34, height: 34, borderRadius: "50%", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${THEME.violet}, ${THEME.cyan})`, color: "#fff", fontWeight: 700, fontSize: 13 }}>{(name || "?").slice(0, 1).toUpperCase()}</span>;
-}
+const Avatar34 = ({ name }) => <UiAvatar name={name} size={34} />;
 
 // Selfi: avtorizatsiya bilan yuklanadi (to'g'ridan-to'g'ri havola bilan ochilmaydi)
 const photoCache = new Map();
@@ -59,7 +58,7 @@ function useSelfie(id) {
 }
 function SelfieThumb({ id, name, onOpen, size = 34 }) {
   const { url } = useSelfie(id);
-  if (!id) return <Avatar name={name} />;
+  if (!id) return <Avatar34 name={name} />;
   return (
     <button type="button" onClick={() => onOpen(id)} title="Selfini ko'rish" data-testid="selfie-thumb"
       style={{ width: size, height: size, borderRadius: "50%", padding: 0, border: `2px solid ${THEME.green}`, overflow: "hidden", cursor: "pointer", background: THEME.surface, flexShrink: 0 }}>
@@ -141,7 +140,7 @@ function TodayTab() {
   return (
     <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={{ fontWeight: 800, fontSize: 15, marginRight: 6 }}>{dLabel(today)}</div>
+        <div style={{ fontWeight: 700, fontSize: 15, marginRight: 6 }}>{dLabel(today)}</div>
         {chips.map(([l, n, c]) => <span key={l} style={{ fontSize: 12.5, fontWeight: 700, color: c, background: `${c}1A`, padding: "5px 11px", borderRadius: 20 }}>{l}: {n}</span>)}
         <button type="button" onClick={load} title="Yangilash" style={{ marginLeft: "auto", border: 0, background: "none", color: THEME.muted, cursor: "pointer" }}><RefreshCw size={16} /></button>
       </div>
@@ -208,7 +207,7 @@ function PeriodTab({ kind }) {
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => shift(-1)} aria-label="Oldingi" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center" }}><ChevronLeft size={16} /></button>
-        <div data-testid="att-period-title" style={{ fontWeight: 800, fontSize: 15, minWidth: 180, textAlign: "center" }}>{title}</div>
+        <div data-testid="att-period-title" style={{ fontWeight: 700, fontSize: 15, minWidth: 180, textAlign: "center" }}>{title}</div>
         <button type="button" onClick={() => shift(1)} disabled={to >= todayStr()} aria-label="Keyingi" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center", opacity: to >= todayStr() ? 0.4 : 1 }}><ChevronRight size={16} /></button>
         <div style={{ flex: 1 }} />
         <Button variant="ghost" onClick={exportExcel} disabled={!data?.rows?.length}><Download size={14} /> Excel</Button>
@@ -233,7 +232,7 @@ function PeriodTab({ kind }) {
                 return [
                   <tr key={r.employee.id} data-testid="att-period-row" onClick={() => setOpen(isOpen ? null : r.employee.id)} style={{ borderTop: `1px solid ${THEME.border}`, cursor: "pointer", background: isOpen ? THEME.surface : "transparent" }}>
                     <td style={{ ...td, textAlign: "left", paddingLeft: 16 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar name={r.employee.name} /><div><div style={{ fontWeight: 700 }}>{r.employee.name}</div><div style={{ fontSize: 11, color: THEME.muted }}>{r.schedule.start}–{r.schedule.end}</div></div></div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}><Avatar34 name={r.employee.name} /><div><div style={{ fontWeight: 700 }}>{r.employee.name}</div><div style={{ fontSize: 11, color: THEME.muted }}>{r.schedule.start}–{r.schedule.end}</div></div></div>
                     </td>
                     <td style={{ ...td, textAlign: "left" }}>
                       <div style={{ display: "flex", gap: kind === "week" ? 4 : 2, flexWrap: "nowrap" }}>
@@ -316,13 +315,13 @@ function MineTab() {
   if (data.error) return <Card><div style={{ color: THEME.rose, fontSize: 13 }}>{data.error}</div></Card>;
   const s = data.sum || {};
   const m = parse(`${month}-01`);
-  const stat = (l, v, c) => <div style={{ flex: "1 1 130px", padding: "11px 14px", borderRadius: 14, background: THEME.card, border: `1px solid ${THEME.border}` }}><div style={{ fontSize: 11, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>{l}</div><div style={{ fontSize: 18, fontWeight: 800, color: c || THEME.text, marginTop: 3 }}>{v}</div></div>;
+  const stat = (l, v, c) => <div style={{ flex: "1 1 130px", padding: "11px 14px", borderRadius: 14, background: THEME.card, border: `1px solid ${THEME.border}` }}><div style={{ fontSize: 11, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>{l}</div><div style={{ fontSize: 18, fontWeight: 700, color: c || THEME.text, marginTop: 3 }}>{v}</div></div>;
   return (
     <>
       <TelegramLinkCard />
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <button type="button" onClick={() => shift(-1)} aria-label="Oldingi oy" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center" }}><ChevronLeft size={16} /></button>
-        <div style={{ fontWeight: 800, fontSize: 15, minWidth: 150, textAlign: "center" }}>{MONTHS[m.getMonth()][0].toUpperCase() + MONTHS[m.getMonth()].slice(1)} {m.getFullYear()}</div>
+        <div style={{ fontWeight: 700, fontSize: 15, minWidth: 150, textAlign: "center" }}>{MONTHS[m.getMonth()][0].toUpperCase() + MONTHS[m.getMonth()].slice(1)} {m.getFullYear()}</div>
         <button type="button" onClick={() => shift(1)} disabled={month >= todayStr().slice(0, 7)} aria-label="Keyingi oy" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center", opacity: month >= todayStr().slice(0, 7) ? 0.4 : 1 }}><ChevronRight size={16} /></button>
         <div style={{ marginLeft: "auto", fontSize: 12.5, color: THEME.muted }}><Clock size={13} style={{ verticalAlign: -2 }} /> Jadvalingiz: {data.schedule?.start}–{data.schedule?.end}</div>
       </div>
@@ -384,11 +383,11 @@ function SettingsTab({ config, onSaved }) {
       {[1, 2, 3, 4, 5, 6, 0].map((d) => {
         const on = days.includes(d);
         return <button key={d} type="button" onClick={() => onChange(on ? days.filter((x) => x !== d) : [...days, d])}
-          style={{ width: 36, height: 32, borderRadius: 9, border: `1px solid ${on ? THEME.violet : THEME.border}`, background: on ? THEME.violet : "transparent", color: on ? "#fff" : THEME.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{WD_SHORT[d]}</button>;
+          style={{ width: 36, height: 32, borderRadius: 9, border: `1px solid ${on ? THEME.violet : THEME.border}`, background: on ? THEME.violet : "transparent", color: on ? THEME.onPrimary : THEME.muted, fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{WD_SHORT[d]}</button>;
       })}
     </div>
   );
-  const sect = { fontWeight: 800, fontSize: 14, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 };
+  const sect = { fontWeight: 700, fontSize: 14, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 };
 
   return (
     <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", alignItems: "start" }}>

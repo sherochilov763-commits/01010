@@ -31,20 +31,20 @@ export function AttendanceGate({ user, onLogout, children }) {
     <div data-testid="attendance-gate" style={{ fontFamily: THEME.font, minHeight: "100vh", background: THEME.surface, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "min(420px, 100%)", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
         <div style={{ fontSize: 14, color: THEME.muted }}>{now.getDate()}-{MONTHS[now.getMonth()]}, {DAYS[now.getDay()]}</div>
-        <div style={{ fontSize: 56, fontWeight: 800, letterSpacing: -1, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: THEME.text, lineHeight: 1 }}>
+        <div style={{ fontSize: 56, fontWeight: 700, letterSpacing: -1, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: THEME.text, lineHeight: 1 }}>
           {String(now.getHours()).padStart(2, "0")}:{String(now.getMinutes()).padStart(2, "0")}<span style={{ fontSize: 26, color: THEME.muted }}>:{String(now.getSeconds()).padStart(2, "0")}</span>
         </div>
-        <div style={{ fontSize: 20, fontWeight: 800, color: THEME.text }}>{greet}, {first}!</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: THEME.text }}>{greet}, {first}!</div>
         <div style={{ fontSize: 14, color: isLate ? THEME.rose : THEME.muted, fontWeight: isLate ? 700 : 500 }}>
           {isLate ? `Ish ${sch.start} da boshlangan — ${lateBy} daqiqa kechikyapsiz` : nowM < start ? `Ish ${sch.start} da boshlanadi` : `Ish boshlandi (${sch.start})`}
         </div>
         <button type="button" data-testid="gate-checkin" onClick={() => run("in")} disabled={busy}
           style={{ marginTop: 10, width: 200, height: 200, borderRadius: "50%", border: 0, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
-            background: `radial-gradient(circle at 50% 35%, ${isLate ? "#F87171" : "#34D399"}, ${isLate ? THEME.rose : THEME.green})`, color: "#fff",
-            boxShadow: `0 20px 50px ${isLate ? THEME.rose : THEME.green}55`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10,
+            background: isLate ? THEME.rose : THEME.green, color: "#fff",
+            boxShadow: `0 0 0 10px ${isLate ? THEME.roseBg : THEME.greenBg}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10,
             animation: busy ? "none" : "uvixGatePulse 2s ease-in-out infinite" }}>
           {data.config.photo ? <Camera size={46} strokeWidth={1.8} /> : <MapPin size={46} strokeWidth={1.8} />}
-          <span style={{ fontSize: 24, fontWeight: 800 }}>{busy ? "Tekshirilmoqda…" : "Keldim"}</span>
+          <span style={{ fontSize: 24, fontWeight: 700 }}>{busy ? "Tekshirilmoqda…" : "Keldim"}</span>
         </button>
         <div style={{ fontSize: 12.5, color: THEME.muted, maxWidth: 320, lineHeight: 1.5 }}>
           {data.config.photo ? "Joylashuv tekshiriladi va selfi olinadi." : "Joylashuv tekshiriladi."} Belgilagandan so'ng ilova ochiladi.

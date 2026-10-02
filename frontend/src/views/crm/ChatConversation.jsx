@@ -5,10 +5,7 @@ import { useBackToClose } from "../../lib/history.js";
 
 export const REACTIONS = ["👍", "❤", "🔥", "😁", "😢", "🙏", "👌"];
 
-const C = {
-  bg: "#0E1621", panel: "#17212B", hover: "#202B36", border: "#101921", text: "#E4ECF2", muted: "#6D7F91",
-  blue: "#0088CC", link: "#6AB3F3", outBubble: "#2B5278", inBubble: "#182533", red: "#E5484D", green: "#4FAE4E",
-};
+import { C } from "./chatPalette.js";
 
 const time = (iso) => new Date(iso).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
 function snippet(m) {
@@ -49,7 +46,7 @@ function fmtDur(s) {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 }
 
-export const CHAT_CSS = `
+export const chatCss = () => `
   .uc-bubble { cursor: pointer; transition: filter .12s ease; -webkit-tap-highlight-color: transparent; }
   .uc-bubble:hover { filter: brightness(1.08); }
   .uc-row { position: relative; }
@@ -109,7 +106,7 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
         return (
           <Fragment key={m.id}>
           {newDay && (
-            <div style={{ alignSelf: "center", margin: "8px 0 4px", padding: "4px 12px", borderRadius: 12, background: "rgba(24,37,51,0.9)", color: C.muted, fontSize: 12.5, fontWeight: 600 }}>
+            <div style={{ alignSelf: "center", margin: "8px 0 4px", padding: "4px 12px", borderRadius: 12, background: C.dayBg, color: C.muted, fontSize: 12.5, fontWeight: 600 }}>
               {dayTitle(m.date)}
             </div>
           )}
@@ -137,7 +134,7 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
             >
               {quoted !== null && m.replyToTgId && (
                 <div onClick={(e) => { e.stopPropagation(); jumpTo(m.replyToTgId); }}
-                  style={{ margin: "6px 6px 0", padding: "4px 8px", borderLeft: `3px solid ${C.link}`, background: "rgba(255,255,255,0.06)", borderRadius: 6, cursor: "pointer", minWidth: 120 }}>
+                  style={{ margin: "6px 6px 0", padding: "4px 8px", borderLeft: `3px solid ${C.link}`, background: C.overlay, borderRadius: 6, cursor: "pointer", minWidth: 120 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.link }}>{quoted ? (quoted.out ? "Siz" : customerName) : "Xabar"}</div>
                   <div style={{ fontSize: 12.5, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 240 }}>{quoted ? snippet(quoted) : "Asl xabar topilmadi"}</div>
                 </div>
@@ -212,12 +209,12 @@ function MessageBody({ m, onPhoto }) {
       <>
         <Tag {...(href ? { href, download: m.fileName || "fayl" } : {})} onClick={(e) => e.stopPropagation()}
           style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", minWidth: 220, color: C.text, textDecoration: "none" }}>
-          <span style={{ width: 44, height: 44, borderRadius: 10, background: m.out ? "rgba(255,255,255,0.14)" : C.blue, display: "grid", placeItems: "center", flexShrink: 0, position: "relative" }}>
-            {href ? <Download size={20} color="#fff" /> : <FileText size={20} color="#fff" />}
+          <span style={{ width: 44, height: 44, borderRadius: 10, background: m.out ? C.overlay2 : C.blue, display: "grid", placeItems: "center", flexShrink: 0, position: "relative" }}>
+            {href ? <Download size={20} color={m.out ? C.text : "#fff"} /> : <FileText size={20} color={m.out ? C.text : "#fff"} />}
           </span>
           <span style={{ minWidth: 0 }}>
             <span style={{ display: "block", fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{m.fileName || "Hujjat"}</span>
-            <span style={{ display: "block", fontSize: 12, color: m.out ? "rgba(255,255,255,0.7)" : C.muted }}>
+            <span style={{ display: "block", fontSize: 12, color: m.out ? C.outMuted : C.muted }}>
               {[extOf(m.fileName), fmtSize(m.fileSize)].filter(Boolean).join(" · ")}{!href && m.fileSize ? " · Telegram'da oching" : ""}
             </span>
           </span>
@@ -231,14 +228,14 @@ function MessageBody({ m, onPhoto }) {
     return (
       <div style={{ padding: 10, minWidth: 220 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.08)", display: "grid", placeItems: "center", flexShrink: 0 }}><MapPin size={20} color={C.red} /></span>
+          <span style={{ width: 40, height: 40, borderRadius: 10, background: C.overlay, display: "grid", placeItems: "center", flexShrink: 0 }}><MapPin size={20} color={C.red} /></span>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14 }}>Joylashuv</div>
             <div style={{ fontSize: 12, color: C.muted }}>{m.lat.toFixed(5)}, {m.lng.toFixed(5)}</div>
           </div>
         </div>
         <a href={mapUrl(m.lat, m.lng)} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-          style={{ display: "block", marginTop: 8, padding: "8px 0", textAlign: "center", borderRadius: 8, background: "rgba(255,255,255,0.08)", color: C.link, fontWeight: 600, fontSize: 13, textDecoration: "none" }}>
+          style={{ display: "block", marginTop: 8, padding: "8px 0", textAlign: "center", borderRadius: 8, background: C.overlay, color: C.link, fontWeight: 600, fontSize: 13, textDecoration: "none" }}>
           Xaritada ochish
         </a>
       </div>
@@ -297,11 +294,11 @@ function VoicePlayer({ url, altUrl, out, knownDuration }) {
       <div style={{ flex: 1 }}>
         <div onClick={seek} role="slider" aria-label="Ovoz o'rni" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}
           style={{ height: 18, display: "flex", alignItems: "center", cursor: "pointer" }}>
-          <div style={{ height: 4, width: "100%", borderRadius: 2, background: "rgba(255,255,255,0.18)", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${pct}%`, background: out ? "#fff" : C.link }} />
+          <div style={{ height: 4, width: "100%", borderRadius: 2, background: C.overlay2, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: out ? C.blue : C.link }} />
           </div>
         </div>
-        <div style={{ fontSize: 11.5, color: out ? "rgba(255,255,255,0.75)" : C.muted }}>{fmtDur(playing || pos ? pos : dur)}</div>
+        <div style={{ fontSize: 11.5, color: out ? C.outMuted : C.muted }}>{fmtDur(playing || pos ? pos : dur)}</div>
       </div>
     </div>
   );
@@ -337,7 +334,7 @@ function MessageMenu({ m, rect, isMobile, onClose, onReply, onReact, onView }) {
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 400, background: isMobile ? "rgba(0,0,0,0.45)" : "transparent" }} />
       <div ref={boxRef} role="menu" aria-label="Xabar amallari"
-        style={{ ...box, zIndex: 401, background: C.panel, border: `1px solid ${C.hover}`, boxShadow: "0 16px 40px rgba(0,0,0,0.5)", padding: 6 }}>
+        style={{ ...box, zIndex: 401, background: C.panel, border: `1px solid ${C.hover}`, boxShadow: C.shadow, padding: 6 }}>
         {canAct ? (
           <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 2px 6px", borderBottom: `1px solid ${C.hover}`, marginBottom: 4 }}>
             {REACTIONS.map((r) => (
@@ -520,7 +517,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
   return (
     <div style={{ position: "relative" }}>
       {error && (
-        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(229,72,77,0.12)", color: "#FF9EA1", fontSize: 12.5 }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "rgba(220,38,38,0.10)", color: C.redText, fontSize: 12.5 }}>
           <span style={{ flex: 1 }}>{error}</span>
           <button type="button" onClick={() => setError("")} aria-label="Yopish" style={{ border: 0, background: "none", color: "inherit", cursor: "pointer", display: "flex" }}><X size={15} /></button>
         </div>
@@ -581,8 +578,8 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
         <>
           <div onClick={() => setAttachOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 300 }} />
           <div role="menu" style={{ position: "absolute", left: 8, bottom: "calc(100% + 6px)", zIndex: 301, width: 230, padding: 6, borderRadius: 14, background: C.panel, border: `1px solid ${C.hover}`, boxShadow: "0 12px 32px rgba(0,0,0,0.5)" }}>
-            <button type="button" role="menuitem" className="uc-menuitem" onClick={pickMedia}><ImageIcon size={19} color="#6AB3F3" /> Foto yoki video</button>
-            <button type="button" role="menuitem" className="uc-menuitem" onClick={pickDocument}><FileIcon size={19} color="#F5A524" /> Hujjat</button>
+            <button type="button" role="menuitem" className="uc-menuitem" onClick={pickMedia}><ImageIcon size={19} color={C.link} /> Foto yoki video</button>
+            <button type="button" role="menuitem" className="uc-menuitem" onClick={pickDocument}><FileIcon size={19} color="#D08A1E" /> Hujjat</button>
             <button type="button" role="menuitem" className="uc-menuitem" onClick={pickLocation}><MapPin size={19} color={C.red} /> Joylashuvim</button>
           </div>
         </>

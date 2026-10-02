@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B2D6B"/><stop offset="0.4" stop-color="#B5578A"/><stop offset="0.7" stop-color="#F08A5D"/><stop offset="1" stop-color="#F9C47A"/></linearGradient>
+<filter id="b"><feGaussianBlur stdDeviation="6"/></filter><filter id="g"><feGaussianBlur stdDeviation="30"/></filter></defs>
+<rect width="1600" height="1000" fill="url(#sky)"/>
+<circle cx="1050" cy="560" r="150" fill="#FFB36B" filter="url(#g)"/><circle cx="1050" cy="560" r="70" fill="#FFD08A"/>
+<g filter="url(#b)">
+<path d="M0 560 L180 420 L320 520 L520 330 L700 500 L860 380 L1040 520 L1240 360 L1420 500 L1600 420 L1600 1000 L0 1000Z" fill="#8A4B78"/>
+<path d="M0 640 L200 520 L380 620 L560 480 L760 610 L960 500 L1160 630 L1360 520 L1600 610 L1600 1000 L0 1000Z" fill="#663E6D"/>
+<path d="M0 740 C300 660 500 720 800 690 C1100 660 1300 720 1600 680 L1600 1000 L0 1000Z" fill="#46315C"/>
+<path d="M0 850 C350 790 700 840 1000 810 C1250 790 1450 820 1600 800 L1600 1000 L0 1000Z" fill="#2A2346"/>
+</g></svg>

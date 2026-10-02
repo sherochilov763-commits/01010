@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Send, Trash2, X } from "lucide-react";
-import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
+import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
 import { LEAD_STAGES, ORDER_READY_STAGES, isWorkerRole } from "../../constants.js";
 import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
 import { TaskChips } from "./TaskAssignModal.jsx";
@@ -16,9 +16,9 @@ function StaleBadge({ lead, big = false }) {
   const danger = st.level === "danger";
   return (
     <span data-testid="stale-badge" title="Oxirgi harakatdan beri o'tgan kun"
-      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4, fontSize: big ? 12 : 10.5, fontWeight: 700, padding: big ? "3px 9px" : "2px 7px", borderRadius: 20,
+      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4, fontSize: big ? 12.5 : 11.5, fontWeight: 600, padding: big ? "2px 8px" : "1px 6px", borderRadius: 6,
         color: danger ? THEME.rose : THEME.amber, background: danger ? THEME.roseBg : THEME.amberBg }}>
-      ⏱ {st.days} kun harakatsiz
+      {st.days} kun harakatsiz
     </span>
   );
 }
@@ -194,8 +194,14 @@ export function LeadChatModal({ lead, onClose, onFetchMessages, onSendMessage })
   );
 }
 
-export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
+export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
   const [modal, setModal] = useState(null); // null | true (new) | lead (edit)
+  useEffect(() => {
+    if (!quickAddNonce) return;
+    setTab("board");
+    setModal(true);
+    onQuickAddHandled?.();
+  }, [quickAddNonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const [confirmDel, setConfirmDel] = useState(null);
   const [chatFor, setChatFor] = useState(null);
   // Chat tugmasi: Chatlar bo'limiga o'tib, shu mijoz suhbatini ochadi
@@ -279,10 +285,10 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-      <div style={{ display: "flex", gap: 3, padding: 3, borderRadius: 12, background: THEME.surface, width: "fit-content" }} role="tablist">
+      <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 9, background: THEME.chip, width: "fit-content" }} role="tablist">
         {[["board", "Voronka"], ["archive", `Arxiv${closedTotal ? ` (${closedTotal})` : ""}`]].map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} data-crmtab={k} onClick={() => setTab(k)}
-            style={{ padding: "8px 16px", borderRadius: 10, border: 0, cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit",
+            style={{ padding: "6px 14px", borderRadius: 7, border: 0, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit",
               background: tab === k ? THEME.card : "transparent", color: tab === k ? THEME.text : THEME.muted, boxShadow: tab === k ? THEME.shadowSm : "none" }}>
             {label}
           </button>
@@ -303,10 +309,9 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
             { label: "Yangi lidlar", value: String(pstats.created), extra: period.label.toLowerCase(), title: `${period.label}: shu davrda kelgan lidlar`, color: LEAD_STAGES[0].color },
             { label: "O'rtacha yopilish", value: pstats.avgDays == null ? "—" : `${pstats.avgDays} kun`, title: "Lid kelgandan yopilgunicha o'rtacha", color: THEME.text },
           ].map((c, i) => (
-            <div key={c.label} title={c.title} style={{ display: "flex", alignItems: "baseline", gap: 6, padding: i ? "0 16px" : "0 16px 0 4px", borderLeft: i ? `1px solid ${THEME.border}` : "none", whiteSpace: "nowrap", flexShrink: 0 }}>
-              <span style={{ fontSize: 12, color: THEME.muted }}>{c.label}</span>
-              <b style={{ fontSize: 15, fontWeight: 800, color: c.color, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums" }}>{c.value}</b>
-              {c.extra && <span style={{ fontSize: 11.5, color: THEME.muted }}>· {c.extra}</span>}
+            <div key={c.label} title={c.title} style={{ display: "flex", flexDirection: "column", padding: i ? "0 18px" : "0 18px 0 4px", borderLeft: i ? `1px solid ${THEME.border}` : "none", whiteSpace: "nowrap", flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: THEME.muted }}>{c.label}{c.extra ? <span style={{ color: THEME.dim }}> · {c.extra}</span> : null}</span>
+              <b style={{ fontSize: 17, fontWeight: 600, color: THEME.text, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", letterSpacing: -0.2 }}>{c.value}</b>
             </div>
           ))}
         </div>
@@ -327,111 +332,120 @@ export function CRMView({ leads, orders, employees, currentUser, isAdmin, onSave
           employees={employees}
           onAssignTask={onAssignTask}
         />
-      ) : (
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${LEAD_STAGES.length}, minmax(180px, 1fr))`, gap: 14, overflowX: "auto" }} className="uvix-scroll">
+      ) : (<>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${LEAD_STAGES.length}, minmax(210px, 1fr))`, gap: 12, overflowX: "auto", paddingBottom: 6 }} className="uvix-scroll uvix-kanban">
         {LEAD_STAGES.map((stage) => (
           <div
             key={stage.key}
+            data-stage={stage.key}
             onDragOver={(e) => handleColumnDragOver(e, stage.key)}
             onDragLeave={() => setDragOverStage((prev) => (prev === stage.key ? null : prev))}
             onDrop={(e) => handleColumnDrop(e, stage.key)}
             style={{
-              borderRadius: 14,
-              transition: "background-color 0.15s ease",
-              background: dragOverStage === stage.key ? THEME.violetSoft : "transparent",
-              padding: dragOverStage === stage.key ? 6 : 0,
+              borderRadius: 10, minWidth: 0,
+              transition: "background-color 0.15s ease, outline-color 0.15s ease",
+              background: dragOverStage === stage.key ? THEME.hover : "transparent",
+              outline: `1.5px dashed ${dragOverStage === stage.key ? THEME.border2 : "transparent"}`, outlineOffset: 2,
             }}
           >
-            <div style={{ marginBottom: 10, padding: "8px 11px 9px", borderRadius: 12, background: `${stage.color}1A`, border: `1px solid ${stage.color}40`, borderTop: `3px solid ${stage.color}` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: stage.color, flexShrink: 0 }} />
-                <span title={stage.label} style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{stage.label}</span>
-                <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: stage.color, background: `${stage.color}24`, padding: "1px 8px", borderRadius: 20, flexShrink: 0 }}>{leadsByStage[stage.key].length}</span>
+            <div style={{ padding: "2px 2px 8px", marginBottom: 10, borderBottom: `2px solid ${stage.color}` }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <span title={stage.label} style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{stage.label}</span>
+                <span style={{ fontSize: 12.5, color: THEME.dim, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{leadsByStage[stage.key].length}</span>
               </div>
-              <div title={`Bosqichdagi lidlar summasi: ${money(stageSums[stage.key])}`} style={{ marginTop: 4, fontSize: 15, fontWeight: 800, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: stageSums[stage.key] ? stage.color : THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {moneyCompact(stageSums[stage.key])}
+              <div title={`Bosqichdagi lidlar summasi: ${money(stageSums[stage.key])}`} style={{ marginTop: 2, fontSize: 12.5, color: THEME.muted, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {money(stageSums[stage.key])}
               </div>
               {(stage.key === "won" || stage.key === "lost") && (
-                <button type="button" onClick={() => setTab("archive")} style={{ marginTop: 4, padding: 0, border: 0, background: "none", cursor: "pointer", fontSize: 11, color: THEME.muted, fontFamily: "inherit" }}>
+                <button type="button" onClick={() => setTab("archive")} style={{ marginTop: 2, padding: 0, border: 0, background: "none", cursor: "pointer", fontSize: 12, color: THEME.dim, fontFamily: "inherit" }}>
                   {period.label} · {archivedCount ? "qolganlari Arxivda →" : "Arxiv →"}
                 </button>
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 60 }}>
               {leadsByStage[stage.key].length === 0 ? (
-                <div style={{ fontSize: 11.5, color: THEME.muted, padding: "16px 0", textAlign: "center", border: `1.5px dashed ${THEME.border}`, borderRadius: 12 }}>Bo'sh</div>
+                <div style={{ fontSize: 12.5, color: THEME.dim, padding: "16px 0", textAlign: "center", border: `1px dashed ${THEME.border2}`, borderRadius: 8 }}>Bo'sh</div>
               ) : (
                 <Incremental list={leadsByStage[stage.key]} step={25} render={(lead) => {
                   const idx = stageIndex(lead.stage);
                   const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
+                  const st = staleInfo(lead);
+                  const tel = telLink(lead.phone);
+                  const note = lead.notes && !isAutoTgNote(lead) ? lead.notes : "";
                   return (
-                    <Card
+                    <div
                       key={lead.id}
-                      className="uvix-dash-card"
+                      className="uvix-lead-card"
+                      data-lead={lead.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, lead)}
                       onDragEnd={handleDragEnd}
+                      onDoubleClick={() => setModal(lead)}
+                      title={lead.phone ? `${lead.customer} · ${lead.phone}` : lead.customer}
                       style={{
-                        padding: 12, display: "flex", flexDirection: "column", gap: 6,
-                        cursor: "grab", opacity: draggedLeadId === lead.id ? 0.4 : 1,
-                        transition: "opacity 0.15s ease",
+                        position: "relative", background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 8,
+                        boxShadow: st ? `inset 3px 0 0 ${st.level === "danger" ? THEME.rose : THEME.amber}` : "none",
+                        padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6,
+                        cursor: "grab", opacity: draggedLeadId === lead.id ? 0.4 : 1, transition: "opacity 0.15s ease, border-color .15s ease",
                       }}
                     >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
-                        <button onClick={() => setConfirmDel(lead)} style={{ background: "none", border: "none", cursor: "pointer", flexShrink: 0, padding: 2 }}><X size={13} color={THEME.muted} /></button>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{lead.customer}</div>
+                        {lead.manager && <span title={`Menejer: ${lead.manager}`} className="uvix-lead-mgr" style={{ fontSize: 10.5, fontWeight: 600, color: THEME.mutedDark, background: THEME.chip, borderRadius: 10, padding: "0 6px", lineHeight: "18px", flexShrink: 0 }}>{initials(lead.manager)}</span>}
                       </div>
-                      {lead.phone && (
-                        <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 4 }}><Phone size={11} /> {lead.phone}</div>
-                      )}
-                      <TgHandle username={lead.telegramUsername} />
                       {lead.estimatedValue > 0 && (
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: THEME.violet }}>{money(lead.estimatedValue)}</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{money(lead.estimatedValue)}</div>
                       )}
-                      <StaleBadge lead={lead} />
-                      {lead.manager && <div style={{ fontSize: 11, color: THEME.muted }}>Menejer: {lead.manager}</div>}
-                      {lead.source && <SourceChip source={lead.source} />}
-                      {lead.notes && !isAutoTgNote(lead) && <div style={{ fontSize: 11, color: THEME.muted, fontStyle: "italic" }}>{lead.notes}</div>}
-                      <div style={{ marginTop: 8 }}>
-                        <TaskChips lead={lead} employees={employees} compact onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
-                      </div>
-
-                      {lead.telegramChatId && onFetchTelegramMessages && (
-                        <Button variant="ghost" onClick={() => openChat(lead)} style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 2 }}>
-                          💬 Telegram chat
-                        </Button>
-                      )}
-
+                      {note && <div style={{ fontSize: 12.5, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{note}</div>}
+                      <TaskChips lead={lead} employees={employees} compact onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
                       {linkedOrder ? (
-                        <div style={{ fontSize: 11, color: THEME.green, fontWeight: 700, background: THEME.greenBg, padding: "3px 8px", borderRadius: 8, marginTop: 2 }}>
-                          ✓ Buyurtma: {linkedOrder.orderNumber}
-                        </div>
-                      ) : (
-                        ORDER_READY_STAGES.includes(lead.stage) && (
-                          <Button onClick={() => onCreateOrderFromLead(lead)} style={{ fontSize: 11.5, padding: "5px 10px", marginTop: 2 }}>
-                            <Package size={12} /> Buyurtma yaratish
-                          </Button>
-                        )
+                        <div style={{ fontSize: 12, color: THEME.green, fontWeight: 600 }}>✓ Buyurtma {linkedOrder.orderNumber}</div>
+                      ) : ORDER_READY_STAGES.includes(lead.stage) && (
+                        <button type="button" onClick={() => onCreateOrderFromLead(lead)} className="uvix-lead-cta"
+                          style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, border: 0, background: "none", padding: 0, color: THEME.violet, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                          <Package size={13} /> Buyurtma yaratish
+                        </button>
                       )}
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, borderTop: `1px dashed ${THEME.border}`, paddingTop: 6 }}>
-                        <button onClick={() => moveStage(lead, -1)} disabled={idx === 0} style={{ background: "none", border: "none", cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.3 : 1, padding: 2 }}>
-                          <ArrowLeft size={14} color={THEME.text} />
-                        </button>
-                        <button onClick={() => setModal(lead)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: THEME.violet, fontWeight: 700 }}>Tahrirlash</button>
-                        <button onClick={() => moveStage(lead, 1)} disabled={idx === LEAD_STAGES.length - 1} style={{ background: "none", border: "none", cursor: idx === LEAD_STAGES.length - 1 ? "default" : "pointer", opacity: idx === LEAD_STAGES.length - 1 ? 0.3 : 1, padding: 2 }}>
-                          <ArrowRight size={14} color={THEME.text} />
-                        </button>
+                      {(lead.source || lead.telegramUsername || st) && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
+                          {lead.source && <SourceChip source={lead.source} />}
+                          <TgHandle username={lead.telegramUsername} />
+                          {st && <span data-testid="stale-badge" title="Oxirgi harakatdan beri o'tgan kun" style={{ fontSize: 12, fontWeight: 600, color: st.level === "danger" ? THEME.rose : THEME.amber, whiteSpace: "nowrap" }}>{st.days} kun turibdi</span>}
+                        </div>
+                      )}
+                      <div className="uvix-lead-actions" onDoubleClick={(e) => e.stopPropagation()}>
+                        {lead.telegramChatId && onFetchTelegramMessages ? (
+                          <button type="button" onClick={() => openChat(lead)} title="Telegram chat" aria-label="Telegram chat"><MessageCircle size={14} /></button>
+                        ) : tel ? (
+                          <a href={tel} title="Qo'ng'iroq" aria-label="Qo'ng'iroq"><Phone size={14} /></a>
+                        ) : null}
+                        <button type="button" onClick={() => moveStage(lead, -1)} disabled={idx === 0} title="Oldingi bosqich" aria-label="Oldingi bosqich"><ArrowLeft size={14} /></button>
+                        <button type="button" onClick={() => moveStage(lead, 1)} disabled={idx === LEAD_STAGES.length - 1} title="Keyingi bosqich" aria-label="Keyingi bosqich"><ArrowRight size={14} /></button>
+                        <button type="button" onClick={() => setModal(lead)} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={14} /></button>
+                        <button type="button" onClick={() => setConfirmDel(lead)} title="O'chirish" aria-label="O'chirish" className="danger"><Trash2 size={14} /></button>
                       </div>
-                    </Card>
+                    </div>
                   );
                 }} />
+              )}
+              {stage.key === "new" && (
+                <button type="button" onClick={() => setModal(true)} style={{ height: 34, border: `1px dashed ${THEME.border2}`, borderRadius: 8, background: "transparent", color: THEME.dim, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>+ Lid qo'shish</button>
               )}
             </div>
           </div>
         ))}
       </div>
-      )}
+      <style>{`
+        .uvix-lead-card:hover { border-color: ${THEME.border2} !important; }
+        .uvix-lead-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: ${THEME.card}; border: 1px solid ${THEME.border}; box-shadow: ${THEME.shadowMd}; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+        .uvix-lead-card:hover .uvix-lead-actions, .uvix-lead-card:focus-within .uvix-lead-actions { opacity: 1; pointer-events: auto; }
+        .uvix-lead-actions button, .uvix-lead-actions a { width: 26px; height: 26px; border: 0; border-radius: 5px; background: none; color: ${THEME.muted}; display: grid; place-items: center; cursor: pointer; padding: 0; }
+        .uvix-lead-actions button:hover:not(:disabled), .uvix-lead-actions a:hover { background: ${THEME.hover}; color: ${THEME.text}; }
+        .uvix-lead-actions button:disabled { opacity: .3; cursor: default; }
+        .uvix-lead-actions .danger:hover { color: ${THEME.rose} !important; }
+        @media (hover: none) { .uvix-lead-actions { position: static; opacity: 1; pointer-events: auto; box-shadow: none; border: 0; padding: 0; margin-top: 2px; justify-content: flex-end; } }
+      `}</style>
+      </>      )}
       </>)}
 
       {modal && (
@@ -477,7 +491,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
   const list = leadsByStage[stage] || [];
   const total = list.reduce((s, l) => s + (Number(l.estimatedValue) || 0), 0);
   const stageInfo = LEAD_STAGES.find((s) => s.key === stage) || LEAD_STAGES[0];
-  const actionBtn = { height: 40, padding: "0 12px", borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", flexShrink: 0 };
+  const actionBtn = { height: 40, padding: "0 12px", borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", flexShrink: 0 };
 
   return (
     <div>
@@ -486,11 +500,11 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
           const on = s.key === stage;
           return (
             <button key={s.key} type="button" role="tab" aria-selected={on} onClick={() => onStage(s.key)}
-              style={{ height: 38, padding: "0 14px", borderRadius: 999, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: on ? 600 : 500,
-                border: `1px solid ${on ? s.color : THEME.border}`, background: on ? `${s.color}22` : THEME.card, color: THEME.text }}>
+              style={{ height: 36, padding: "0 13px", borderRadius: 999, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: on ? 600 : 500,
+                border: `1px solid ${on ? THEME.text : THEME.border2}`, background: on ? THEME.text : THEME.card, color: on ? THEME.card : THEME.text }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color }} />
               {s.label}
-              <span style={{ fontSize: 12, color: THEME.muted, fontWeight: 600 }}>{(leadsByStage[s.key] || []).length}</span>
+              <span style={{ fontSize: 12, opacity: 0.7, fontWeight: 600 }}>{(leadsByStage[s.key] || []).length}</span>
             </button>
           );
         })}
@@ -501,7 +515,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
       </div>
 
       {list.length === 0 ? (
-        <div style={{ fontSize: 13.5, color: THEME.muted, padding: "32px 16px", textAlign: "center", border: `1.5px dashed ${THEME.border}`, borderRadius: 16 }}>
+        <div style={{ fontSize: 13.5, color: THEME.muted, padding: "32px 16px", textAlign: "center", border: `1px dashed ${THEME.border2}`, borderRadius: 10 }}>
           "{stageInfo.label}" bosqichida hozircha lid yo'q
         </div>
       ) : (
@@ -515,7 +529,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
               <Card key={lead.id} style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 15.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
+                    <div style={{ fontSize: 15.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
                     {lead.phone && <div style={{ fontSize: 13, color: THEME.muted, marginTop: 2 }}>{lead.phone}</div>}
                     {(lead.source || lead.telegramUsername) && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
@@ -526,7 +540,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
                     {meta && <div style={{ fontSize: 12, color: THEME.muted, marginTop: 4 }}>{meta}</div>}
                   </div>
                   {Number(lead.estimatedValue) > 0 && (
-                    <div style={{ fontSize: 14.5, fontWeight: 700, color: THEME.violet, whiteSpace: "nowrap" }}>{money(lead.estimatedValue)}</div>
+                    <div style={{ fontSize: 14.5, fontWeight: 600, color: THEME.text, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(lead.estimatedValue)}</div>
                   )}
                 </div>
                 <StaleBadge lead={lead} big />

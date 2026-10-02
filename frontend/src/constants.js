@@ -1,4 +1,5 @@
-import { Banknote, Clock, Droplets, CreditCard, FileBarChart2, FolderTree, Landmark, LayoutDashboard, ListChecks, MessageCircle, Package, Settings, TrendingDown, Users, Users2 } from "lucide-react";
+import { THEME, mixColors } from "./theme.js";
+import { Banknote, Clock, Contact, Droplets, CreditCard, FileBarChart2, FolderTree, Landmark, LayoutDashboard, ListChecks, MessageCircle, Package, Settings, TrendingDown, Users, Users2 } from "lucide-react";
 
 export const DEFAULT_CATEGORIES = {
   "Material": ["Shisha", "MDF", "Plastik", "Alyuminiy", "Qog'oz", "Boshqa material"],
@@ -20,13 +21,15 @@ export const DEFAULT_CATEGORIES = {
 };
 
 
+// Bosqich ranglari: sokin, bir-biridan ajraladigan; fon rangi joriy mavzudan (yorug'/grafit) hisoblanadi
+const stage = (key, label, color) => ({ key, label, color, get bg() { return mixColors(color, THEME.card, THEME.isDark ? 0.82 : 0.9); } });
 export const LEAD_STAGES = [
-  { key: "new", label: "Yangi lid", color: "#7C5CFC", bg: "#EFE9FE" },
-  { key: "negotiation", label: "Muzokara", color: "#D97706", bg: "#FEF3C7" },
-  { key: "design", label: "Jarayonda (Dizayn)", color: "#3B82F6", bg: "#DBEAFE" },
-  { key: "printing", label: "Jarayonda (Pechatchi)", color: "#0D9488", bg: "#CCFBF1" },
-  { key: "won", label: "Yopilgan", color: "#0F9D58", bg: "#E3F6EC" },
-  { key: "lost", label: "Yo'qotilgan", color: "#E53E5A", bg: "#FCE4E9" },
+  stage("new", "Yangi lid", "#1F5FD6"),
+  stage("negotiation", "Muzokara", "#B45309"),
+  stage("design", "Jarayonda (Dizayn)", "#6D28D9"),
+  stage("printing", "Jarayonda (Pechatchi)", "#0E7490"),
+  stage("won", "Yopilgan", "#15803D"),
+  stage("lost", "Yo'qotilgan", "#DC2626"),
 ];
 
 // Mijoz rozi bo'lgan (ish boshlangan) bosqichlar — shu yerdan boshlab lidni buyurtmaga aylantirish mumkin
@@ -43,6 +46,7 @@ export const NAV = [
   { key: "orders", label: "Buyurtmalar", icon: Package },
   { key: "crm", label: "CRM", icon: Users2 },
   { key: "chats", label: "Chatlar", icon: MessageCircle },
+  { key: "customers", label: "Mijozlar", icon: Contact },
   { key: "expense", label: "Rasxod", icon: TrendingDown },
   { key: "operations", label: "Operatsiyalar", icon: ListChecks },
   { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true },

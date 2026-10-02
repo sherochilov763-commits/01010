@@ -73,7 +73,7 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
   const statBox = (label, value, sub, color) => (
     <div style={{ flex: "1 1 150px", padding: "12px 14px", borderRadius: 14, background: THEME.card, border: `1px solid ${THEME.border}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: color || THEME.text, fontFamily: THEME.fontNum, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: color || THEME.text, fontFamily: THEME.fontNum, marginTop: 4 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: THEME.muted, marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -109,7 +109,7 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
         return (
           <Card key={month} style={{ padding: 0, overflow: "hidden" }}>
             <div data-testid="archive-month" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "12px 16px", borderBottom: `1px solid ${THEME.border}`, background: THEME.surface }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: THEME.text }}>{month === "0000-00" ? "Sanasi noma'lum" : monthTitle(month)}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: THEME.text }}>{month === "0000-00" ? "Sanasi noma'lum" : monthTitle(month)}</div>
               <div style={{ display: "flex", gap: 14, fontSize: 12.5, color: THEME.muted, flexWrap: "wrap" }}>
                 <span><b style={{ color: WON.color }}>{st.won}</b> yopildi · <b style={{ color: WON.color, fontFamily: THEME.fontNum }}>{moneyCompact(st.wonSum)}</b></span>
                 <span><b style={{ color: LOST.color }}>{st.lost}</b> yo'qotildi</span>
@@ -133,7 +133,7 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
                         <TgHandle username={l.telegramUsername} />
                       </div>
                     </div>
-                    <div style={{ fontWeight: 800, fontSize: 13.5, color: won ? WON.color : THEME.muted, fontFamily: THEME.fontNum, whiteSpace: "nowrap" }}>{money(x.value)}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13.5, color: won ? WON.color : THEME.muted, fontFamily: THEME.fontNum, whiteSpace: "nowrap" }}>{money(x.value)}</div>
                     <Button variant="ghost" onClick={() => onReopen(l)} style={{ padding: "7px 10px", fontSize: 12 }}>
                       <RotateCcw size={13} /> Qayta ochish
                     </Button>

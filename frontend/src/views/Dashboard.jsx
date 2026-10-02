@@ -1,10 +1,10 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Banknote, CreditCard, FileBarChart2, FolderTree, Landmark, ListChecks, Package, Settings, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
-import { Button, Card, EmptyState, MetricCard, SectionTitle, getInputStyle } from "../components/ui.jsx";
+import { AlertTriangle, Banknote, CreditCard, FileBarChart2, FolderTree, Landmark, Package, Settings, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
+import { Avatar, Button, Card, EmptyState, MetricCard, SectionTitle, getInputStyle } from "../components/ui.jsx";
 import { DASHBOARD_GROUPS, DASHBOARD_SIZE_SPANS, DASHBOARD_WIDGET_CATALOG } from "../constants.js";
 import { computeFinanceStats, orderDebt } from "../lib/finance.js";
 import { dateLabel, fmt, localDateStr, money, monthKey, monthLabel, todayStr, usd } from "../lib/format.js";
-import { THEME } from "../theme.js";
+import { THEME, CHART_COLORS } from "../theme.js";
 import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardConfig, useDragReorder } from "./dashboard/DashboardEditor.jsx";
 import { CardStyleContext } from "../components/CardStyleMenu.jsx";
 
@@ -165,7 +165,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
     return dateFilteredExpenses.filter((t) => !t.deletedAt && t.category === "Brak").reduce((s, t) => s + t.amount, 0);
   }, [dateFilteredExpenses]);
 
-  const PIE_COLORS = ["#7C3AED", "#22D3EE", "#F59E0B", "#E11D48", "#16A34A", "#3B82F6", "#EC4899", "#8B5CF6", "#0EA5E9", "#F97316"];
+  const PIE_COLORS = CHART_COLORS();
 
   // Ko'rinish: administrator belgilagan umumiy yoki xodimning o'zi moslashtirgan
   const cfg = useDashboardConfig({ settings, onSaveSettings, isAdmin });
@@ -178,22 +178,33 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
   useEffect(() => { if (!editMode) { setOpenMenu(null); setGalleryOpen(false); } }, [editMode]);
 
   const WIDGETS = {
-    hero: () => (
-      <Card className="uvix-dash-card" style={{ background: `linear-gradient(125deg, ${THEME.ink} 0%, #241D40 60%, #2E2154 100%)`, border: "none", boxShadow: THEME.shadowLg, color: "#fff", padding: 24 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 20 }}>
-          <div>
+    hero: () => {
+      const posCard = Math.max(0, stats.cardBalance), posCash = Math.max(0, stats.cashBalance), posBank = Math.max(0, stats.bankBalance);
+      const posTotal = posCard + posCash + posBank;
+      const pct = (v) => (posTotal > 0 ? (v / posTotal) * 100 : 33.3);
+      const bal = [
+        { l: "Karta qoldig'i", v: stats.cardBalance, c: THEME.violet, I: CreditCard },
+        { l: "Naqd qoldiq", v: stats.cashBalance, c: THEME.cyan, I: Banknote },
+        { l: "Bank qoldig'i", v: stats.bankBalance, c: THEME.amber, I: Landmark },
+      ];
+      return (
+      <Card className="uvix-dash-card uvix-hero" style={{ padding: 24 }}>
+        <div className="uvix-hero-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 32, alignItems: "center" }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 12, color: "#B3ACCF", fontWeight: 600 }}>UMUMIY BUYURTMALAR SUMMASI</div>
-              <div style={{ display: "flex", gap: 3, background: "rgba(255,255,255,0.08)", borderRadius: 20, padding: 2 }}>
+              <div style={{ fontSize: 13, color: THEME.muted, fontWeight: 500 }}>Buyurtmalar summasi</div>
+              <div role="group" aria-label="Yo'nalish" style={{ display: "flex", gap: 2, background: THEME.chip, borderRadius: 8, padding: 2 }}>
                 {[{ v: "all", l: "Barchasi" }, { v: "UVIXPRINT", l: "UVIXPRINT" }, { v: "UVONYX", l: "UVONYX" }].map((opt) => (
                   <button
                     key={opt.v}
                     type="button"
                     onClick={() => setSubFilter(opt.v)}
+                    aria-pressed={subFilter === opt.v}
                     style={{
-                      padding: "3px 10px", borderRadius: 16, border: "none", cursor: "pointer", fontSize: 10.5, fontWeight: 700,
-                      background: subFilter === opt.v ? THEME.violet : "transparent",
-                      color: subFilter === opt.v ? "#fff" : "#B3ACCF",
+                      padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600,
+                      background: subFilter === opt.v ? THEME.card : "transparent",
+                      color: subFilter === opt.v ? THEME.text : THEME.muted,
+                      boxShadow: subFilter === opt.v ? THEME.shadowSm : "none",
                     }}
                   >
                     {opt.l}
@@ -201,70 +212,52 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
                 ))}
               </div>
             </div>
-            <div style={{ fontSize: THEME.isDark ? "clamp(22px, 7vw, 30px)" : 32, fontFamily: THEME.fontNum, fontWeight: THEME.isDark ? 500 : 800, letterSpacing: -0.5, marginTop: 4, fontVariantNumeric: "tabular-nums", background: `linear-gradient(90deg, #fff, ${THEME.cyan})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            <div className="uvix-hero-big" style={{ fontSize: "clamp(26px, 6vw, 34px)", fontFamily: THEME.fontNum, fontWeight: 600, letterSpacing: -0.8, margin: "6px 0 4px", fontVariantNumeric: "tabular-nums", color: THEME.text, lineHeight: 1.15 }}>
               {money(stats.totalOrderValue)}
             </div>
-            <div style={{ fontSize: 12, color: "#9891B8", marginTop: 4 }}>Qabul qilingan to'lovlar {money(stats.totalPaid)} &middot; Qarzdorlik {money(stats.totalDebt)}</div>
-          </div>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#9891B8", display: "flex", alignItems: "center", gap: 5 }}><CreditCard size={13} /> KARTA QOLDIG'I</div>
-              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 3, color: stats.cardBalance >= 0 ? "#fff" : "#FF8FA3" }}>{money(stats.cardBalance)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: "#9891B8", display: "flex", alignItems: "center", gap: 5 }}><Banknote size={13} /> NAQD QOLDIQ</div>
-              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 3, color: stats.cashBalance >= 0 ? "#fff" : "#FF8FA3" }}>{money(stats.cashBalance)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: "#9891B8", display: "flex", alignItems: "center", gap: 5 }}><Landmark size={13} /> BANK QOLDIG'I</div>
-              <div style={{ fontSize: 18, fontWeight: 700, marginTop: 3, color: stats.bankBalance >= 0 ? "#fff" : "#FF8FA3" }}>{money(stats.bankBalance)}</div>
+            <div style={{ fontSize: 13, color: THEME.muted }}>To'langan <b style={{ color: THEME.text, fontWeight: 600 }}>{money(stats.totalPaid)}</b> &middot; qarzdorlik <b style={{ color: stats.totalDebt > 0 ? THEME.rose : THEME.text, fontWeight: 600 }}>{money(stats.totalDebt)}</b></div>
+            <div style={{ marginTop: 16, height: 8, borderRadius: 4, overflow: "hidden", display: "flex", gap: 2, background: THEME.chip }} aria-label="Qoldiqlar ulushi">
+              {bal.map((b) => <div key={b.l} style={{ width: `${pct(Math.max(0, b.v))}%`, background: b.c }} />)}
             </div>
           </div>
-        </div>
-        <div style={{ marginTop: 16, height: 8, borderRadius: 6, background: "rgba(255,255,255,0.1)", overflow: "hidden", display: "flex" }}>
-          {(() => {
-            const posCard = Math.max(0, stats.cardBalance);
-            const posCash = Math.max(0, stats.cashBalance);
-            const posBank = Math.max(0, stats.bankBalance);
-            const posTotal = posCard + posCash + posBank;
-            const cardPct = posTotal > 0 ? (posCard / posTotal) * 100 : 33.3;
-            const cashPct = posTotal > 0 ? (posCash / posTotal) * 100 : 33.3;
-            const bankPct = posTotal > 0 ? (posBank / posTotal) * 100 : 33.4;
-            return (
-              <>
-                <div style={{ width: `${cardPct}%`, background: THEME.violet }} />
-                <div style={{ width: `${cashPct}%`, background: THEME.green }} />
-                <div style={{ width: `${bankPct}%`, background: THEME.blue, boxShadow: `0 0 10px ${THEME.blue}` }} />
-              </>
-            );
-          })()}
-        </div>
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: "#8B84AD", marginTop: 4 }}>
-          <span>Karta</span><span>Naqd</span><span>Bank</span>
+          <div className="uvix-hero-bal" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
+            {bal.map((b) => (
+              <div key={b.l} style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: THEME.muted, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: b.c, flexShrink: 0 }} />{b.l}
+                </div>
+                <div style={{ fontSize: 17, fontWeight: 600, marginTop: 3, color: b.v >= 0 ? THEME.text : THEME.rose, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money(b.v)}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </Card>
-    ),
+      );
+    },
     debtAlert: () => stats.totalDebt <= 0 ? null : (
       <Card className="uvix-dash-card"
         onClick={() => go("orders", { onlyDebt: true })}
-        style={{ background: `linear-gradient(120deg, ${THEME.amberBg} 0%, ${THEME.roseBg} 100%)`, border: `1.5px solid ${THEME.roseBorder}`, boxShadow: "0 4px 18px rgba(245,69,92,0.12)", cursor: "pointer" }}
+        style={{ cursor: "pointer", padding: "14px 18px" }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 38, height: 38, borderRadius: 11, background: THEME.rose, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <AlertTriangle size={18} color="#fff" />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 9, background: THEME.roseBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <AlertTriangle size={17} color={THEME.rose} />
             </div>
             <div>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: THEME.rose, textTransform: "uppercase", letterSpacing: 0.4, display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 500, color: THEME.rose, display: "flex", alignItems: "center", gap: 6 }}>
                 Umumiy qarzdorlik
                 {subFilter !== "all" && (
-                  <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: THEME.rose, padding: "2px 7px", borderRadius: 10, textTransform: "none", letterSpacing: 0 }}>{subFilter}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: THEME.mutedDark, background: THEME.chip, padding: "1px 7px", borderRadius: 5 }}>{subFilter}</span>
                 )}
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: THEME.roseText, letterSpacing: -0.3 }}>{money(stats.totalDebt)}</div>
+              <div style={{ fontSize: 19, fontWeight: 600, color: THEME.text, letterSpacing: -0.3, fontVariantNumeric: "tabular-nums" }}>{money(stats.totalDebt)}</div>
             </div>
           </div>
-          <div style={{ fontSize: 12, color: THEME.roseMuted, maxWidth: 300 }}>Umumiy buyurtma summasidan hisoblanadi (barcha to'lovlar yig'indisi ayirilib) — qo'shilgan qiymatga bog'liq emas</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div className="uvix-hide-mobile" style={{ fontSize: 12.5, color: THEME.dim, maxWidth: 320 }}>Umumiy buyurtma summasidan barcha to'lovlar ayirilgan — qo'shilgan qiymatga bog'liq emas</div>
+            <span style={{ display: "inline-flex", alignItems: "center", height: 32, padding: "0 12px", borderRadius: 8, border: `1px solid ${THEME.border2}`, fontSize: 13, fontWeight: 600, color: THEME.text }}>Qarzdorlar →</span>
+          </div>
         </div>
       </Card>
     ),
@@ -329,26 +322,24 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
     m_totalMoney: () => <MetricCard label="Jami pul" value={money(stats.totalMoney)} accent={stats.totalMoney >= 0 ? THEME.green : THEME.rose} bg={stats.totalMoney >= 0 ? THEME.greenBg : THEME.roseBg} icon={Landmark} onClick={() => go("operations", {})} />,
     m_topDebtors: () => (
       <Card className="uvix-dash-card" style={{ padding: 0 }}>
-        <div style={{ padding: "18px 18px 10px", fontSize: 14.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "16px 18px 8px", fontSize: 14.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           Eng katta qarzdor mijozlar
-          <span style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, background: THEME.surface, padding: "3px 10px", borderRadius: 20 }}>{topDebtors.length} ta</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: THEME.dim }}>{topDebtors.length} ta</span>
         </div>
         {topDebtors.length === 0 ? (
           <div style={{ padding: "0 16px 18px" }}><EmptyState text="Qarzdorlik yo'q" /></div>
         ) : (
           <div style={{ padding: "4px 10px 12px" }}>
             {topDebtors.map((d, i) => (
-              <div key={d.customer} className="uvix-row" onClick={() => go("orders", { search: d.customer, onlyDebt: true })} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 8px", borderRadius: 14, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: `linear-gradient(135deg, ${THEME.rose}, #FF8FA3)`, color: "#fff", fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    {(d.customer || "?").slice(0, 1).toUpperCase()}
-                  </div>
+              <div key={d.customer} className="uvix-row" onClick={() => go("orders", { search: d.customer, onlyDebt: true })} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 8px", borderRadius: 8, cursor: "pointer", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                  <Avatar name={d.customer} size={32} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.customer || "-"}</div>
-                    <div style={{ fontSize: 11, color: THEME.muted }}>#{i + 1} eng katta qarzdor</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.customer || "-"}</div>
+                    <div style={{ fontSize: 12, color: THEME.dim }}>#{i + 1} eng katta qarzdor</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 800, color: THEME.rose, background: THEME.roseBg, padding: "5px 12px", borderRadius: 20, whiteSpace: "nowrap" }}>{money(d.debt)}</span>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: THEME.rose, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(d.debt)}</span>
               </div>
             ))}
           </div>
@@ -357,26 +348,26 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
     ),
     m_recentOrders: () => (
       <Card className="uvix-dash-card" style={{ padding: 0 }}>
-        <div style={{ padding: "18px 18px 10px", fontSize: 14.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "16px 18px 8px", fontSize: 14.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           So'nggi buyurtmalar
-          <span style={{ fontSize: 11, fontWeight: 700, color: THEME.muted, background: THEME.surface, padding: "3px 10px", borderRadius: 20 }}>{recentOrders.length} ta</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: THEME.dim }}>{recentOrders.length} ta</span>
         </div>
         {recentOrders.length === 0 ? (
           <div style={{ padding: "0 16px 18px" }}><EmptyState text="Hali buyurtma yo'q" /></div>
         ) : (
           <div style={{ padding: "4px 10px 12px" }}>
             {recentOrders.map((o) => (
-              <div key={o.id} className="uvix-row" onClick={() => go("orders", { search: o.orderNumber })} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 8px", borderRadius: 14, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 12, background: THEME.violetSoft, color: THEME.violet, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Package size={17} />
+              <div key={o.id} className="uvix-row" onClick={() => go("orders", { search: o.orderNumber })} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 8px", borderRadius: 8, cursor: "pointer", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 8, background: THEME.chip, color: THEME.muted, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Package size={16} />
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "-"}</div>
-                    <div style={{ fontSize: 11, color: THEME.muted }}>{o.orderNumber} &middot; {o.date}</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "-"}</div>
+                    <div style={{ fontSize: 12, color: THEME.dim }}>{o.orderNumber} &middot; {o.date}</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 800, color: THEME.text, whiteSpace: "nowrap" }}>{money(o.agreementUzs || 0)}</span>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: THEME.text, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(o.agreementUzs || 0)}</span>
               </div>
             ))}
           </div>
@@ -385,19 +376,19 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
     ),
     dailyChart: () => (
       <Card className="uvix-dash-card">
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Kunlik to'lov va rasxod (14 kun)</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Kunlik to'lov va rasxod (14 kun)</div>
         {stats.allPayments.length === 0 && dateFilteredExpenses.length === 0 ? <EmptyState text="Hozircha ma'lumot yo'q" /> : dailyData.length === 0 ? (
           <div style={{ fontSize: 12.5, color: THEME.muted, textAlign: "center", padding: "24px 0" }}>Tanlangan davr juda uzun — kunlik grafik ko'rsatilmaydi, "Oylik" grafikka qarang</div>
         ) : (
           <div style={{ width: "100%", height: 240 }}>
-            <Chart kind="bar" data={dailyData} bars={[{ key: "To'lov", color: THEME.violet }, { key: "Rasxod", color: THEME.rose }]} xTickSize={10} />
+            <Chart kind="bar" data={dailyData} bars={[{ key: "To'lov", color: THEME.violet }, { key: "Rasxod", color: THEME.isDark ? "#5A5A63" : "#C4C4CC" }]} xTickSize={10} />
           </div>
         )}
       </Card>
     ),
     categoryPie: () => (
       <Card className="uvix-dash-card">
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Rasxod kategoriyalari (shu oy)</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Rasxod kategoriyalari (shu oy)</div>
         {categoryPie.length === 0 ? <EmptyState text="Rasxod yo'q" /> : (
           <>
             <div style={{ width: "100%", height: 200 }}>
@@ -424,26 +415,26 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
     ),
     monthlyChart: () => (
       <Card className="uvix-dash-card">
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Oylik to'lov va rasxod (6 oy)</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Oylik to'lov va rasxod (6 oy)</div>
         <div style={{ width: "100%", height: 220 }}>
-          <Chart kind="bar" data={monthlyData} bars={[{ key: "To'lov", color: THEME.cyan }, { key: "Rasxod", color: THEME.amber }]} xTickSize={10} />
+          <Chart kind="bar" data={monthlyData} bars={[{ key: "To'lov", color: THEME.violet }, { key: "Rasxod", color: THEME.isDark ? "#5A5A63" : "#C4C4CC" }]} xTickSize={10} />
         </div>
       </Card>
     ),
     paymentMethods: () => (
       <Card className="uvix-dash-card">
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>To'lov turlari taqqoslash</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>To'lov turlari taqqoslash</div>
         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
           {[
             { label: "Karta", pct: stats.cardSharePct, color: THEME.violet },
-            { label: "Naqd", pct: stats.cashSharePct, color: THEME.green },
-            { label: "Bank", pct: stats.bankSharePct, color: THEME.blue },
+            { label: "Naqd", pct: stats.cashSharePct, color: THEME.cyan },
+            { label: "Bank", pct: stats.bankSharePct, color: THEME.amber },
           ].map((it) => (
-            <div key={it.label} style={{ flex: 1, padding: "8px 10px", background: THEME.surface, borderRadius: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: THEME.muted, fontWeight: 600 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: it.color }} /> {it.label}
+            <div key={it.label} style={{ flex: 1, padding: "8px 10px", border: `1px solid ${THEME.border}`, borderRadius: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: THEME.muted, fontWeight: 500 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: it.color }} /> {it.label}
               </div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: THEME.text, marginTop: 2 }}>{it.pct.toFixed(1)}%</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: THEME.text, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{it.pct.toFixed(1)}%</div>
             </div>
           ))}
         </div>
@@ -452,7 +443,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
               { label: "Karta", "To'lov": stats.cardPaid, Rasxod: stats.cardExpense },
               { label: "Naqd", "To'lov": stats.cashPaid, Rasxod: stats.cashExpense },
               { label: "Bank", "To'lov": stats.bankPaid, Rasxod: stats.bankExpense },
-            ]} bars={[{ key: "To'lov", color: THEME.green }, { key: "Rasxod", color: THEME.rose }]} xTickSize={11} />
+            ]} bars={[{ key: "To'lov", color: THEME.violet }, { key: "Rasxod", color: THEME.isDark ? "#5A5A63" : "#C4C4CC" }]} xTickSize={11} />
         </div>
       </Card>
     ),
@@ -465,13 +456,13 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
             {topOrders.map((o, i) => (
               <div key={o.id} className="uvix-row" onClick={() => go("orders", { search: o.orderNumber })} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 10px", borderRadius: 9, cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: THEME.violetSoft, color: THEME.violet, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
+                  <div style={{ width: 24, height: 24, borderRadius: 6, background: THEME.chip, color: THEME.mutedDark, fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{i + 1}</div>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "-"}</div>
                     <div style={{ fontSize: 11, color: THEME.muted }}>{o.orderNumber} &middot; {o.date}</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: THEME.violet, whiteSpace: "nowrap" }}>{money(o.agreementUzs || 0)}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: THEME.text, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(o.agreementUzs || 0)}</span>
               </div>
             ))}
           </div>
@@ -492,21 +483,18 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <Card className="uvix-dash-card" style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: THEME.muted }}>
-          <ListChecks size={14} /> Davr:
-        </div>
-        <div style={{ display: "flex", gap: 3, background: THEME.surface, borderRadius: 20, padding: 2 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div className="uvix-dash-toolbar" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div role="group" aria-label="Davr" style={{ display: "flex", gap: 2, background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 9, padding: 3 }}>
           {[{ v: "all", l: "Barchasi" }, { v: "month", l: "Oy" }, { v: "range", l: "Oraliq" }].map((opt) => (
             <button
               key={opt.v}
               type="button"
               onClick={() => setPeriodMode(opt.v)}
               style={{
-                padding: "5px 12px", borderRadius: 16, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 700,
-                background: periodMode === opt.v ? THEME.violet : "transparent",
-                color: periodMode === opt.v ? "#fff" : THEME.muted,
+                padding: "0 12px", height: 28, borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
+                background: periodMode === opt.v ? THEME.chip : "transparent",
+                color: periodMode === opt.v ? THEME.text : THEME.muted,
               }}
             >
               {opt.l}
@@ -518,47 +506,31 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
             type="month"
             value={periodMonth}
             onChange={(e) => { setPeriodMonth(e.target.value); setMonthTouched(true); }}
-            style={{ ...getInputStyle(), width: "auto", padding: "6px 10px", fontSize: 13 }}
+            style={{ ...getInputStyle(), width: "auto", minHeight: 36, padding: "6px 10px", fontSize: 13 }}
           />
         )}
         {periodMode === "month" && monthTouched && (
           <button
             type="button"
             onClick={() => { setPeriodMonth(todayStr().slice(0, 7)); setMonthTouched(false); }}
-            style={{ background: "none", border: "none", color: THEME.violet, cursor: "pointer", fontSize: 11.5, fontWeight: 700, padding: 0 }}
+            style={{ background: "none", border: "none", color: THEME.violet, cursor: "pointer", fontSize: 12.5, fontWeight: 600, padding: 0 }}
           >
             Joriy oyga qaytish
           </button>
         )}
         {periodMode === "range" && (
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} style={{ ...getInputStyle(), width: "auto", padding: "6px 10px", fontSize: 13 }} />
+            <input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} style={{ ...getInputStyle(), width: "auto", minHeight: 36, padding: "6px 10px", fontSize: 13 }} />
             <span style={{ color: THEME.muted, fontSize: 12 }}>—</span>
-            <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} style={{ ...getInputStyle(), width: "auto", padding: "6px 10px", fontSize: 13 }} />
+            <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} style={{ ...getInputStyle(), width: "auto", minHeight: 36, padding: "6px 10px", fontSize: 13 }} />
           </div>
         )}
         {effectivePeriod && (
-          <span style={{ fontSize: 11.5, color: THEME.violet, fontWeight: 700, background: THEME.violetSoft, padding: "4px 10px", borderRadius: 20 }}>
+          <span style={{ fontSize: 12.5, color: THEME.dim, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
             {effectivePeriod.from} — {effectivePeriod.to}
           </span>
         )}
-      </Card>
-
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", gap: 14, padding: "2px 2px" }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-          {[
-            { color: THEME.green, label: "Tushum / ijobiy" },
-            { color: THEME.rose, label: "Chiqim / qarz" },
-            { color: THEME.amber, label: "Buyurtma ichidagi xarajat" },
-            { color: THEME.cyan, label: "O'lchov (pul emas)" },
-            { color: THEME.violet, label: "Umumiy / neytral" },
-          ].map((it) => (
-            <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: it.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, color: THEME.muted, fontWeight: 600 }}>{it.label}</span>
-            </div>
-          ))}
-        </div>
+        <div style={{ flex: 1 }} />
         {!editMode && (
           <Button variant="ghost" onClick={() => setEditMode(true)}>
             <Settings size={14} /> Dashboardni sozlash
@@ -589,7 +561,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
                 if (!content) return null;
                 const span = DASHBOARD_SIZE_SPANS[w.size] || 12;
                 return (
-                  <div key={w.id} style={{ gridColumn: `span ${span}`, minWidth: 0 }}>
+                  <div key={w.id} data-size={w.size} style={{ gridColumn: `span ${span}`, minWidth: 0 }}>
                     <CardStyleContext.Provider value={{ id: w.id, style: cardStyles[w.id] || null, editing: editMode }}>
                       <WidgetFrame id={w.id} editing={editMode} cfg={cfg} dragging={dragId === w.id}
                         onDragStart={onDragStart} menuOpen={openMenu === w.id} onMenu={setOpenMenu}

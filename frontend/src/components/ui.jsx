@@ -2,14 +2,33 @@ import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, FolderTree, Plus, X } from "lucide-react";
 import { PAGE_SIZE, PAYMENT_TYPES } from "../constants.js";
 import { fmt, money, uid } from "../lib/format.js";
-import { THEME, mixColors, shadeColor } from "../theme.js";
+import { THEME, mixColors } from "../theme.js";
 import { useBackToClose } from "../lib/history.js";
 import { readableOn, useCardStyle } from "./CardStyleMenu.jsx";
 
 /* ---------------- SHARED UI ---------------- */
+export function BrandMark({ size = 30 }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: Math.round(size * 0.27), background: THEME.text, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <span style={{ color: THEME.card, fontWeight: 700, fontSize: Math.round(size * 0.38), letterSpacing: -0.2 }}>UV</span>
+    </div>
+  );
+}
+export function Avatar({ name, size = 28 }) {
+  return (
+    <div style={{ width: size, height: size, borderRadius: "50%", background: THEME.chip, border: `1px solid ${THEME.border}`, display: "flex", alignItems: "center", justifyContent: "center", color: THEME.mutedDark, fontWeight: 600, fontSize: Math.round(size * 0.4), flexShrink: 0 }}>
+      {initials(name)}
+    </div>
+  );
+}
+export function initials(name) {
+  const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || "?") + (parts.length > 1 ? parts[1][0] : "")).toUpperCase();
+}
+
 export function Card({ children, style, className, onClick, ...rest }) {
   return (
-    <div className={`uvix-card ${className || ""}`} onClick={onClick} style={{ background: THEME.card, border: `1px solid ${THEME.borderSoft}`, boxShadow: THEME.shadowSm, borderRadius: THEME.radius, padding: 18, ...style }} {...rest}>
+    <div className={`uvix-card ${className || ""}`} onClick={onClick} style={{ background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: THEME.radius, padding: 18, ...style }} {...rest}>
       {children}
     </div>
   );
@@ -20,64 +39,64 @@ export function MetricCard({ label, value, sub, accent: accentProp, bg: bgProp, 
   const styleCtx = useCardStyle();
   const custom = styleCtx?.style;
   const gearPad = styleCtx?.editing ? 34 : 0; // shesterenka pastki o'ng burchakda — chiziq va izoh unga tegmasin
-  const isFilled = custom ? !!custom.filled : variant === "filled";
+  const isFilled = custom ? !!custom.filled : false; // standart: neytral karta (rangli to'liq fon faqat administrator tanlasa)
   const accent = custom?.color || accentProp;
   const bg = custom?.color && !isFilled ? `${custom.color}22` : bgProp;
   const fg = isFilled ? readableOn(accent || THEME.violet) : null; // to'liq rangli kartochkadagi yozuv rangi
   const onDark = fg === "#fff";
-  const soft = (a) => (onDark ? `rgba(255,255,255,${a})` : `rgba(22,19,31,${a})`);
+  const soft = (a) => (onDark ? `rgba(255,255,255,${a})` : `rgba(24,24,27,${a})`);
   return (
     <Card
       className="uvix-metric uvix-dash-card"
       onClick={onClick}
       style={{
         display: "flex", flexDirection: "column", gap: 12, cursor: onClick ? "pointer" : "default",
-        borderRadius: 22, border: isFilled ? "none" : `1px solid ${THEME.border}`,
-        background: isFilled ? `linear-gradient(135deg, ${accent || THEME.violet}, ${shadeColor(accent || THEME.violet, -18)})` : THEME.card,
-        boxShadow: isFilled ? `0 10px 28px ${accent || THEME.violet}55` : "0 1px 2px rgba(20,16,40,0.04)",
-        padding: 18, position: "relative",
+        borderRadius: THEME.radius + 2, border: isFilled ? `1px solid ${accent || THEME.violet}` : `1px solid ${THEME.border}`,
+        background: isFilled ? (accent || THEME.violet) : THEME.card,
+        boxShadow: "none",
+        padding: 16, gap: 10, position: "relative",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 11.5, color: isFilled ? soft(0.85) : THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</span>
+        <span style={{ fontSize: 12.5, color: isFilled ? soft(0.85) : THEME.muted, fontWeight: 500 }}>{label}</span>
         {Icon && (
-          <div style={{ width: 34, height: 34, borderRadius: "50%", background: isFilled ? soft(0.18) : (bg || THEME.violetSoft), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Icon size={15} color={isFilled ? fg : (accent || THEME.violet)} />
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: isFilled ? soft(0.16) : (custom?.color ? bg : THEME.chip), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Icon size={15} color={isFilled ? fg : (custom?.color || THEME.muted)} />
           </div>
         )}
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: THEME.isDark ? 21 : 25, fontFamily: THEME.fontNum, fontWeight: THEME.isDark ? 500 : 700, color: isFilled ? fg : THEME.text, letterSpacing: THEME.isDark ? -0.3 : -0.5, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+        <span style={{ fontSize: 22, fontFamily: THEME.fontNum, fontWeight: 600, color: isFilled ? fg : THEME.text, letterSpacing: -0.4, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{value}</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 20 }}>
         {pctBadge && (
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: isFilled ? fg : (accent || THEME.violet), background: isFilled ? soft(0.18) : (bg || THEME.violetSoft), padding: "3px 9px", borderRadius: 20 }}>{pctBadge}</span>
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: isFilled ? fg : THEME.mutedDark, background: isFilled ? soft(0.16) : THEME.chip, padding: "2px 8px", borderRadius: 6 }}>{pctBadge}</span>
         )}
         {trendPct !== undefined && (
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: isFilled ? fg : (trendGood ? THEME.green : THEME.rose), background: isFilled ? soft(0.18) : (trendGood ? THEME.greenBg : THEME.roseBg), padding: "3px 9px", borderRadius: 20, display: "flex", alignItems: "center", gap: 2 }}>
+          <span style={{ fontSize: 11.5, fontWeight: 600, color: isFilled ? fg : (trendGood ? THEME.green : THEME.rose), background: isFilled ? soft(0.16) : (trendGood ? THEME.greenBg : THEME.roseBg), padding: "2px 8px", borderRadius: 6, display: "flex", alignItems: "center", gap: 2 }}>
             {trendPct >= 0 ? "↑" : "↓"} {Math.abs(trendPct).toFixed(1)}%
           </span>
         )}
-        {sub && !pctBadge && trendPct === undefined && <span style={{ fontSize: 11.5, color: isFilled ? soft(0.75) : THEME.muted }}>{sub}</span>}
+        {sub && !pctBadge && trendPct === undefined && <span style={{ fontSize: 12, color: isFilled ? soft(0.75) : THEME.dim }}>{sub}</span>}
       </div>
       {progressPct !== undefined && (
-        <div style={{ height: 7, borderRadius: 10, background: isFilled ? soft(0.25) : THEME.surface, overflow: "hidden", marginRight: gearPad }}>
-          <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, progressPct))}%`, background: isFilled ? fg : (accent || THEME.violet), borderRadius: 10, transition: "width 0.3s ease" }} />
+        <div style={{ height: 6, borderRadius: 4, background: isFilled ? soft(0.22) : THEME.chip, overflow: "hidden", marginRight: gearPad }}>
+          <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, progressPct))}%`, background: isFilled ? fg : (accent || THEME.violet), borderRadius: 4, transition: "width 0.3s ease" }} />
         </div>
       )}
-      {sub && (pctBadge || trendPct !== undefined) && <div style={{ fontSize: 11, color: isFilled ? soft(0.7) : THEME.muted, marginTop: -4, paddingRight: gearPad }}>{sub}</div>}
+      {sub && (pctBadge || trendPct !== undefined) && <div style={{ fontSize: 12, color: isFilled ? soft(0.7) : THEME.dim, marginTop: -4, paddingRight: gearPad }}>{sub}</div>}
     </Card>
   );
 }
 export function Button({ children, onClick, variant = "primary", style, type = "button", disabled }) {
   const base = {
-    display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: Math.max(6, THEME.radius - 7),
-    fontSize: 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "none",
+    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 36, padding: "0 14px", borderRadius: Math.max(6, THEME.radius - 2),
+    fontSize: 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "1px solid transparent", lineHeight: 1.2,
     opacity: disabled ? 0.5 : 1,
   };
   const variants = {
-    primary: { background: THEME.violet, color: "#fff" },
-    ghost: { background: THEME.card, color: THEME.text, border: `1px solid ${THEME.border}` },
+    primary: { background: THEME.violet, color: THEME.onPrimary, borderColor: THEME.violet },
+    ghost: { background: THEME.card, color: THEME.text, border: `1px solid ${THEME.border2}` },
     danger: { background: THEME.roseBg, color: THEME.rose, border: `1px solid ${THEME.roseBorder}` },
   };
   const classNames = { primary: "uvix-btn-primary", ghost: "uvix-btn-ghost", danger: "uvix-btn-danger" };
@@ -90,15 +109,15 @@ export function Button({ children, onClick, variant = "primary", style, type = "
 export function Field({ label, children }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={{ fontSize: 12, fontWeight: 600, color: THEME.mutedDark }}>{label}</label>
+      <label style={{ fontSize: 12.5, fontWeight: 500, color: THEME.mutedDark }}>{label}</label>
       {children}
     </div>
   );
 }
 export function getInputStyle() {
   return {
-    padding: "10px 12px", borderRadius: Math.max(6, THEME.radius - 7), border: `1.5px solid ${THEME.border}`, fontSize: 13.5,
-    outline: "none", background: THEME.isDark ? mixColors(THEME.card, "#000000", 0.18) : "#FCFCFE", width: "100%", color: THEME.text,
+    padding: "9px 11px", minHeight: 38, borderRadius: Math.max(6, THEME.radius - 2), border: `1px solid ${THEME.border2}`, fontSize: 13.5,
+    outline: "none", background: THEME.isDark ? mixColors(THEME.card, "#000000", 0.25) : "#FFFFFF", width: "100%", color: THEME.text,
   };
 }
 export function Modal({ title, onClose, children, width = 460 }) {
@@ -110,13 +129,13 @@ export function Modal({ title, onClose, children, width = 460 }) {
     setTimeout(() => setShake(false), 350);
   }
   return (
-    <div className="uvix-modal-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(16,14,26,0.5)", backdropFilter: "blur(3px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }} onClick={handleBackdropClick}>
-      <div className={`uvix-modal-panel${shake ? " uvix-modal-shake" : ""}`} style={{ background: THEME.card, borderRadius: THEME.radius + 4, width: "100%", maxWidth: width, maxHeight: "88vh", overflowY: "auto", boxShadow: THEME.shadowLg }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: `1px solid ${THEME.border}` }}>
-          <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: -0.2, color: THEME.text }}>{title}</div>
-          <button onClick={onClose} className="uvix-iconbtn" style={{ background: THEME.surface, border: "none", cursor: "pointer", color: THEME.muted, borderRadius: 9, padding: 6, display: "flex" }}><X size={16} /></button>
+    <div className="uvix-modal-backdrop" style={{ position: "fixed", inset: 0, background: THEME.isDark ? "rgba(0,0,0,0.6)" : "rgba(9,9,11,0.32)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }} onClick={handleBackdropClick}>
+      <div className={`uvix-modal-panel${shake ? " uvix-modal-shake" : ""}`} style={{ background: THEME.card, borderRadius: THEME.radius + 4, width: "100%", maxWidth: width, maxHeight: "88vh", overflowY: "auto", boxShadow: THEME.shadowLg, border: `1px solid ${THEME.border}` }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: `1px solid ${THEME.border}` }}>
+          <div style={{ fontSize: 15.5, fontWeight: 600, letterSpacing: -0.2, color: THEME.text }}>{title}</div>
+          <button onClick={onClose} aria-label="Yopish" className="uvix-iconbtn" style={{ background: "transparent", border: "none", cursor: "pointer", color: THEME.muted, borderRadius: 8, padding: 6, display: "flex" }}><X size={16} /></button>
         </div>
-        <div style={{ padding: 22 }}>{children}</div>
+        <div style={{ padding: 20 }}>{children}</div>
       </div>
     </div>
   );
@@ -126,7 +145,7 @@ export function ConfirmDialog({ message, onConfirm, onCancel, title = "Tasdiqlas
   return (
     <Modal title={title} onClose={onCancel} width={360}>
       <div style={{ fontSize: 13.5, color: THEME.text, marginBottom: 18, display: "flex", gap: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 10, background: danger ? THEME.roseBg : THEME.greenBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, background: danger ? THEME.roseBg : THEME.greenBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <Icon size={16} color={danger ? THEME.rose : THEME.green} />
         </div>
         <span style={{ paddingTop: 6, lineHeight: 1.5 }}>{message}</span>
@@ -140,7 +159,7 @@ export function ConfirmDialog({ message, onConfirm, onCancel, title = "Tasdiqlas
 }
 export function Badge({ children, color, bg }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, color, background: bg }}>
+    <span style={{ display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 6, fontSize: 11.5, fontWeight: 600, color, background: bg, whiteSpace: "nowrap" }}>
       {children}
     </span>
   );
@@ -148,7 +167,7 @@ export function Badge({ children, color, bg }) {
 export function EmptyState({ text }) {
   return (
     <div style={{ padding: "48px 0", textAlign: "center", color: THEME.muted, fontSize: 13 }}>
-      <div style={{ width: 40, height: 40, borderRadius: 12, background: THEME.surface, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px" }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: THEME.chip, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px" }}>
         <FolderTree size={17} color={THEME.muted} />
       </div>
       {text}
@@ -157,7 +176,7 @@ export function EmptyState({ text }) {
 }
 // Uzun ro'yxatlarni bo'lib chizish: avval `step` ta element, pastga yaqinlashganda yana qo'shiladi.
 // 500 ta lid yoki chat bo'lsa ham sahifa bir zumda ochiladi va aylantirish qotmaydi.
-export function Incremental({ list, step = 40, render }) {
+export function Incremental({ list, step = 40, render, colSpan }) {
   const [count, setCount] = useState(step);
   const ref = useRef(null);
   const hasMore = count < list.length;
@@ -172,13 +191,16 @@ export function Incremental({ list, step = 40, render }) {
   return (
     <>
       {list.slice(0, count).map(render)}
-      {hasMore && (
-        <div ref={ref} style={{ padding: "10px 0", textAlign: "center", fontSize: 11.5, color: THEME.muted }}>
+      {hasMore && (() => {
+        const btn = (
           <button type="button" onClick={() => setCount((c) => c + step)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", font: "inherit" }}>
             Yana {Math.min(step, list.length - count)} ta ko'rsatish ({list.length - count} qoldi)
           </button>
-        </div>
-      )}
+        );
+        const st = { padding: "10px 0", textAlign: "center", fontSize: 11.5, color: THEME.muted };
+        // Jadval ichida (tbody) — qator sifatida
+        return colSpan ? <tr ref={ref}><td colSpan={colSpan} style={st}>{btn}</td></tr> : <div ref={ref} style={st}>{btn}</div>;
+      })()}
     </>
   );
 }
@@ -202,14 +224,14 @@ export function Pagination({ page, totalPages, onChange, totalCount }) {
         <button
           onClick={() => onChange(Math.max(1, page - 1))}
           disabled={page <= 1}
-          style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.card, color: page <= 1 ? THEME.muted : THEME.text, cursor: page <= 1 ? "not-allowed" : "pointer", fontSize: 12.5, fontWeight: 600, opacity: page <= 1 ? 0.5 : 1 }}
+          style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: page <= 1 ? THEME.muted : THEME.text, cursor: page <= 1 ? "not-allowed" : "pointer", fontSize: 12.5, fontWeight: 600, opacity: page <= 1 ? 0.5 : 1 }}
         >
           &larr; Oldingi
         </button>
         <button
           onClick={() => onChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
-          style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.card, color: page >= totalPages ? THEME.muted : THEME.text, cursor: page >= totalPages ? "not-allowed" : "pointer", fontSize: 12.5, fontWeight: 600, opacity: page >= totalPages ? 0.5 : 1 }}
+          style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: page >= totalPages ? THEME.muted : THEME.text, cursor: page >= totalPages ? "not-allowed" : "pointer", fontSize: 12.5, fontWeight: 600, opacity: page >= totalPages ? 0.5 : 1 }}
         >
           Keyingi &rarr;
         </button>
@@ -221,7 +243,7 @@ export function PaymentTypeSelector({ value, onChange, size = "normal" }) {
   const pad = size === "small" ? "7px 0" : "8px 0";
   const fontSize = size === "small" ? 11.5 : 12.5;
   return (
-    <div style={{ display: "flex", gap: 4, background: THEME.surface, borderRadius: 11, padding: 3 }}>
+    <div style={{ display: "flex", gap: 2, background: THEME.chip, borderRadius: 9, padding: 3 }}>
       {PAYMENT_TYPES.map((opt) => (
         <button
           key={opt.v}
@@ -229,9 +251,9 @@ export function PaymentTypeSelector({ value, onChange, size = "normal" }) {
           onClick={() => onChange(opt.v)}
           style={{
             flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-            padding: pad, borderRadius: 9, border: "none", cursor: "pointer", fontSize, fontWeight: 700,
+            padding: pad, borderRadius: 7, border: "none", cursor: "pointer", fontSize, fontWeight: 600,
             background: value === opt.v ? THEME.card : "transparent",
-            color: value === opt.v ? THEME.violet : THEME.muted,
+            color: value === opt.v ? THEME.text : THEME.muted,
             boxShadow: value === opt.v ? THEME.shadowSm : "none",
             whiteSpace: "nowrap",
           }}
@@ -302,19 +324,17 @@ export function MultiPaymentLines({ lines, onChange, bg }) {
 /* ---------------- DASHBOARD ---------------- */
 export function SectionTitle({ icon: Icon, text, action }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6, marginBottom: -4 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, marginBottom: -4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ width: 24, height: 24, borderRadius: 7, background: THEME.violetSoft, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Icon size={13} color={THEME.violet} />
-        </div>
-        <span style={{ fontSize: 13.5, fontWeight: 800, color: THEME.text, letterSpacing: -0.2 }}>{text}</span>
+        {Icon && <Icon size={15} color={THEME.dim} />}
+        <span style={{ fontSize: 15, fontWeight: 600, color: THEME.text, letterSpacing: -0.2 }}>{text}</span>
       </div>
       {action}
     </div>
   );
 }
 export function getIconBtn() {
-  return { background: THEME.surface, border: "none", borderRadius: Math.max(5, THEME.radius - 9), padding: 7, cursor: "pointer", display: "flex" };
+  return { background: THEME.chip, border: "none", borderRadius: Math.max(6, THEME.radius - 4), padding: 7, cursor: "pointer", display: "flex", color: THEME.muted };
 }
 
 // Ekran telefon o'lchamidami (jadval o'rniga kartochkalar ko'rsatish uchun)

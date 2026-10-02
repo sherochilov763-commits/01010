@@ -123,7 +123,21 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
     res.json({ linked: Object.fromEntries(Object.entries(all).map(([k, v]) => [k, { username: v.username, linkedAt: v.linkedAt }])) });
   });
 
-  return { sendToEmployee, isLinked: (empId) => !!links()[empId], stop: () => { stopped = true; } };
+  async function sendDocumentToEmployee(empId, buffer, filename, caption) {
+    const l = links()[empId];
+    const tk = token();
+    if (!l?.chatId || !tk) return false;
+    try {
+      const form = new FormData();
+      form.append("chat_id", l.chatId);
+      if (caption) form.append("caption", caption);
+      form.append("document", new Blob([buffer]), filename);
+      const r = await fetch(`${TG_API}/bot${tk}/sendDocument`, { method: "POST", body: form });
+      if (r.status === 403) { const all = links(); delete all[empId]; saveLinks(all); }
+      return r.ok;
+    } catch { return false; }
+  }
+  return { sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], stop: () => { stopped = true; } };
 };
 
 function sleep(ms) { return new Promise((r) => { const t = setTimeout(r, ms); t.unref?.(); }); }

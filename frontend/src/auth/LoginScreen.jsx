@@ -9,7 +9,7 @@ import {
 import "./login.css";
 import { roleLabel } from "../constants.js";
 
-const AVATAR_COLORS = ["#7C5CFC", "#2DD4EE", "#F472B6", "#34D399", "#FBBF24", "#60A5FA", "#A78BFA", "#FB923C"];
+const AVATAR_COLORS = ["#1F5FD6", "#0E7490", "#B45309", "#15803D", "#6D28D9", "#BE185D", "#C2410C", "#475569"];
 
 export function avatarColor(seed = "") {
   let h = 0;

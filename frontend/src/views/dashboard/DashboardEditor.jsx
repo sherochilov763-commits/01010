@@ -50,11 +50,11 @@ export function EditToolbar({ isAdmin, cfg, onDone, onAdd, hiddenCount }) {
   const [menu, setMenu] = useState(false);
   const ref = useRef(null);
   useOutside(ref, menu, () => setMenu(false));
-  const seg = (on) => ({ height: 32, padding: "0 12px", borderRadius: 9, border: 0, cursor: "pointer", fontSize: 12.5, fontWeight: 700, background: on ? THEME.violet : "transparent", color: on ? "#fff" : THEME.text });
+  const seg = (on) => ({ height: 32, padding: "0 12px", borderRadius: 9, border: 0, cursor: "pointer", fontSize: 12.5, fontWeight: 700, background: on ? THEME.violet : "transparent", color: on ? THEME.onPrimary : THEME.text });
   return (
     <div role="toolbar" aria-label="Dashboardni tahrirlash" className="uvix-edit-toolbar" style={{ position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", width: "min(980px, calc(100vw - 300px))", zIndex: 170, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
       padding: "10px 12px", borderRadius: 16, background: THEME.card, border: `1px solid ${THEME.violet}66`, boxShadow: "0 14px 34px rgba(0,0,0,0.28)" }}>
-      <div style={{ fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
         <Settings2 size={16} color={THEME.violet} /> Tahrirlash
       </div>
       {isAdmin ? (
@@ -86,7 +86,7 @@ export function EditToolbar({ isAdmin, cfg, onDone, onAdd, hiddenCount }) {
             </div>
           )}
         </div>
-        <button type="button" onClick={onDone} style={{ height: 36, padding: "0 14px", borderRadius: 10, border: 0, background: THEME.violet, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <button type="button" onClick={onDone} style={{ height: 36, padding: "0 14px", borderRadius: 10, border: 0, background: THEME.violet, color: THEME.onPrimary, fontWeight: 700, fontSize: 13, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
           <Check size={15} /> Tayyor
         </button>
       </div>
@@ -177,20 +177,20 @@ function WidgetMenu({ id, cfg, open, onToggle }) {
     const a = n.layout.findIndex((x) => x.id === vis[i].id), b = n.layout.findIndex((x) => x.id === vis[j].id);
     [n.layout[a], n.layout[b]] = [n.layout[b], n.layout[a]];
   });
-  const label = (t) => <div style={{ fontSize: 10.5, color: THEME.muted, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 6px" }}>{t}</div>;
+  const label = (t) => <div style={{ fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, margin: "12px 0 6px" }}>{t}</div>;
   const pill = (on) => ({ flex: 1, height: 30, borderRadius: 8, border: `1px solid ${on ? THEME.violet : THEME.border}`, background: on ? THEME.violetSoft : "transparent", color: on ? THEME.violet : THEME.text, fontSize: 11.5, fontWeight: 700, cursor: "pointer" });
 
   return (
     <div ref={ref} style={{ position: "absolute", right: 8, bottom: 8, zIndex: open ? 30 : 6 }}>
       <button type="button" aria-label={`${cat?.label || id} — sozlash`} aria-expanded={open} onClick={() => onToggle(!open)}
-        style={{ width: 32, height: 32, borderRadius: 10, border: 0, background: open ? THEME.violet : THEME.card, color: open ? "#fff" : THEME.text, boxShadow: "0 2px 8px rgba(0,0,0,0.25)", cursor: "pointer", display: "grid", placeItems: "center" }}>
+        style={{ width: 32, height: 32, borderRadius: 10, border: 0, background: open ? THEME.violet : THEME.card, color: open ? THEME.onPrimary : THEME.text, boxShadow: "0 2px 8px rgba(0,0,0,0.25)", cursor: "pointer", display: "grid", placeItems: "center" }}>
         <Settings2 size={16} />
       </button>
       {open && (
         <div role="dialog" aria-label={`${cat?.label || id} sozlamalari`} className="uvix-wmenu" style={{ position: "absolute", right: 0, bottom: 40, width: 260, maxWidth: "calc(100vw - 24px)", padding: 14, borderRadius: 16,
           background: THEME.card, border: `1px solid ${THEME.border}`, boxShadow: "0 20px 48px rgba(0,0,0,0.4)", color: THEME.text }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat?.label || id}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat?.label || id}</div>
             <button type="button" aria-label="Yopish" onClick={() => onToggle(false)} style={{ border: 0, background: "none", color: THEME.muted, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={16} /></button>
           </div>
           {label("O'lcham")}
@@ -255,7 +255,7 @@ export function AddWidgetGallery({ cfg, onClose }) {
     <div role="dialog" aria-modal="true" aria-label="Ko'rsatkich qo'shish" onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(8,6,16,0.55)", display: "grid", placeItems: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(640px, 100%)", maxHeight: "80vh", overflowY: "auto", borderRadius: 20, background: THEME.card, border: `1px solid ${THEME.border}`, padding: 20, boxShadow: "0 30px 80px rgba(0,0,0,0.45)" }} className="uvix-scroll">
         <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, flex: 1 }}>Ko'rsatkich qo'shish</div>
+          <div style={{ fontSize: 16, fontWeight: 700, flex: 1 }}>Ko'rsatkich qo'shish</div>
           <button type="button" aria-label="Yopish" onClick={onClose} style={{ width: 34, height: 34, borderRadius: 10, border: 0, background: THEME.surface, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={17} /></button>
         </div>
         <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 14 }}>Yashirilgan kartalar. Bosing — dashboardga qaytadi.</div>
@@ -266,7 +266,7 @@ export function AddWidgetGallery({ cfg, onClose }) {
           if (!items.length) return null;
           return (
             <div key={g.id} style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10.5, color: THEME.violet, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{g.label}</div>
+              <div style={{ fontSize: 10.5, color: THEME.violet, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>{g.label}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 8 }}>
                 {items.map((w) => (
                   <button key={w.id} type="button" onClick={() => show(w.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 12px", borderRadius: 12, border: `1px dashed ${THEME.border}`, background: THEME.surface, color: THEME.text, cursor: "pointer", textAlign: "left", fontSize: 12.5, fontWeight: 700 }}>

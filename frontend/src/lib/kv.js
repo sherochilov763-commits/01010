@@ -8,7 +8,7 @@
 // • Holat (saqlanmoqda / saqlandi / xato) useSaveStatus() orqali ekranga chiqariladi.
 import { apiGet, apiMerge, apiSet } from "../storage.js";
 
-const MERGE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit"]);
+const MERGE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers"]);
 const PENDING_PREFIX = "uvix-pending:";
 
 // key -> { rev, base: Map(id -> json) } — serverdagi oxirgi ma'lum holat

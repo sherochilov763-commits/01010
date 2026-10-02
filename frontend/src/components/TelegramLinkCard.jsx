@@ -42,7 +42,7 @@ export function TelegramLinkCard({ compact = false }) {
     <div data-testid="tg-link-card" style={{ display: "flex", alignItems: "center", gap: 12, padding: compact ? "10px 12px" : "14px 16px", borderRadius: 14, background: `${TG_BLUE}14`, border: `1px solid ${TG_BLUE}40`, textAlign: "left", flexWrap: "wrap" }}>
       <span style={{ width: 36, height: 36, borderRadius: "50%", background: TG_BLUE, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Send size={17} /></span>
       <div style={{ flex: "1 1 180px", minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 13.5, color: THEME.text }}>{st.linked ? "Telegram ulangan" : "Eslatmalarni Telegram'da oling"}</div>
+        <div style={{ fontWeight: 700, fontSize: 13.5, color: THEME.text }}>{st.linked ? "Telegram ulangan" : "Eslatmalarni Telegram'da oling"}</div>
         <div style={{ fontSize: 12, color: THEME.muted, lineHeight: 1.45 }}>
           {st.linked ? <>Ish vaqti eslatmalari va haftalik xulosangiz Telegram'ingizga keladi{st.username ? <> (<b style={{ color: TG_BLUE }}>@{st.username}</b>)</> : ""}.</>
             : waiting ? "Telegram'da «Start» tugmasini bosing — shu yerda o'zi tasdiqlanadi…" : "Ish boshlanishi, kechikish va «Ketdim» eslatmalari. Bir marta ulanadi."}

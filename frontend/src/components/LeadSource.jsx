@@ -35,8 +35,8 @@ export function SourceChip({ source, size = "sm" }) {
   const d = big ? 20 : 17;
   return (
     <span data-testid="source-chip" title={`Manba: ${m.text}`}
-      style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: big ? 12.5 : 11.5, fontWeight: 600, color: THEME.text, minWidth: 0, maxWidth: "100%" }}>
-      <span style={{ width: d, height: d, borderRadius: "50%", background: m.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: big ? 12.5 : 12, fontWeight: 500, color: THEME.muted, minWidth: 0, maxWidth: "100%" }}>
+      <span style={{ width: d, height: d, borderRadius: 5, background: `${m.color}1C`, color: m.color, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <Icon size={big ? 11 : 10} strokeWidth={2.4} />
       </span>
       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.text}</span>
@@ -51,8 +51,8 @@ export function TgHandle({ username, size = "sm" }) {
   return (
     <a data-testid="tg-handle" href={`https://t.me/${u}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
       title="Telegram'da ochish"
-      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: size === "md" ? 13 : 11.5, fontWeight: 700, color: TG_BLUE, textDecoration: "none",
-        background: `${TG_BLUE}1F`, padding: size === "md" ? "3px 9px" : "2px 7px", borderRadius: 20, maxWidth: "100%", alignSelf: "flex-start" }}>
+      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: size === "md" ? 13 : 11.5, fontWeight: 600, color: THEME.isDark ? "#5EB8F0" : "#1A7DB8", textDecoration: "none",
+        background: `${TG_BLUE}17`, padding: size === "md" ? "3px 9px" : "2px 7px", borderRadius: 6, maxWidth: "100%", alignSelf: "flex-start" }}>
       <Send size={size === "md" ? 12 : 10} strokeWidth={2.4} />
       <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>@{u}</span>
     </a>

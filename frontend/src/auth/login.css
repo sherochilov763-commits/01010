@@ -1,15 +1,18 @@
 /* UVIX — kirish ekrani. Asosiy g'oya: PIN klaviatura — "asbob", qolgan hamma narsa sokin. */
 .ul-root {
-  --night: #130f22;
-  --plum: #1d1733;
-  --line: rgba(201, 194, 228, 0.14);
-  --violet: #7c5cfc;
-  --cyan: #2dd4ee;
-  --text: #f3f0ff;
-  --soft: #c9c2e4;
-  --muted: #8b84ad;
-  --error: #ff8a9b;
-  --display: "Unbounded", "Onest", ui-sans-serif, system-ui, sans-serif;
+  /* Yangi dizayn: yorug' neytral fon, bitta ko'k urg'u. O'zgaruvchi nomlari tarixiy. */
+  --night: #F7F7F8;
+  --plum: #FFFFFF;
+  --line: #DCDCE0;
+  --violet: #1F5FD6;
+  --cyan: #1F5FD6;
+  --text: #18181B;
+  --soft: #3F3F46;
+  --muted: #71717A;
+  --error: #DC2626;
+  --tint: rgba(31, 95, 214, 0.08);
+  --tint2: rgba(31, 95, 214, 0.28);
+  --display: "Onest", ui-sans-serif, system-ui, sans-serif;
   --ui: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 
   min-height: 100vh;
@@ -21,9 +24,7 @@
   justify-content: center;
   color: var(--text);
   font-family: var(--ui);
-  background:
-    radial-gradient(60vmax 50vmax at 50% 118%, rgba(124, 92, 252, 0.28), transparent 60%),
-    var(--night);
+  background: var(--night);
   -webkit-font-smoothing: antialiased;
 }
 .ul-root *, .ul-root *::before, .ul-root *::after { box-sizing: border-box; }
@@ -38,20 +39,20 @@
 .ul-mark {
   width: 34px; height: 34px; border-radius: 10px;
   display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--violet), var(--cyan));
+  background: var(--text);
   font: 700 12px/1 var(--display); letter-spacing: 0.02em; color: #fff;
 }
 .ul-wordmark { font: 600 15px/1 var(--display); letter-spacing: 0.04em; }
 .ul-wordmark span { color: var(--muted); font-weight: 400; }
 
-.ul-title { font: 500 24px/1.2 var(--display); letter-spacing: -0.01em; margin: 0 0 6px; }
+.ul-title { font: 600 24px/1.2 var(--display); letter-spacing: -0.01em; margin: 0 0 6px; }
 .ul-sub { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 28px; }
 
 /* ---------- Xodim tanlash ---------- */
 .ul-search {
   width: 100%; margin-bottom: 20px; padding: 12px 14px;
   border-radius: 12px; border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.04); color: var(--text);
+  background: #FFFFFF; color: var(--text);
   font: 400 15px var(--ui); outline: none;
 }
 .ul-search::placeholder { color: var(--muted); }
@@ -130,17 +131,17 @@
   aspect-ratio: 1; width: 100%; max-width: 76px; justify-self: center;
   border-radius: 50%;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.025);
+  background: #FFFFFF;
   font: 400 26px/1 var(--display);
   cursor: pointer; user-select: none; -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
   display: grid; place-items: center;
   transition: background 90ms ease, border-color 90ms ease, transform 90ms ease;
 }
-.ul-key:hover { border-color: rgba(201, 194, 228, 0.3); }
+.ul-key:hover { border-color: #A1A1AA; }
 .ul-key:active, .ul-key.pressed { background: var(--violet); border-color: var(--violet); transform: scale(0.94); }
 .ul-key.ghost { border-color: transparent; background: none; color: var(--soft); }
-.ul-key.ghost:active { background: rgba(255, 255, 255, 0.08); border-color: transparent; }
+.ul-key.ghost:active { background: #F4F4F5; border-color: transparent; }
 .ul-key.bio { color: var(--cyan); }
 .ul-key:disabled { opacity: 0.35; cursor: default; }
 .ul-key-spacer { visibility: hidden; }
@@ -156,10 +157,10 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   transition: opacity 120ms ease, background 120ms ease;
 }
-.ul-primary:hover { background: #6d4df0; }
+.ul-primary:hover { background: #1A52B8; }
 .ul-primary:disabled { opacity: 0.4; cursor: default; }
-.ul-primary.bio { background: rgba(45, 212, 238, 0.12); color: var(--cyan); box-shadow: inset 0 0 0 1px rgba(45, 212, 238, 0.35); margin: 0 0 22px; }
-.ul-primary.bio:hover { background: rgba(45, 212, 238, 0.18); }
+.ul-primary.bio { background: var(--tint); color: var(--cyan); box-shadow: inset 0 0 0 1px var(--tint2); margin: 0 0 22px; }
+.ul-primary.bio:hover { background: rgba(31, 95, 214, 0.14); }
 
 .ul-link {
   background: none; border: 0; padding: 8px 0; margin-top: 18px; align-self: center; text-align: center;
@@ -172,8 +173,8 @@
 .ul-offer-icon {
   width: 88px; height: 88px; border-radius: 26px; margin-bottom: 24px;
   display: grid; place-items: center; color: var(--cyan);
-  background: rgba(45, 212, 238, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(45, 212, 238, 0.3);
+  background: var(--tint);
+  box-shadow: inset 0 0 0 1px var(--tint2);
 }
 .ul-offer .ul-sub { max-width: 300px; }
 .ul-offer .ul-primary { margin-top: 4px; }
@@ -182,12 +183,12 @@
   border: 1px solid var(--line); background: none;
   font: 500 14.5px var(--ui); color: var(--soft); cursor: pointer;
 }
-.ul-secondary:hover { border-color: rgba(201, 194, 228, 0.3); }
+.ul-secondary:hover { border-color: #A1A1AA; }
 
 /* ---------- PIN tiklash formasi ---------- */
 .ul-field { width: 100%; margin-bottom: 12px; }
 .ul-field label { display: block; font-size: 13px; color: var(--soft); margin-bottom: 6px; }
-.ul-field input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); color: var(--text); font: 400 15px var(--ui); outline: none; }
+.ul-field input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: #FFFFFF; color: var(--text); font: 400 15px var(--ui); outline: none; }
 .ul-field input:focus { border-color: var(--violet); }
 
 .ul-spin { animation: ul-spin 0.9s linear infinite; }
@@ -218,8 +219,8 @@
 .ul-quick-bio {
   width: 112px; height: 112px; margin: 26px auto 14px; border-radius: 32px; border: 0; cursor: pointer;
   display: flex; align-items: center; justify-content: center; color: var(--cyan);
-  background: radial-gradient(circle at 50% 35%, rgba(45, 212, 238, 0.22), rgba(124, 92, 252, 0.14));
-  box-shadow: inset 0 0 0 1px rgba(45, 212, 238, 0.35), 0 12px 40px rgba(45, 212, 238, 0.12);
+  background: var(--tint);
+  box-shadow: inset 0 0 0 1px var(--tint2);
   transition: transform .15s ease;
 }
 .ul-quick-bio:active { transform: scale(0.96); }
@@ -228,4 +229,4 @@
 
 /* PIN klaviaturasidagi Face ID tugmasi */
 .ul-key.ghost.bio { color: var(--cyan); }
-.ul-key.ghost.bio.armed { box-shadow: inset 0 0 0 1.5px var(--cyan); background: rgba(45, 212, 238, 0.1); }
+.ul-key.ghost.bio.armed { box-shadow: inset 0 0 0 1.5px var(--cyan); background: var(--tint); }

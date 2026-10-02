@@ -1,9 +1,14 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LoginScreen from "./auth/LoginScreen.jsx";
 import { authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
-import { NAV_CSS, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
+import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
+import { CommandPalette, SearchTrigger, useCommandHotkey } from "./components/CommandPalette.jsx";
+import { buildCustomers } from "./lib/customers.js";
+import { useNotifications } from "./lib/notify.js";
+import { useBackground } from "./lib/background.js";
+import { NotificationBell, ncenterCss } from "./components/NotificationBell.jsx";
 import { CheckInButton } from "./components/CheckInButton.jsx";
 import { AttendanceGate } from "./components/AttendanceGate.jsx";
 import { resetAttendance } from "./lib/attendanceStore.js";
@@ -14,7 +19,8 @@ import { money, paymentTypeLabel, uid } from "./lib/format.js";
 import { resumePending, storageGet, storageRefresh, storageSet, subscribeRemote } from "./lib/kv.js";
 import { SaveStatus } from "./components/SaveStatus.jsx";
 import { useBackToClose, useHistoryView } from "./lib/history.js";
-import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme } from "./theme.js";
+import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme, migrateAppearance, withAlpha } from "./theme.js";
+import { useIsMobile } from "./components/ui.jsx";
 import { Dashboard } from "./views/Dashboard.jsx";
 
 // Sahifalar alohida bo'laklarda: faqat ochilganda yuklanadi (birinchi ochilish tezroq).
@@ -31,14 +37,27 @@ const ExpenseView = lazy(() => import("./views/expenses/ExpenseView.jsx").then((
 const OrdersView = lazy(() => import("./views/orders/OrdersView.jsx").then((m) => ({ default: m.OrdersView })));
 const SettingsView = lazy(() => import("./views/settings/SettingsView.jsx").then((m) => ({ default: m.SettingsView })));
 const AttendanceView = lazy(() => import("./views/attendance/AttendanceView.jsx").then((m) => ({ default: m.AttendanceView })));
+const CustomersView = lazy(() => import("./views/customers/CustomersView.jsx").then((m) => ({ default: m.CustomersView })));
 const PaintView = lazy(() => import("./views/paint/PaintView.jsx").then((m) => ({ default: m.PaintView })));
-const VIEW_PRELOADERS = [() => import("./views/attendance/AttendanceView.jsx"), () => import("./views/paint/PaintView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
+const VIEW_PRELOADERS = [() => import("./views/customers/CustomersView.jsx"), () => import("./views/attendance/AttendanceView.jsx"), () => import("./views/paint/PaintView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
 function ViewFallback() {
+  // Bo'lim yuklanayotganda — sahifa skeleti (asboblar qatori + jadval qatorlari)
+  const sk = (st) => <div className="uvix-skeleton" style={st} />;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }} aria-busy="true">
-      <div className="uvix-skeleton" style={{ height: 28, width: 220, borderRadius: 8 }} />
-      <div className="uvix-skeleton" style={{ height: 120, borderRadius: 14 }} />
-      <div className="uvix-skeleton" style={{ height: 320, borderRadius: 14 }} />
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }} aria-busy="true" aria-label="Yuklanmoqda">
+      <div style={{ display: "flex", gap: 8 }}>
+        {sk({ height: 32, width: 110, borderRadius: 16 })}{sk({ height: 32, width: 96, borderRadius: 16 })}{sk({ height: 32, width: 90, borderRadius: 16 })}
+        <div style={{ flex: 1 }} />{sk({ height: 36, width: 150, borderRadius: 8 })}
+      </div>
+      <div style={{ border: `1px solid ${THEME.border}`, borderRadius: THEME.radius + 2, background: THEME.card, overflow: "hidden" }}>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 16px", borderTop: i ? `1px solid ${THEME.border}` : "none" }}>
+            {sk({ height: 28, width: 28, borderRadius: "50%" })}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>{sk({ height: 10, width: `${40 + ((i * 17) % 35)}%` })}{sk({ height: 8, width: "22%" })}</div>
+            {sk({ height: 10, width: 90 })}{sk({ height: 10, width: 70 })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -48,6 +67,7 @@ export default function App() {
   const [transactions, setTransactions] = useState([]); // faqat rasxod (chiqim)
   const [orders, setOrders] = useState([]); // buyurtmalar (har birida payments[])
   const [leads, setLeads] = useState([]); // CRM — savdo voronkasi lidlari
+  const [customers, setCustomers] = useState([]); // Mijozlar bazasi — qo'lda kiritilgan ma'lumotlar (telefon, izoh, birlashtirish)
   const [pendingLeadForOrder, setPendingLeadForOrder] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
@@ -71,6 +91,28 @@ export default function App() {
   useBackToClose(sidebarOpen, () => setSidebarOpen(false));
   const [openChatId, setOpenChatId] = useState(null); // CRM → Chatlar: ochiladigan suhbat
   const [quickAdd, setQuickAdd] = useState(null); // {kind: "order"|"expense", n} — pastki "+" tugmasidan
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+  const openCmdk = useCallback(() => setCmdkOpen(true), []);
+  useCommandHotkey(openCmdk, !!currentUser && !isWorkerRole(currentUser.role));
+  // Bildirishnomalar markazi (qo'ng'iroqcha, ovoz, push)
+  const notif = useNotifications({
+    enabled: !!currentUser && !isWorkerRole(currentUser.role),
+    onNavigate: (v) => { setNavFilter(null); setView(v); },
+  });
+  // Shaxsiy fon va shisha rejimi (faqat kompyuterda — telefonda tezlik uchun o'chiq)
+  const bgState = useBackground(!!currentUser && !isWorkerRole(currentUser.role));
+  const narrow = useIsMobile(860);
+  const bgOn = !!bgState.resolved && !narrow;
+  const glassOn = bgOn && bgState.bg.glass;
+  const nightDark = bgOn && bgState.bg.kind === "dynamic" && bgState.bg.nightDark && bgState.resolved.dark;
+  const effectiveAppearance = glassOn ? { ...appearance, mode: "dark", glass: true } : nightDark ? { ...appearance, mode: "dark" } : appearance;
+  const themeKeyRef = useRef("");
+  const themeKey = JSON.stringify(effectiveAppearance);
+  if (themeKeyRef.current !== themeKey) { setTheme(buildTheme(effectiveAppearance)); themeKeyRef.current = themeKey; }
+  const openNotifySettings = () => {
+    setNavFilter(null); setView("settings");
+    setTimeout(() => document.querySelector("[data-testid=notify-settings]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 450);
+  };
 
   function navigateWithFilter(targetView, filter) {
     setNavFilter(filter || {});
@@ -97,8 +139,8 @@ export default function App() {
     if (isWorkerRole(currentUser.role)) {
       // Dizayner/Pechatchi: moliyaviy ma'lumotlar umuman yuklanmaydi (server ham bermaydi) — faqat ko'rinish
       (async () => {
-        const appr = await storageGet("uvix:appearance", false, null);
-        if (appr) { setTheme(buildTheme(appr)); setAppearance(appr); }
+        const appr = migrateAppearance(await storageGet("uvix:appearance", false, null));
+        setTheme(buildTheme(appr)); setAppearance(appr);
       })();
       return;
     }
@@ -147,6 +189,7 @@ export default function App() {
       if (Array.isArray(fullEmployees) && fullEmployees.length) setEmployees(fullEmployees);
       const log = await storageGet("uvix:audit", true, []);
       const leadsData = await storageGet("uvix:leads", true, []);
+      const custData = await storageGet("uvix:customers", true, []);
       let cats = await storageGet("uvix:categories", true, null);
       if (!cats || Object.keys(cats).length === 0) {
         cats = DEFAULT_CATEGORIES;
@@ -160,15 +203,13 @@ export default function App() {
         sett = DEFAULT_SETTINGS;
         await storageSet("uvix:settings", true, sett);
       }
-      let appr = await storageGet("uvix:appearance", false, null);
-      if (!appr) {
-        appr = DEFAULT_APPEARANCE;
-      }
+      const appr = migrateAppearance(await storageGet("uvix:appearance", false, null));
       setTheme(buildTheme(appr));
       setTransactions(tx);
       setOrders(ords);
       setAuditLog(log);
       setLeads(leadsData);
+      setCustomers(Array.isArray(custData) ? custData : []);
       setCategories(cats);
       setSettings(sett);
       setAppearance(appr);
@@ -179,14 +220,14 @@ export default function App() {
 
   // Server birlashtirgan natija (boshqa xodimning o'zgarishlari bilan) — ekranga qo'llaymiz
   useEffect(() => {
-    const setters = { "uvix:orders": setOrders, "uvix:transactions": setTransactions, "uvix:leads": setLeads, "uvix:audit": setAuditLog };
+    const setters = { "uvix:orders": setOrders, "uvix:transactions": setTransactions, "uvix:leads": setLeads, "uvix:audit": setAuditLog, "uvix:customers": setCustomers };
     return subscribeRemote((key, value) => setters[key]?.(value));
   }, []);
 
   // Boshqa xodimlar kiritgan o'zgarishlarni vaqti-vaqti bilan tortib olamiz (faqat o'zgargan bo'lsa yuklanadi)
   useEffect(() => {
     if (!currentUser || isWorkerRole(currentUser.role)) return;
-    const setters = { "uvix:orders": setOrders, "uvix:transactions": setTransactions, "uvix:leads": setLeads, "uvix:audit": setAuditLog };
+    const setters = { "uvix:orders": setOrders, "uvix:transactions": setTransactions, "uvix:leads": setLeads, "uvix:audit": setAuditLog, "uvix:customers": setCustomers };
     const tick = async () => {
       if (document.visibilityState !== "visible") return;
       for (const key of Object.keys(setters)) {
@@ -200,16 +241,28 @@ export default function App() {
     return () => { clearInterval(t); window.removeEventListener("focus", onFocus); };
   }, [currentUser]);
 
+  // Brauzer/telefon yuqori panel rangi joriy mavzuga mos bo'lsin
+  useEffect(() => {
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute("content", THEME.navBg);
+    document.documentElement.style.colorScheme = THEME.isDark ? "dark" : "light";
+  }, [themeKey]);
+
   function applyAppearance(next) {
     setTheme(buildTheme(next));
     setAppearance(next);
     storageSet("uvix:appearance", false, next);
   }
 
-  function showToast(msg) {
-    setToast(msg);
-    setTimeout(() => setToast(null), 2600);
+  // Toast: oddiy xabar yoki "Bekor qilish" tugmali (o'chirishdan keyin 6 soniya)
+  const toastTimer = useRef(null);
+  function showToast(msg, undo) {
+    clearTimeout(toastTimer.current);
+    setToast({ msg, undo: undo || null, id: Date.now() });
+    toastTimer.current = setTimeout(() => setToast(null), undo ? 6000 : 2600);
   }
+  // Bekor qilish har doim eng so'nggi holat bilan ishlashi uchun (eski closure emas)
+  const latest = useRef({});
 
   async function persistSettings(next) {
     setSettings(next);
@@ -229,6 +282,20 @@ export default function App() {
   async function persistLeads(next) {
     setLeads(next);
     await storageSet("uvix:leads", true, next);
+  }
+  async function persistCustomers(next) {
+    setCustomers(next);
+    await storageSet("uvix:customers", true, next);
+  }
+  // Mijoz ma'lumotini saqlash (yangi profil yoki tahrir); birlashtirilgan profillar o'chiriladi
+  function saveCustomer(profile, mergedIds = []) {
+    const now = new Date().toISOString();
+    const exists = customers.some((c) => c.id === profile.id);
+    let next = exists ? customers.map((c) => (c.id === profile.id ? { ...c, ...profile, updatedAt: now } : c)) : [{ ...profile, createdAt: now, updatedAt: now, createdBy: currentUser.name }, ...customers];
+    if (mergedIds.length) next = next.filter((c) => !mergedIds.includes(c.id));
+    persistCustomers(next);
+    addLog(`Mijoz ma'lumoti ${exists ? "tahrirlandi" : "qo'shildi"}: ${profile.name}`);
+    showToast("Saqlandi");
   }
   async function persistEmployees(next) {
     setEmployees(next);
@@ -312,7 +379,7 @@ export default function App() {
     const next = transactions.map((t) => (t.id === tx.id ? { ...t, deletedAt: new Date().toISOString(), deletedBy: currentUser.name } : t));
     persistTx(next);
     addLog(`Rasxod chiqindi qutisiga o'tkazildi: ${money(tx.amount)} (${tx.date})`);
-    showToast("Chiqindi qutisiga o'tkazildi");
+    showToast("Rasxod chiqindi qutisiga o'tkazildi", () => latest.current.restoreTransaction(tx));
   }
   function restoreTransaction(tx) {
     const next = transactions.map((t) => (t.id === tx.id ? { ...t, deletedAt: null, deletedBy: null } : t));
@@ -361,7 +428,7 @@ export default function App() {
     const next = orders.map((o) => (o.id === order.id ? { ...o, deletedAt: new Date().toISOString(), deletedBy: currentUser.name } : o));
     persistOrders(next);
     addLog(`Buyurtma chiqindi qutisiga o'tkazildi: ${order.orderNumber}`);
-    showToast("Chiqindi qutisiga o'tkazildi");
+    showToast(`${order.orderNumber} chiqindi qutisiga o'tkazildi`, () => latest.current.restoreOrder(order));
   }
   function restoreOrder(order) {
     const next = orders.map((o) => (o.id === order.id ? { ...o, deletedAt: null, deletedBy: null } : o));
@@ -474,7 +541,7 @@ export default function App() {
     const next = orders.map((o) => (o.id === orderId ? { ...o, payments: (o.payments || []).map((p) => (p.id === paymentId ? { ...p, deletedAt: new Date().toISOString(), deletedBy: currentUser.name } : p)) } : o));
     persistOrders(next);
     addLog(`To'lov chiqindi qutisiga o'tkazildi: ${order?.orderNumber || ""}`);
-    showToast("Chiqindi qutisiga o'tkazildi");
+    showToast("To'lov chiqindi qutisiga o'tkazildi", () => latest.current.restorePayment(orderId, paymentId));
   }
   function restorePayment(orderId, paymentId) {
     const order = orders.find((o) => o.id === orderId);
@@ -491,6 +558,15 @@ export default function App() {
     showToast("Butunlay o'chirildi");
   }
 
+  latest.current = { restoreOrder, restoreTransaction, restorePayment };
+
+  // Ctrl+K oynasi uchun mijozlar ro'yxati — faqat oyna ochiqligida hisoblanadi
+  const cmdkCustomers = useMemo(() => {
+    if (!cmdkOpen || !currentUser) return [];
+    const mine = (orders || []).filter((o) => !o.deletedAt && (currentUser.role === "admin" || o.createdBy === currentUser.name));
+    return buildCustomers(mine, leads, customers);
+  }, [cmdkOpen, orders, leads, customers, currentUser]);
+
   if (!ready) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: THEME.surface, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
@@ -498,11 +574,11 @@ export default function App() {
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
           <div style={{
             width: 48, height: 48, borderRadius: 14,
-            background: `linear-gradient(135deg, ${THEME.violet}, ${THEME.cyan})`,
+            background: THEME.text,
             display: "flex", alignItems: "center", justifyContent: "center",
             animation: "uvixPulse 1.1s ease-in-out infinite",
           }}>
-            <span style={{ color: "#fff", fontWeight: 800, fontSize: 16 }}>UV</span>
+            <span style={{ color: THEME.card, fontWeight: 700, fontSize: 15 }}>UV</span>
           </div>
           <div style={{ color: THEME.muted, fontSize: 13, fontWeight: 500 }}>Yuklanmoqda...</div>
         </div>
@@ -548,27 +624,41 @@ export default function App() {
         @supports (overflow-x: clip) { html, body { overflow-x: clip; } }
         * { box-sizing: border-box; }
         .uvix-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
-        .uvix-scroll::-webkit-scrollbar-thumb { background: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#D8D4E8"}; border-radius: 4px; }
-        .uvix-scroll::-webkit-scrollbar-thumb:hover { background: ${THEME.isDark ? "rgba(255,255,255,0.25)" : "#C4BEDD"}; }
+        .uvix-scroll::-webkit-scrollbar-thumb { background: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#D4D4D8"}; border-radius: 4px; }
+        .uvix-scroll::-webkit-scrollbar-thumb:hover { background: ${THEME.isDark ? "rgba(255,255,255,0.25)" : "#A1A1AA"}; }
         body { background: ${THEME.surface}; }
+        /* Fon (oboi) — sahifa ortida qotib turadi; ustida yumshoq parda, yozuvlar o'qilsin */
+        .uvix-bg { position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: center; pointer-events: none; }
+        .uvix-bg::after { content: ""; position: absolute; inset: 0; background: ${glassOn ? `rgba(0,0,0,${0.22 + (bgState.bg.dim || 0)})` : withAlpha(THEME.surface, Math.min(0.85, 0.5 + (bgState.bg.dim || 0)))}; }
+        @media (max-width: 860px) { .uvix-bg { display: none; } }
+        /* Shisha rejimi (Bitrix24 kabi): panellar shaffof, fon ko'rinadi, matn oq */
+        .uvix-glass .uvix-glass-side { background: rgba(14,14,16,0.42) !important; -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); border-color: rgba(255,255,255,0.08) !important; }
+        .uvix-glass .uvix-card, .uvix-glass .uvix-order-panel { background: rgba(20,20,23,0.5) !important; border-color: rgba(255,255,255,0.09) !important; -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
+        .uvix-glass .uvix-lead-card { background: rgba(20,20,23,0.62) !important; border-color: rgba(255,255,255,0.09) !important; }
+        .uvix-glass thead tr { background: rgba(255,255,255,0.04) !important; }
+        .uvix-glass .uvix-row:hover { background-color: rgba(255,255,255,0.05) !important; }
+        .uvix-glass .uvix-topbar h1, .uvix-glass .uvix-topbar { text-shadow: 0 1px 2px rgba(0,0,0,0.25); }
+        @media (prefers-reduced-transparency: reduce) { .uvix-glass .uvix-card, .uvix-glass .uvix-glass-side, .uvix-glass .uvix-order-panel { -webkit-backdrop-filter: none; backdrop-filter: none; background: ${THEME.card} !important; } }
         button { font-family: inherit; }
         input, select, textarea { font-family: inherit; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-        input:focus, select:focus, textarea:focus { outline: none; border-color: ${THEME.violet} !important; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: ${THEME.violet} !important; box-shadow: 0 0 0 3px ${withAlpha(THEME.violet, 0.16)}; }
+        :focus-visible { outline: 2px solid ${withAlpha(THEME.violet, 0.55)}; outline-offset: 1px; }
+        body, input, select, textarea, button { -webkit-font-smoothing: antialiased; }
+        .uvix-num, td, th { font-variant-numeric: tabular-nums; }
         button { transition: transform 0.12s ease, box-shadow 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, border-color 0.15s ease; }
-        button:active:not(:disabled) { transform: scale(0.97); }
+        button:active:not(:disabled) { transform: scale(0.985); }
         .uvix-card { transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
-        .uvix-card:hover { box-shadow: 0 6px 20px rgba(28,24,48,0.07); border-color: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#DCD6EE"}; }
-        .uvix-metric:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(28,24,48,0.09); border-color: ${THEME.isDark ? "rgba(255,255,255,0.14)" : "#DCD6EE"}; }
+        .uvix-card:hover { border-color: ${THEME.border2}; }
+        .uvix-metric:hover { border-color: ${THEME.border2}; box-shadow: ${THEME.shadowSm}; }
         .uvix-row { transition: background-color 0.12s ease; }
-        .uvix-row:hover { background-color: ${THEME.isDark ? "rgba(255,255,255,0.045)" : THEME.violetSoft}; }
+        .uvix-row:hover { background-color: ${THEME.hover}; }
         .uvix-iconbtn { transition: background-color 0.15s ease, transform 0.15s ease; }
-        .uvix-iconbtn:hover { background-color: ${THEME.isDark ? "rgba(255,255,255,0.08)" : "#ECE7F8"}; transform: translateY(-1px); }
-        .uvix-nav-item { transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, padding-left 0.18s ease; }
-        .uvix-nav-item:hover:not(.uvix-nav-active) { background: rgba(255,255,255,0.06); color: #E5E1F5; padding-left: 15px; }
-        .uvix-btn-primary { box-shadow: 0 2px 8px rgba(124,92,252,0.30); }
-        .uvix-btn-primary:hover:not(:disabled) { box-shadow: 0 6px 16px rgba(124,92,252,0.40); transform: translateY(-1px); }
-        .uvix-btn-ghost:hover:not(:disabled) { background: ${THEME.isDark ? "rgba(255,255,255,0.06)" : "#FAF9FE"}; border-color: ${THEME.isDark ? "rgba(255,255,255,0.18)" : "#CFC7E8"} !important; }
-        .uvix-btn-danger:hover:not(:disabled) { background: ${THEME.isDark ? "rgba(245,69,92,0.22)" : "#FBDCE3"}; }
+        .uvix-iconbtn:hover { background-color: ${THEME.hover}; }
+        .uvix-nav-item { transition: background-color 0.15s ease, color 0.15s ease; }
+        .uvix-nav-item:hover:not(.uvix-nav-active) { background: ${THEME.navHover}; color: ${THEME.navActiveText}; }
+        .uvix-btn-primary:hover:not(:disabled) { background: ${THEME.violetDark} !important; }
+        .uvix-btn-ghost:hover:not(:disabled) { background: ${THEME.hover}; border-color: ${THEME.border2} !important; }
+        .uvix-btn-danger:hover:not(:disabled) { background: ${withAlpha(THEME.rose, 0.16)}; }
         .uvix-modal-backdrop { animation: uvixFadeIn 0.15s ease; }
         .uvix-modal-panel { animation: uvixScaleIn 0.18s cubic-bezier(0.16,1,0.3,1); }
         .uvix-modal-shake { animation: uvixShake 0.35s ease !important; }
@@ -577,18 +667,18 @@ export default function App() {
         @keyframes uvixScaleIn { from { opacity: 0; transform: scale(0.96) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         @keyframes uvixSlideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .uvix-toast { animation: uvixSlideUp 0.22s cubic-bezier(0.16,1,0.3,1); }
+        .uvix-toast { overflow: hidden; }
+        .uvix-toast-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: rgba(255,255,255,0.35); transform-origin: left; animation: uvixToastBar 6s linear forwards; }
+        @keyframes uvixToastBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+        @media (max-width: 860px) { .uvix-toast { left: 16px; right: 16px !important; bottom: calc(88px + env(safe-area-inset-bottom, 0px)) !important; justify-content: space-between; } }
         .uvix-view-enter { animation: uvixFadeIn 0.22s ease; }
-        .uvix-skeleton { background: linear-gradient(90deg, ${THEME.surface} 25%, ${THEME.isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"} 50%, ${THEME.surface} 75%); background-size: 200% 100%; animation: uvixShimmer 1.2s ease-in-out infinite; }
-        @keyframes uvixShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-        .uvix-skeleton { background: linear-gradient(90deg, ${THEME.border} 25%, ${THEME.card} 37%, ${THEME.border} 63%); background-size: 400% 100%; animation: uvixShimmer 1.4s ease infinite; border-radius: 8px; }
+        .uvix-skeleton { background: linear-gradient(90deg, ${THEME.chip} 25%, ${THEME.hover} 37%, ${THEME.chip} 63%); background-size: 400% 100%; animation: uvixShimmer 1.4s ease infinite; border-radius: 6px; }
         @keyframes uvixShimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
         .uvix-chip { transition: all 0.15s ease; }
         .uvix-chip:hover { border-color: ${THEME.violet} !important; }
         .uvix-login-item { transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease; }
         .uvix-login-item:hover { background: rgba(255,255,255,0.09) !important; border-color: rgba(255,255,255,0.22) !important; transform: translateY(-1px); }
-        /* Dashboard — zamonaviy fintech uslubi: katta yumaloq burchaklar, yengil soya */
-        .uvix-dash-card { border-radius: 22px !important; box-shadow: ${THEME.shadowSm} !important; }
-        .uvix-dash-card:hover { box-shadow: ${THEME.shadowMd} !important; }
+        .uvix-dash-card { border-radius: ${THEME.radius + 2}px !important; box-shadow: none !important; }
         @media print {
           .no-print { display: none !important; }
           .print-area { display: block !important; }
@@ -613,24 +703,64 @@ export default function App() {
             z-index: 200;
             transform: translateX(-100%);
             transition: transform 0.25s ease;
-            box-shadow: 0 0 40px rgba(0,0,0,0.35);
+            box-shadow: ${THEME.shadowLg};
           }
           .uvix-sidebar-open { transform: translateX(0) !important; }
           .uvix-sidebar-backdrop {
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.4);
+            background: rgba(9,9,11,0.4);
             z-index: 190;
           }
         }
+        @media (max-width: 900px) { .uvix-hero-grid { grid-template-columns: 1fr !important; gap: 18px !important; } }
+        @media (max-width: 720px) {
+          .uvix-hide-mobile { display: none !important; }
+          .uvix-hero { padding: 16px !important; }
+          .uvix-topbar { padding: 14px 16px 0 !important; }
+          .uvix-main-pad { padding-left: 16px !important; padding-right: 16px !important; }
+        }
+        /* Jadval + o'ng panel (Buyurtmalar va boshqalar) */
+        .uvix-split { display: block; }
+        .uvix-split-open { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; align-items: start; }
+        .uvix-split-open > .uvix-order-panel, .uvix-split-open > .uvix-side-panel { position: sticky; top: 12px; max-height: calc(100vh - 24px); }
+        .uvix-split-backdrop { display: none; }
+        @media (max-width: 1180px) {
+          .uvix-split-open { display: block; }
+          .uvix-split-open > .uvix-order-panel, .uvix-split-open > .uvix-side-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); max-height: none; z-index: 210; border-radius: 0 !important; box-shadow: ${THEME.shadowLg}; animation: uvixPanelIn .2s cubic-bezier(.16,1,.3,1); }
+          .uvix-split-backdrop { display: block; position: fixed; inset: 0; z-index: 205; background: rgba(9,9,11,0.25); }
+        }
+        @keyframes uvixPanelIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+        .uvix-table tbody tr.uvix-row-selected:hover { background: ${THEME.navActiveBg} !important; }
+        @media (hover: hover) {
+          .uvix-row-actions { opacity: 0; transition: opacity .12s ease; }
+          tr:hover .uvix-row-actions, tr:focus-within .uvix-row-actions, tr.uvix-row-selected .uvix-row-actions { opacity: 1; }
+        }
+        /* Barcha jadvallar sarlavhasi bir xil: kichik harf, sokin rang */
+        .uvix-shell th { text-transform: none !important; letter-spacing: 0 !important; font-size: 12.5px !important; font-weight: 500 !important; color: ${THEME.muted} !important; }
+        .uvix-shell thead tr { background: ${THEME.isDark ? THEME.hover : "#FAFAFA"}; }
+        .uvix-mobile-only { display: none; }
+        @media (max-width: 860px) { .uvix-mobile-only { display: inline-flex; } }
+        .uvix-search-trigger:hover { border-color: ${THEME.border2} !important; color: ${THEME.muted} !important; }
+        .uvix-noscrollbar { scrollbar-width: none; } .uvix-noscrollbar::-webkit-scrollbar { display: none; }
+        .uvix-fchip:hover { border-color: ${THEME.mutedDark} !important; }
         /* Dashboard'ning 12-ustunli grid'i tor ekranlarda 2 ustun, keyin 1 ustunga siqiladi */
         @media (max-width: 680px) {
           .uvix-dash-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .uvix-dash-grid > div { grid-column: span 2 !important; }
         }
-        @media (max-width: 420px) {
-          .uvix-dash-grid { grid-template-columns: 1fr !important; }
-          .uvix-dash-grid > div { grid-column: span 1 !important; }
+        /* telefonda kichik/o'rta ko'rsatkichlar 2 tadan yonma-yon (raqam ixchamroq) */
+        @media (max-width: 680px) {
+          .uvix-dash-grid { gap: 10px !important; }
+          .uvix-dash-grid > div[data-size="sm"], .uvix-dash-grid > div[data-size="md"] { grid-column: span 1 !important; }
+          .uvix-dash-grid > div[data-size="sm"] .uvix-metric, .uvix-dash-grid > div[data-size="md"] .uvix-metric { padding: 12px !important; gap: 8px !important; }
+          .uvix-dash-grid > div[data-size="sm"] .uvix-metric > div:nth-child(2) span, .uvix-dash-grid > div[data-size="md"] .uvix-metric > div:nth-child(2) span { font-size: 16px !important; letter-spacing: -0.2px !important; }
+          .uvix-hero-bal { grid-template-columns: 1fr !important; gap: 8px !important; }
+          .uvix-hero-bal > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+          .uvix-hero-bal > div > div:last-child { margin-top: 0 !important; font-size: 15px !important; }
+        }
+        @media (max-width: 340px) {
+          .uvix-dash-grid > div[data-size] { grid-column: span 2 !important; }
         }
         /* Forma ichidagi 2-ustunli grid'lar (Field'lar) tor ekranda 1 ustunga tushadi */
         @media (max-width: 560px) {
@@ -638,17 +768,20 @@ export default function App() {
           [style*="grid-template-columns: 1.2fr 0.8fr 0.8fr auto"] { grid-template-columns: 1fr !important; }
         }
         /* Pastki menyu — oxirida turishi shart, hamburger qoidasini bekor qiladi */
-        ${NAV_CSS}
+        ${navCss()}
+        ${ncenterCss()}
         ${BOTTOM_NAV_CSS}
       `}</style>
-      <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}`} style={{ display: "flex", minHeight: "100vh", background: THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
-        <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} />
-        {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} />}
-        {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} />}
+      {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
+      <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden", position: "relative", zIndex: 1 }}>
+        <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }}
+          top={<SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} />} />
+        {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
+        {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} right={<CheckInButton compact={false} />} />
+          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={false} /></>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
-          <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 24px 40px" }}>
+          <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
             <Suspense fallback={<ViewFallback />}>
             {view === "dashboard" && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
@@ -673,11 +806,15 @@ export default function App() {
                 onUploadPhotos={uploadPhotos}
                 onDeletePhoto={deletePhoto}
                 pendingLead={pendingLeadForOrder}
+                leads={leads}
+                customerProfiles={customers}
                 onOrderLinkedToLead={linkOrderToLead}
               />
             )}
             {view === "crm" && (
               <CRMView
+                quickAddNonce={quickAdd?.kind === "lead" ? quickAdd.n : 0}
+                onQuickAddHandled={() => setQuickAdd(null)}
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onAssignTask={(lead, kind) => setTaskAssign({ lead, kind })}
                 leads={leads}
@@ -737,6 +874,12 @@ export default function App() {
               />
             )}
             {view === "attendance" && <AttendanceView currentUser={currentUser} isAdmin={isAdmin} />}
+            {view === "customers" && (
+              <CustomersView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} leads={leads} profiles={customers} transactions={myTx}
+                onSaveCustomer={saveCustomer} onAddPayment={addPayment} onDeletePayment={deletePayment}
+                onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
+                onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
+            )}
             {view === "paint" && (
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
@@ -764,6 +907,8 @@ export default function App() {
             )}
             {view === "settings" && (
               <SettingsView
+                notif={notif}
+                bgState={bgState}
                 currentUser={currentUser}
                 employees={employees}
                 onSave={persistEmployees}
@@ -807,6 +952,18 @@ export default function App() {
         />
         </Suspense>
       )}
+      <CommandPalette
+        open={cmdkOpen}
+        onClose={() => setCmdkOpen(false)}
+        nav={visibleNav}
+        orders={myOrders}
+        leads={leads}
+        customers={cmdkCustomers}
+        onNavigate={goView}
+        onSearchOrders={(q) => navigateWithFilter("orders", { search: q })}
+        onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
+        onNewLead={visibleNav.some((n) => n.key === "crm") ? () => { setNavFilter(null); setView("crm"); setQuickAdd({ kind: "lead", n: Date.now() }); } : null}
+      />
       <SaveStatus />
       <BottomNav
         view={view}
@@ -816,9 +973,16 @@ export default function App() {
         onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
       />
       {toast && (
-        <div className="uvix-toast" style={{ position: "fixed", bottom: 20, right: 20, background: THEME.ink, color: "#fff", padding: "10px 18px", borderRadius: 10, fontSize: 13, boxShadow: "0 8px 24px rgba(0,0,0,0.25)", zIndex: 200, display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: THEME.cyan, boxShadow: `0 0 8px ${THEME.cyan}` }} />
-          {toast}
+        <div key={toast.id} className="uvix-toast" role="status" aria-live="polite" style={{ position: "fixed", bottom: 20, right: 20, background: THEME.isDark ? "#2A2A2E" : "#18181B", color: "#FAFAFA", padding: toast.undo ? "8px 8px 8px 14px" : "10px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, boxShadow: THEME.shadowLg, zIndex: 400, display: "flex", alignItems: "center", gap: 10, maxWidth: "calc(100vw - 32px)" }}>
+          {!toast.undo && <div style={{ width: 6, height: 6, borderRadius: "50%", background: THEME.isDark ? "#3FB97A" : "#4ADE80", flexShrink: 0 }} />}
+          <span style={{ minWidth: 0 }}>{toast.msg}</span>
+          {toast.undo && (
+            <button type="button" data-testid="toast-undo" onClick={() => { const u = toast.undo; setToast(null); clearTimeout(toastTimer.current); u(); }}
+              style={{ height: 28, padding: "0 10px", borderRadius: 6, border: 0, background: "rgba(255,255,255,0.12)", color: "#FFFFFF", fontSize: 12.5, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+              Bekor qilish
+            </button>
+          )}
+          {toast.undo && <span key={toast.id} className="uvix-toast-bar" aria-hidden="true" />}
         </div>
       )}
     </div>

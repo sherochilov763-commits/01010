@@ -460,3 +460,84 @@ export const savePaintCount = (payload) => paintReq("/count", { method: "POST", 
 export const deletePaintCount = (id) => paintReq(`/count/${encodeURIComponent(id)}`, { method: "DELETE" });
 export const savePaintConfig = (cfg) => paintReq("/config", { method: "PUT", body: JSON.stringify(cfg) });
 export const sendPaintTest = () => paintReq("/test-alert", { method: "POST" });
+
+// ---- Qarz eslatmalari (admin) ----
+async function debtReq(path, opts = {}) {
+  const res = await fetch(`${API_BASE}/debts${path}`, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.message || data.error || `Xato: ${res.status}`), { status: res.status, data });
+  return data;
+}
+export const fetchDebtConfig = () => debtReq("/config").then((d) => d.config);
+export const saveDebtConfig = (cfg) => debtReq("/config", { method: "PUT", body: JSON.stringify(cfg) }).then((d) => d.config);
+export const sendDebtDigest = () => debtReq("/send", { method: "POST" });
+
+// ---- Mijozga Telegram xabarlari (hisob-faktura, kvitansiya, qarz eslatmasi) ----
+async function cmReq(path, opts = {}) {
+  const res = await fetch(`${API_BASE}/customer-msg${path}`, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.message || data.error || `Xato: ${res.status}`), { status: res.status, data });
+  return data;
+}
+export const fetchCustMsgConfig = () => cmReq("/config");
+export const saveCustMsgConfig = (cfg) => cmReq("/config", { method: "PUT", body: JSON.stringify(cfg) });
+export const fetchInvoiceRecipient = (orderId) => cmReq("/recipient", { method: "POST", body: JSON.stringify({ orderId }) });
+export const sendInvoice = (orderId, image, caption) => cmReq("/invoice", { method: "POST", body: JSON.stringify({ orderId, image, caption }) });
+export const fetchCustMsgLog = () => cmReq("/log").then((d) => d.log || []);
+export const fetchRemindPreview = () => cmReq("/preview-remind");
+
+// ---- Telegram xabarlari yo'nalishi (guruh / admin shaxsiy) ----
+export async function fetchTelegramRoutes() {
+  const res = await fetch(`${API_BASE}/telegram-routes`, { headers: authHeaders() });
+  if (!res.ok) throw new Error("Holatni olib bo'lmadi");
+  return res.json();
+}
+
+// ---- Hisobot va tahlil (admin) ----
+const qs = (o) => Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+export async function fetchAnalytics(from, to, cmp) {
+  const res = await fetch(`${API_BASE}/analytics?${qs({ from, to, cmp })}`, { headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `Xato: ${res.status}`);
+  return data;
+}
+export async function downloadAnalyticsPdf(from, to, cmp) {
+  const res = await fetch(`${API_BASE}/analytics/pdf?${qs({ from, to, cmp })}`, { headers: authHeaders() });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || "PDF yaratib bo'lmadi"); }
+  return res.blob();
+}
+export async function sendAnalyticsPdf(from, to, cmp) {
+  const res = await fetch(`${API_BASE}/analytics/send-pdf`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ from, to, cmp }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || "Yuborib bo'lmadi");
+  return d;
+}
+
+// ---- Bildirishnomalar markazi va Web Push ----
+async function nReq(path, method = "GET", body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...authHeaders() }, body: body ? JSON.stringify(body) : undefined,
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || d.error || `Xato: ${res.status}`);
+  return d;
+}
+export const fetchNotifications = () => nReq("/notifications");
+export const markNotificationsRead = (ids) => nReq("/notifications/read", "POST", ids === "all" ? { all: true } : { ids });
+export const saveNotifyPrefs = (prefs) => nReq("/notifications/prefs", "PUT", prefs);
+export const sendTestNotification = (cat) => nReq("/notifications/test", "POST", { cat });
+export const savePushSubscription = (subscription) => nReq("/push/subscribe", "POST", { subscription });
+export const removePushSubscription = (endpoint) => nReq("/push/unsubscribe", "POST", { endpoint });
+
+// ---- Shaxsiy fon (oboi) va shisha rejimi ----
+export async function fetchMyBackground() {
+  const res = await fetch(`${API_BASE}/me/background`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  return (await res.json().catch(() => ({}))).bg || null;
+}
+export async function saveMyBackground(bg) {
+  const res = await fetch(`${API_BASE}/me/background`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ bg }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || "Fonni saqlab bo'lmadi");
+  return d.bg || null;
+}

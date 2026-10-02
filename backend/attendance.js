@@ -189,10 +189,11 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
   const prevWeek = (date) => { const wd = weekdayOf(date) || 7; const mon = addDays(date, -(wd - 1) - 7); return { from: mon, to: addDays(mon, 6), key: mon }; };
   const prevMonth = (date) => { const [y, m] = date.split("-").map(Number); const pm = m === 1 ? 12 : m - 1, py = m === 1 ? y - 1 : y; const last = new Date(Date.UTC(py, pm, 0)).getUTCDate(); const mk = `${py}-${String(pm).padStart(2, "0")}`; return { from: `${mk}-01`, to: `${mk}-${last}`, key: mk, label: `${MONTHS[pm - 1]} ${py}` }; };
 
-  async function send(text) {
+  // kind: "daily" | "reports" | "absent" — server qaysi chatga (guruh / admin shaxsiy) yuborishni shu bo'yicha tanlaydi
+  async function send(text, kind = "reports") {
     const cfg = config();
     if (!text) return false;
-    return sendTelegram(text, cfg.reportChatId || undefined);
+    return sendTelegram(text, cfg.reportChatId || undefined, kind);
   }
 
   // Har daqiqada tekshiradi: vaqti kelgan hisobotni bir marta yuboradi (server qayta ishga tushsa ham takrorlanmaydi)
@@ -204,7 +205,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     let changed = false;
     if (cfg.reports.daily && sent.daily !== now.date && now.hm >= cfg.dailyAt && now.hm < "13:00" && cfg.schedule.days.includes(now.weekday)) {
       sent.daily = now.date; changed = true;
-      await send(dailyText(now.date));
+      await send(dailyText(now.date), "daily");
     }
     if (cfg.reports.weekly && now.weekday === 1 && now.hm >= "09:00") {
       const w = prevWeek(now.date);
@@ -241,7 +242,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
         mark("forgotOut"); await notifyEmployee(emp.id, `🕕 ${first}, ish ${sch.end} da tugadi — «Ketdim» bosishni unutmang.\nAks holda bugungi ish vaqtingiz to'liq hisoblanmaydi.${link}`);
       }
     }
-    if (absentForAdmin.length) await send(`⚠️ <b>Hali kelmadi (${now.hm})</b>\n${absentForAdmin.map((x) => `• ${x}`).join("\n")}`);
+    if (absentForAdmin.length) await send(`⚠️ <b>Hali kelmadi (${now.hm})</b>\n${absentForAdmin.map((x) => `• ${x}`).join("\n")}`, "absent");
     // Haftalik shaxsiy xulosa — dushanba 09:00 dan keyin, har xodimga bir marta
     if (P.weekly && now.weekday === 1 && now.hm >= "09:00") {
       const w = prevWeek(now.date);
@@ -415,8 +416,8 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     else if (type === "monthly") { const pm = prevMonth(today); text = periodText(`Oylik davomat — ${pm.label}`, pm.from, pm.to); }
     else return res.status(400).json({ error: "bad_type" });
     if (!text) return res.json({ ok: false, message: "Hisobot uchun ma'lumot yo'q" });
-    const ok = await send(text);
-    res.json({ ok: !!ok, text, message: ok ? "Yuborildi" : "Telegram bot sozlanmagan — Sozlamalarda bot token va chat ID kiriting" });
+    const ok = await send(text, type === "daily" ? "daily" : "reports");
+    res.json({ ok: !!ok, text, message: ok ? "Yuborildi" : "Yuborilmadi — Sozlamalarda bot token, guruh chat ID yoki shaxsiy Telegram'ingizni ulang" });
   });
 
   return { report, tick, dailyText, periodText, local, cleanupPhotos };

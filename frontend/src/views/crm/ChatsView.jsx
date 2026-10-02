@@ -1,24 +1,24 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Info, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, UserPlus, X } from "lucide-react";
-import { LAYOUT_CSS, Resizer, useChatLayout } from "./chatLayout.jsx";
+import { layoutCss, Resizer, useChatLayout } from "./chatLayout.jsx";
+import { C, applyChatPalette } from "./chatPalette.js";
 import { Incremental, useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
 import { fetchTelegramUserStatus, createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
-import { CHAT_CSS, Composer, MessageList } from "./ChatConversation.jsx";
+import { chatCss, Composer, MessageList } from "./ChatConversation.jsx";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 
-export const TG_BLUE = "#0088CC";
-export const TG_DARK_BG = "#0E1621";
-export const TG_DARK_SIDEBAR = "#17212B";
-export const TG_DARK_HOVER = "#202B36";
-export const TG_DARK_SELECTED = "#2B5278";
-export const TG_DARK_BORDER = "#101921";
-export const TG_DARK_TEXT = "#E4ECF2";
-export const TG_DARK_MUTED = "#6D7F91";
-export const TG_OUT_BUBBLE = "#2B5278";
-export const TG_IN_BUBBLE = "#182533";
+export const TG_BLUE = "#0088CC"; // Telegram brendi (tugmalar/belgilar uchun)
+// Quyidagilar joriy mavzuga qarab yangilanadi (applyPalette)
+export let TG_DARK_BG, TG_DARK_SIDEBAR, TG_DARK_HOVER, TG_DARK_SELECTED, TG_DARK_BORDER, TG_DARK_TEXT, TG_DARK_MUTED, TG_OUT_BUBBLE, TG_IN_BUBBLE;
+function applyPalette() {
+  applyChatPalette(THEME.isDark);
+  TG_DARK_BG = C.bg; TG_DARK_SIDEBAR = C.panel; TG_DARK_HOVER = C.hover; TG_DARK_SELECTED = C.selected; TG_DARK_BORDER = C.border;
+  TG_DARK_TEXT = C.text; TG_DARK_MUTED = C.muted; TG_OUT_BUBBLE = C.outBubble; TG_IN_BUBBLE = C.inBubble;
+}
+applyPalette();
 
 // Ro'yxatdagi vaqt: bugun — soat, shu hafta — hafta kuni, undan eski — sana (Telegram'dagidek)
 const WEEKDAYS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
@@ -37,6 +37,7 @@ function listTime(iso) {
 const lastKey = (list) => (list.length ? `${list[list.length - 1].id}|${list.length}` : "");
 
 export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMoveLead, onLeadCreated, initialChatId, onInitialChatHandled, isAdmin, onOpenSettings }) {
+  applyPalette(); // mavzu (yorug'/grafit) o'zgarsa ranglar shu chizishdayoq yangilanadi
   // Telegram ulanish holati: sessiya tugagan bo'lsa — har so'rovda xato ko'rsatish o'rniga bitta tushunarli ogohlantirish
   const [tgStatus, setTgStatus] = useState(null);
   useEffect(() => {
@@ -314,17 +315,17 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
 
   return (
     <div ref={containerRef} style={isMobile
-      ? { borderRadius: 16, overflow: "hidden", boxShadow: THEME.shadowLg }
+      ? { borderRadius: THEME.radius + 2, overflow: "hidden", border: `1px solid ${THEME.border}` }
       : fullscreen
         ? { display: "flex", position: "fixed", inset: 0, zIndex: 250, background: TG_DARK_BG }
-        : { display: "flex", height: "calc(100vh - 140px)", minHeight: 520, borderRadius: 16, overflow: "hidden", boxShadow: THEME.shadowLg }}>
-      <style>{LAYOUT_CSS}</style>
+        : { display: "flex", height: "calc(100vh - 140px)", minHeight: 520, borderRadius: THEME.radius + 2, overflow: "hidden", border: `1px solid ${THEME.border}` }}>
+      <style>{layoutCss()}</style>
       {/* Chap panel — suhbatlar royxati */}
       {showList && (<>
       <div style={{ width: isMobile ? "100%" : layout.listW, minHeight: isMobile ? "60vh" : undefined, flexShrink: 0, display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR, minWidth: 0 }}>
         {tgDown && (
-          <div data-testid="tg-down" role="alert" style={{ margin: "12px 12px 0", padding: "10px 12px", borderRadius: 12, background: "rgba(229,72,77,0.14)", border: "1px solid rgba(229,72,77,0.35)", color: "#FFB4B6", fontSize: 12.5, lineHeight: 1.45 }}>
-            <div style={{ fontWeight: 800, color: "#FFD2D3", marginBottom: 2 }}>
+          <div data-testid="tg-down" role="alert" style={{ margin: "12px 12px 0", padding: "10px 12px", borderRadius: 12, background: "rgba(229,72,77,0.14)", border: "1px solid rgba(229,72,77,0.35)", color: C.redText, fontSize: 12.5, lineHeight: 1.45 }}>
+            <div style={{ fontWeight: 700, color: C.redText, marginBottom: 2 }}>
               {tgStatus.status === "expired" ? "Telegram ulanishi uzildi" : "Telegram akkaunt ulanmagan"}
             </div>
             <div>{tgStatus.status === "expired" ? tgStatus.message : "Yangi xabarlar kelmaydi va yuborib bo'lmaydi."} Saqlangan yozishmalar ko'rinib turadi.</div>
@@ -339,9 +340,9 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
         )}
         <div style={{ padding: "16px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>Chatlar</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: TG_DARK_TEXT }}>Chatlar</div>
             {unreadTotal > 0 && (
-              <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: TG_BLUE, padding: "2px 7px", borderRadius: 10 }}>{unreadTotal}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: TG_BLUE, padding: "2px 7px", borderRadius: 10 }}>{unreadTotal}</span>
             )}
           </div>
           <div style={{ position: "relative", marginTop: 10 }}>
@@ -382,13 +383,13 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                        {lead && <span title="CRM'da lid bor" style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.3, color: "#6AB3F3", border: "1px solid rgba(106,179,243,0.45)", borderRadius: 6, padding: "0 5px", lineHeight: "15px", flexShrink: 0 }}>CRM</span>}
+                        <div style={{ fontSize: 13.5, fontWeight: 700, color: TG_DARK_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                        {lead && <span title="CRM'da lid bor" style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.3, color: C.link, border: `1px solid ${C.link}73`, borderRadius: 6, padding: "0 5px", lineHeight: "15px", flexShrink: 0 }}>CRM</span>}
                       </div>
                       {chat.lastDate && <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, flexShrink: 0, marginLeft: 6 }}>{listTime(chat.lastDate)}</div>}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 2 }}>
-                      <div style={{ fontSize: 12, color: TG_DARK_MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{chat.lastOut && chat.lastText ? <span style={{ color: "#8FA3B6" }}>Siz: </span> : null}{chat.lastText}</div>
+                      <div style={{ fontSize: 12, color: TG_DARK_MUTED, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{chat.lastOut && chat.lastText ? <span style={{ color: C.soft }}>Siz: </span> : null}{chat.lastText}</div>
                       {chat.unread && <span style={{ width: 8, height: 8, borderRadius: "50%", background: TG_BLUE, flexShrink: 0, marginLeft: 6 }} />}
                     </div>
                   </div>
@@ -418,10 +419,10 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
           </>
         ) : (
           <>
-            <div style={{ padding: isMobile ? "8px 10px" : "10px 14px 10px 20px", background: TG_DARK_SIDEBAR, color: "#fff", display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${TG_DARK_BORDER}` }}>
+            <div style={{ padding: isMobile ? "8px 10px" : "10px 14px 10px 20px", background: TG_DARK_SIDEBAR, color: TG_DARK_TEXT, display: "flex", alignItems: "center", gap: 10, borderBottom: `1px solid ${TG_DARK_BORDER}` }}>
               {isMobile && (
                 <button type="button" onClick={() => window.history.back()} aria-label={openedFromCrm.current ? "CRM'ga qaytish" : "Suhbatlar ro'yxatiga qaytish"}
-                  style={{ width: 44, height: 44, border: 0, background: "none", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  style={{ width: 44, height: 44, border: 0, background: "none", color: TG_DARK_TEXT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
                   <ArrowLeft size={22} />
                 </button>
               )}
@@ -443,12 +444,12 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                 </button>
               )}
             </div>
-            <style>{CHAT_CSS + ADD_CSS}</style>
+            <style>{chatCss() + addCss()}</style>
             <div ref={scrollRef} onScroll={onMessagesScroll} style={{ flex: 1, overflowY: "auto", overflowAnchor: "none", padding: isMobile ? "14px 10px" : 18, display: "flex", flexDirection: "column", gap: 8 }}>
               {!loadingMessages && messages.length > 0 && (
                 <div aria-live="polite" style={{ alignSelf: "center", fontSize: 12, color: TG_DARK_MUTED, padding: "4px 12px", minHeight: 22, display: "flex", alignItems: "center", gap: 6 }}>
                   {loadingOlder ? (<><Loader2 size={14} className="uc-spin" /> Eski xabarlar yuklanmoqda…</>)
-                    : hasOlder ? (<button type="button" onClick={loadOlder} style={{ border: 0, background: "rgba(255,255,255,0.06)", color: "#8FA3B6", borderRadius: 12, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Eski xabarlarni yuklash</button>)
+                    : hasOlder ? (<button type="button" onClick={loadOlder} style={{ border: 0, background: C.overlay, color: C.muted, borderRadius: 12, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Eski xabarlarni yuklash</button>)
                     : <span>Suhbat boshi</span>}
                 </div>
               )}
@@ -463,7 +464,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               <div ref={bottomRef} />
             </div>
             {error && (
-              <div role="alert" onClick={() => setError("")} style={{ color: "#FF9EA1", background: "rgba(229,72,77,0.12)", fontSize: 12.5, padding: "8px 18px", cursor: "pointer" }}>{error}</div>
+              <div role="alert" onClick={() => setError("")} style={{ color: C.redText, background: "rgba(220,38,38,0.10)", fontSize: 12.5, padding: "8px 18px", cursor: "pointer" }}>{error}</div>
             )}
             <Composer
               key={selectedChatId}
@@ -493,7 +494,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
           {isMobile && (
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 4 }}>
               <button type="button" onClick={() => setInfoOpen(false)} aria-label="Yopish"
-                style={{ width: 44, height: 44, border: 0, borderRadius: 12, background: TG_DARK_HOVER, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                style={{ width: 44, height: 44, border: 0, borderRadius: 12, background: TG_DARK_HOVER, color: TG_DARK_TEXT, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                 <X size={20} />
               </button>
             </div>
@@ -502,17 +503,17 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: TG_BLUE, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, margin: "0 auto 10px" }}>
               {(selectedName || "?").slice(0, 1).toUpperCase()}
             </div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>{selectedName}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: TG_DARK_TEXT }}>{selectedName}</div>
           </div>
 
           {!selectedLead && (
             <div style={{ background: TG_DARK_HOVER, borderRadius: 12, padding: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 12.5, color: "#C5D2DD", lineHeight: 1.45, marginBottom: 10 }}>Bu suhbat CRM'da yo'q. Mijoz bo'lsa — lid sifatida qo'shing, bosqichi va buyurtmasini kuzatasiz.</div>
+              <div style={{ fontSize: 12.5, color: C.soft, lineHeight: 1.45, marginBottom: 10 }}>Bu suhbat CRM'da yo'q. Mijoz bo'lsa — lid sifatida qo'shing, bosqichi va buyurtmasini kuzatasiz.</div>
               {addBtn(true)}
             </div>
           )}
           {selectedLead && justAdded === selectedChatId && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#7BD88F", fontSize: 12.5, marginBottom: 12 }}><Check size={15} /> CRM'ga qo'shildi</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.green, fontSize: 12.5, marginBottom: 12 }}><Check size={15} /> CRM'ga qo'shildi</div>
           )}
 
           {selectedLead && onMoveLead && (
@@ -531,19 +532,19 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Telefon</div>
-              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedPhone || "—"}</div>
+              <div style={{ fontSize: 13, color: TG_DARK_TEXT, marginTop: 2 }}>{selectedPhone || "—"}</div>
             </div>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Username</div>
-              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedUsername ? `@${selectedUsername}` : "—"}</div>
+              <div style={{ fontSize: 13, color: TG_DARK_TEXT, marginTop: 2 }}>{selectedUsername ? `@${selectedUsername}` : "—"}</div>
             </div>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Menejer</div>
-              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedLead?.manager || "—"}</div>
+              <div style={{ fontSize: 13, color: TG_DARK_TEXT, marginTop: 2 }}>{selectedLead?.manager || "—"}</div>
             </div>
             <div>
               <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, textTransform: "uppercase" }}>Manba</div>
-              <div style={{ fontSize: 13, color: "#fff", marginTop: 2 }}>{selectedLead?.source || "—"}</div>
+              <div style={{ fontSize: 13, color: TG_DARK_TEXT, marginTop: 2 }}>{selectedLead?.source || "—"}</div>
             </div>
           </div>
 
@@ -552,7 +553,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             {selectedLead?.orderId ? (
               <div style={{ background: TG_DARK_HOVER, borderRadius: 10, padding: 10 }}>
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: THEME.green, background: THEME.greenBg, padding: "2px 8px", borderRadius: 8 }}>Bog'langan</span>
-                <div style={{ fontSize: 12.5, color: "#fff", marginTop: 6 }}>Buyurtmaga o'tilgan</div>
+                <div style={{ fontSize: 12.5, color: TG_DARK_TEXT, marginTop: 6 }}>Buyurtmaga o'tilgan</div>
               </div>
             ) : (
               <div style={{ fontSize: 12, color: TG_DARK_MUTED }}>Hali bitim yo'q</div>
@@ -564,12 +565,12 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
   );
 }
 
-const ADD_CSS = `
-  .uc-addlead { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(106,179,243,0.5); background: rgba(0,136,204,0.14); color: #8CC8F5; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; font-family: inherit; }
-  .uc-addlead:hover:not(:disabled) { background: rgba(0,136,204,0.26); color: #fff; }
+const addCss = () => `
+  .uc-addlead { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid ${C.link}66; background: ${C.link}1F; color: ${C.link}; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap; font-family: inherit; }
+  .uc-addlead:hover:not(:disabled) { background: ${C.link}33; }
   .uc-addlead:disabled { opacity: .7; cursor: default; }
-  .uc-addlead[data-full] { width: 100%; height: 42px; background: #0088CC; border-color: #0088CC; color: #fff; }
-  .uc-addlead[data-full]:hover:not(:disabled) { background: #0A96DE; }
+  .uc-addlead[data-full] { width: 100%; height: 42px; background: ${C.blue}; border-color: ${C.blue}; color: #fff; }
+  .uc-addlead[data-full]:hover:not(:disabled) { background: ${C.blueHover}; }
   @media (max-width: 768px) { .uc-addlead:not([data-full]) { width: 44px; height: 44px; padding: 0; border-radius: 12px; } }
   .uc-spin { animation: uc-spin 0.9s linear infinite; }
   @keyframes uc-spin { to { transform: rotate(360deg); } }

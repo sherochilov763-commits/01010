@@ -1,3 +1,4 @@
+import { C } from "./chatPalette.js";
 // chatLayout.jsx — Chat oynasi panellari: kenglikni surib o'zgartirish, yashirish, to'liq ekran.
 // Tanlovlar shu brauzerda eslab qolinadi (har kim o'zi uchun sozlaydi).
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,7 +38,7 @@ export function useChatLayout() {
  * Panellar orasidagi surgich. side="left" — chap panel kengligi (o'ngga sursa kattalashadi),
  * side="right" — o'ng panel (chapga sursa kattalashadi). Ikki marta bosish — standart o'lcham.
  */
-export function Resizer({ side, width, onChange, containerRef, otherWidth, color = "#101921", accent = "#0088CC" }) {
+export function Resizer({ side, width, onChange, containerRef, otherWidth, color, accent }) {
   const [drag, setDrag] = useState(false);
   const start = useRef(null);
   const limits = side === "left" ? LIST_W : INFO_W;
@@ -85,18 +86,18 @@ export function Resizer({ side, width, onChange, containerRef, otherWidth, color
       onDoubleClick={() => set(limits.def)}
       onKeyDown={onKeyDown}
       className="uc-resizer"
-      style={{ width: 7, flexShrink: 0, cursor: "col-resize", position: "relative", background: color, touchAction: "none", zIndex: 2 }}
+      style={{ width: 7, flexShrink: 0, cursor: "col-resize", position: "relative", background: "transparent", touchAction: "none", zIndex: 2, margin: "0 -3px" }}
     >
-      <span style={{ position: "absolute", top: 0, bottom: 0, left: 3, width: 1, background: drag ? accent : "transparent", transition: "background .12s" }} />
+      <span style={{ position: "absolute", top: 0, bottom: 0, left: 3, width: 1, background: drag ? (accent || C.blue) : (color || C.border), transition: "background .12s" }} />
       {drag && <style>{`body{cursor:col-resize!important;user-select:none!important}`}</style>}
     </div>
   );
 }
 
-export const LAYOUT_CSS = `
-  .uc-resizer:hover > span, .uc-resizer:focus-visible > span { background: #0088CC !important; }
+export const layoutCss = () => `
+  .uc-resizer:hover > span, .uc-resizer:focus-visible > span { background: ${C.blue} !important; }
   .uc-resizer:focus-visible { outline: none; }
-  .uc-tool { width: 36px; height: 36px; border-radius: 10px; border: 0; background: none; color: #6D7F91; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
-  .uc-tool:hover { background: #202B36; color: #E4ECF2; }
-  .uc-tool[aria-pressed="true"] { color: #6AB3F3; }
+  .uc-tool { width: 36px; height: 36px; border-radius: 10px; border: 0; background: none; color: ${C.muted}; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
+  .uc-tool:hover { background: ${C.hover}; color: ${C.text}; }
+  .uc-tool[aria-pressed="true"] { color: ${C.link}; }
 `;

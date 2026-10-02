@@ -52,7 +52,7 @@ export function SelfieCapture({ onDone, onCancel }) {
     <div role="dialog" aria-label="Selfi" style={{ position: "fixed", inset: 0, zIndex: 400, background: "#0B0816", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "min(380px, 100%)", display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: "#fff" }}>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>Selfi — ishga keldingiz</div>
+          <div style={{ fontWeight: 700, fontSize: 16 }}>Selfi — ishga keldingiz</div>
           <button type="button" onClick={onCancel} aria-label="Bekor qilish" style={{ border: 0, background: "rgba(255,255,255,0.1)", color: "#fff", width: 36, height: 36, borderRadius: 10, cursor: "pointer" }}><X size={18} /></button>
         </div>
         <div style={{ position: "relative", aspectRatio: "3 / 4", borderRadius: 22, overflow: "hidden", background: "#000" }}>
@@ -65,7 +65,7 @@ export function SelfieCapture({ onDone, onCancel }) {
         {shot ? (
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" onClick={() => setShot(null)} style={{ flex: 1, height: 52, borderRadius: 16, border: "1px solid rgba(255,255,255,0.2)", background: "none", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit" }}><RotateCcw size={18} /> Qayta</button>
-            <button type="button" data-testid="selfie-send" onClick={() => onDone(shot)} style={{ flex: 2, height: 52, borderRadius: 16, border: 0, background: THEME.green, color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>Keldim ✓</button>
+            <button type="button" data-testid="selfie-send" onClick={() => onDone(shot)} style={{ flex: 2, height: 52, borderRadius: 16, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>Keldim ✓</button>
           </div>
         ) : (
           <button type="button" data-testid="selfie-shoot" onClick={capture} disabled={!ready} style={{ alignSelf: "center", width: 76, height: 76, borderRadius: "50%", border: "4px solid #fff", background: ready ? THEME.green : "#555", cursor: ready ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }} aria-label="Rasmga olish">

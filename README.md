@@ -574,3 +574,192 @@ UV bo'yoqlar qoldig'ini litrda yuritadi va qachon tugashini oldindan aytadi.
   - `GET /api/paint`, `GET /api/paint/month?ym=`, `GET /api/paint/counts`
   - `POST /api/paint/count`, `DELETE /api/paint/count/:id` (admin)
   - `PUT /api/paint/config` (admin), `POST /api/paint/test-alert` (admin)
+
+### Mijozlar bazasi va qarz eslatmalari (menyu → «Mijozlar»)
+
+**Mijozlar bazasi avtomatik yig'iladi.** Manba — buyurtmalar (mijoz nomi bo'yicha) va CRM lidlari. Har lid quyidagi tartibda mijozga bog'lanadi:
+1. bog'langan buyurtma;
+2. mijoz nomi;
+3. telefon (oxirgi 9 raqam);
+4. Telegram nik.
+
+Nomdagi katta-kichik harf va ortiqcha bo'shliq farq qilmaydi. Hech qaysi mijozga bog'lanmagan lid faqat «Jarayonda» yoki «Yopilgan» bosqichida bo'lsa alohida mijoz sifatida qo'shiladi.
+
+**Tahrirlash.** Mijozga telefon, Telegram va izoh qo'shish mumkin. **Birlashtirish** — bir mijoz turli nomlar bilan yozilgan bo'lsa (masalan, «Olim Mebel» va «Olim furniture»), nomlar bitta mijozga qo'shiladi va eski buyurtmalar ham shu mijozga tushadi. Ma'lumot `uvix:customers` kalitida saqlanadi (birlashtirib saqlanadigan ro'yxat — merge-sync).
+
+**Mijoz kartasida:**
+- buyurtmalar soni, aylanma, o'rtacha chek, to'langan, qarz, birinchi buyurtma sanasi;
+- buyurtmalar ro'yxati (qarzi borlarida «To'lov» tugmasi);
+- to'lovlar tarixi;
+- CRM lidlari («Chat» tugmasi);
+- qo'ng'iroq va Telegram tugmalari.
+
+**Ro'yxat:**
+- qidirish (ism, telefon yoki @nik);
+- saralash (oxirgi buyurtma, aylanma, qarz, buyurtmalar soni, nom);
+- filtrlar (qarzdor, telefonsiz, faqat lid);
+- Excel'ga eksport.
+
+**Buyurtma formasi:** mijoz nomini yozganda bazadagi nomlar taklif qilinadi. Tanish mijozda «Doimiy mijoz: N ta buyurtma · telefon · qarzi …» ko'rsatmasi chiqadi.
+
+**Qarzdorlar:**
+- har qanday qarz darhol ro'yxatga tushadi;
+- ro'yxat qarz summasi bo'yicha tartiblanadi;
+- eng eski qarzning necha kunligi rang bilan ko'rsatiladi (7 kundan oshsa — sariq, 30 kundan oshsa — qizil);
+- oxirgi to'lov sanasi ko'rinadi;
+- mijoz qatori ochilganda qarzli buyurtmalar chiqadi va to'lovni shu yerning o'zida qabul qilish mumkin;
+- Excel'ga eksport.
+
+**Kunlik Telegram xulosa** (`backend/debts.js`). Standart bo'yicha har ish kuni (Du–Sh) soat 10:00 da adminning shaxsiy Telegram'iga boradi. Xabarda:
+- jami qarz;
+- eng katta 10 qarzdor (telefoni bilan);
+- kecha to'langan summa;
+- kecha qo'shilgan qarz.
+
+Qarz ham, kechagi to'lov ham bo'lmasa, xabar yuborilmaydi. Vaqt, kunlar va «Hozir yuborish» tugmasi — Mijozlar → Qarzdorlar sahifasining pastida. API: `GET/PUT /api/debts/config`, `POST /api/debts/send` (faqat admin).
+
+### Mijozga Telegram xabarlari: hisob-faktura, to'lov kvitansiyasi, qarz eslatmasi
+
+Xabarlar sizning Telegram akkauntingiz (userbot) orqali, mijozning shaxsiy chatiga boradi. Kod: `backend/customer-msg.js`.
+
+Mijozning Telegrami quyidagi tartibda qidiriladi:
+1. CRM lididagi chat;
+2. mijozlar bazasidagi @username;
+3. liddagi @username.
+
+Telegrami topilmagan mijozga hech narsa yuborilmaydi.
+
+**Hisob-faktura (faqat qo'lda).** Yuborish uchun quyidagi joylardan birida 📄 tugmasini bosasiz:
+- Buyurtmalar ro'yxati;
+- mijoz kartasi;
+- Qarzdorlar ro'yxati.
+
+So'ng ko'rinishi va xabar matni ochiladi, ularni tekshirib «Telegram'ga yuborish»ni bosasiz. Rasm brauzerda chiziladi (`frontend/src/lib/invoiceCanvas.js`, kengligi 1080px), shuning uchun serverga brauzer o'rnatish shart emas.
+- **Rasmda:** buyurtma raqami, mijoz va telefoni, ish/material va m², jami summa, to'langan qism, «To'lash kerak» bloki, karta rekvizitlari va menejer telefoni.
+- **Ko'rsatilmaydi:** buyurtmadagi $ narxlar — ular kraska hisob-kitobi uchun.
+- Rasmni «Rasmni saqlash» tugmasi bilan yuklab olish ham mumkin.
+
+**To'lov qabul qilindi (avtomatik).** Buyurtmaga yangi to'lov kiritilganda mijozga summa, to'lov turi va qolgan qarz boradi. Qarz qolmagan bo'lsa, «to'liq to'landi» deb yoziladi. Faqat oxirgi 15 daqiqada kiritilgan to'lovlar uchun yuboriladi: import yoki zaxiradan tiklashda mijozga xabar ketmaydi.
+
+**Qarz eslatmasi (avtomatik, standart bo'yicha o'chiq).**
+- Qarz N kundan oshsa (standart 7), belgilangan vaqtda (standart 11:00, Du–Sh) mijozga yumshoq eslatma boradi: qaysi buyurtmalar, qancha qolgan va karta raqami.
+- Har mijozga ko'pi bilan har 7 kunda bir marta.
+- Kuniga ko'pi bilan 20 ta xabar, ular orasida 3 soniya pauza — Telegram cheklamasligi uchun.
+
+**Sozlash:** Mijozlar → Xabarlar (faqat admin):
+- rekvizitlar (karta raqami, karta egasi, menejer telefoni va ismi, logotip ostidagi yozuv);
+- avtomatik xabarlarni yoqish/o'chirish;
+- navbatdagi eslatma kimlarga borishi va xabar namunasi;
+- yuborilgan xabarlar jurnali.
+
+**API:**
+- `GET/PUT /api/customer-msg/config`
+- `POST /api/customer-msg/recipient`
+- `POST /api/customer-msg/invoice`
+- `GET /api/customer-msg/log` (admin)
+- `GET /api/customer-msg/preview-remind` (admin)
+
+### Telegram xabarlari: xodimlar guruhi va adminning shaxsiy chati
+
+Har bir xabar turi uchun qayerga borishi alohida tanlanadi: **Guruh**, **Menga** (adminning shaxsiy Telegrami, UVIX boti orqali), **Ikkalasi** yoki **O'chiq**. Sozlash joyi: Sozlamalar → Telegram xabarnomalari → «Qaysi xabar qayerga borsin».
+- **Guruh** — Sozlamalardagi «Xodimlar guruhi Chat ID».
+- **Menga** — UVIX botiga ulangan adminlar. Ulanish: «Telegram'ni ulash» tugmasi → botda Start.
+
+**Tavsiya etilgan sozlama (standart):**
+
+| Xabar | Qayerga |
+|---|---|
+| Yangi buyurtma | Guruh |
+| Yangi to'lov, yangi rasxod | Menga |
+| Kunlik Excel hisobot, baza zaxirasi | Menga |
+| Davomat: kunlik «kim keldi/kelmadi» | Guruh |
+| Davomat: «Hali kelmadi», haftalik/oylik hisobot | Menga |
+| Bo'yoq zahirasi, qarz xulosasi, tizim ogohlantirishlari | Menga |
+
+**Muhim:**
+- Admin hali shaxsiy Telegramini ulamagan bo'lsa, «Menga» xabarlari guruhga ketadi, shunda hech narsa yo'qolmaydi. Sozlamalarda bu haqda ogohlantirish ko'rinadi.
+- Davomat sozlamalarida alohida «hisobot chat ID» kiritilgan bo'lsa, davomat hisobotlari shu chatga ketadi.
+- Kod: `notify(kategoriya, matn)` va `notifyDoc(...)` (server.js); kategoriyalar `TG_ROUTE_DEFAULTS` da; holat API'si `GET /api/telegram-routes` (admin).
+
+**Shu bosqichda tuzatilgan xatolar:**
+- Kunlik zaxira vaqti server soati (UTC) bo'yicha tekshirilardi. Endi Toshkent vaqti bo'yicha.
+- Oxirgi zaxira sanasi noto'g'ri formatda saqlanardi va zaxira tekshiruvi xatoga uchrardi. Endi ikkala format ham to'g'ri o'qiladi.
+
+### 4-bosqich: Hisobot va tahlil (menyu → «Hisobot», faqat admin)
+
+**Davr tanlash:**
+- Oy, chorak yoki yil — strelkalar bilan oldinga-orqaga suriladi.
+- Ixtiyoriy oraliq.
+- Oyning dastlabki 5 kunida sahifa o'tgan oy hisoboti bilan ochiladi.
+
+**Taqqoslash:**
+- «Oldingi davr bilan»: oy oldingi oy bilan, chorak oldingi chorak bilan, yil boshidan bugungacha esa o'tgan yilning xuddi shu kunlari bilan solishtiriladi. Oy hali tugamagan bo'lsa, oldingi oyning xuddi shu kunlari olinadi.
+- «O'tgan yil bilan»: o'tgan yilning shu davri bilan.
+
+**Bloklar:**
+- **Asosiy ko'rsatkichlar:** tushum, qo'shilgan qiymat, sof foyda va marja, davr oxiridagi qarzdorlik. Har biri o'zgarish foizi bilan.
+- **Xulosalar** (avtomatik): foyda va kassa o'rtasidagi farq, eng ko'p o'sgan rasxod, marja o'zgarishi, materialning tushumdagi ulushi, eng yaxshi menejer.
+- **Foyda va zarar** (hisoblangan usul, buyurtma sanasi bo'yicha):
+  1. Tushumdan kraska, material va brak ayiriladi — qo'shilgan qiymat chiqadi.
+  2. Undan kategoriyalar bo'yicha operatsion rasxodlar ayiriladi — sof foyda qoladi.
+  3. «Shaxsiy» rasxodlar foydadan tashqari, alohida ko'rsatiladi.
+- **Oyma-oy:** oxirgi 12 oy grafigi (tushum, rasxod, sof foyda). Ustunga olib borganda shu oy tafsiloti chiqadi.
+- **Pul oqimi:** haqiqatda kelgan to'lovlar va to'langan barcha rasxodlar.
+- **Menejerlar reytingi:**
+  - menejer buyurtmadagi «Mas'ul menejer» maydonidan olinadi, bo'sh bo'lsa — buyurtmani kiritgan xodim;
+  - ustunlar: buyurtmalar, aylanma, yig'ilgan to'lov, o'rtacha chek, lid → buyurtma konversiyasi, qarz ulushi, oldingi davrga nisbatan o'zgarish.
+
+**Fayllar:**
+- **Excel** — davrdagi buyurtmalar va rasxodlar.
+- **PDF** — A4 hisobot, serverda yaratiladi (`backend/analytics-pdf.js`, pdfkit va `backend/fonts`).
+- **«Telegram'ga»** — PDF'ni hoziroq yuboradi.
+- **Har oyning 1-kuni 09:00 da** o'tgan oy PDF hisoboti avtomatik yuboriladi. Qayerga — Sozlamalar → Telegram → «Oylik PDF hisobot» qatori (standart: shaxsiy chatga).
+
+**Kod va API:**
+- Hisoblash: `backend/analytics.js`. Unda fs yo'q, demo ham shu kod bilan ishlaydi.
+- `GET /api/analytics?from&to&cmp=prev|yoy`
+- `GET /api/analytics/pdf`
+- `POST /api/analytics/send-pdf`
+- Yangi bog'liqlik: `pdfkit` — deploydan oldin `npm install`.
+
+## 🎨 Professional dizayn v2 (2026-10)
+
+Faqat ko'rinish yangilandi — hisob-kitob, ma'lumotlar va mavjud funksiyalar o'zgarmadi.
+
+**Ranglar va uslub**
+- Standart: yorug' neytral fon (`#F7F7F8`) + bitta ko'k urg'u (`#1F5FD6`). Qorong'i rejim — **Grafit** (`#0C0C0E`) + ko'k.
+- Siyohrang gradientlar, porloq soyalar va og'ir shriftlar olib tashlandi. Butun ilovada bitta shrift — **Onest** (endi serverning o'zidan yuklanadi, Google Fonts'ga bog'liq emas).
+- Sidebar qora blok emas: oq panel + ingichka chegara. Ikonlar sokin, faqat faol bo'lim ko'k.
+- Sozlamalar → Ko'rinish: rejim (Yorug' / Kulrang / Grafit), urg'u rangi (Ko'k, Grafit, Indigo, Yashil, To'q sariq yoki o'zingiz), zichlik, burchak, sidebar uslubi.
+- Eski (siyohrang) sozlama saqlangan bo'lsa — bir marta avtomatik yangi dizaynga o'tadi (zichlik va sidebar tanlovi saqlanadi).
+- Ilova ikonasi, kirish ekrani, telefon yuqori panel rangi ham yangilandi.
+
+**Buyurtmalar: jadval + o'ng panel**
+- Qatorni bossangiz o'ngda tafsilot paneli ochiladi: summa / to'langan / qarz, menejer, kraska, material, qo'shilgan qiymat, to'lovlar tarixi. Pastida: «To'lov qabul qilish», «Faktura», tahrirlash, o'chirish.
+- Filtr chiplari: Hammasi / Qarzdorlar / To'langan (soni bilan) va UVIXPRINT / UVONYX. Tepada: nechta buyurtma va jami summa.
+- Qatordagi amal tugmalari sichqoncha olib borilganda chiqadi (telefonda doim ko'rinadi). Tor ekranda panel o'ngdan suriladigan oyna bo'lib ochiladi.
+
+**CRM: ixcham kartalar**
+- Karta: mijoz, summa, izoh (1 qator), vazifalar, manba, menejer bosh harflari. Harakatsiz turgan lid — chap chetida sariq/qizil chiziq va «N kun turibdi».
+- Tugmalar (chat/qo'ng'iroq, ← →, tahrirlash, o'chirish) karta ustiga kelganda chiqadi. Ikki marta bosish — tahrirlash. «Yangi lid» ustunida «+ Lid qo'shish».
+
+**Ctrl+K (Mac: ⌘K) — tezkor qidiruv**
+- Buyurtma raqami, mijoz, lid yoki bo'lim nomini yozing → Enter. «Yangi buyurtma / rasxod / lid» ham shu yerdan.
+- Sidebar tepasidagi «Qidirish» tugmasi yoki telefonda sarlavha yonidagi lupa.
+
+**Bekor qilish (undo)**
+- Buyurtma, rasxod yoki to'lov o'chirilganda pastda 6 soniya «Bekor qilish» tugmasi chiqadi (chiqindi qutisidan qaytaradi).
+- Bo'lim yuklanayotganda jadval skeleti ko'rinadi.
+
+**Bildirishnomalar markazi va push**
+- Sarlavhadagi qo'ng'iroqcha: yangi buyurtma, to'lov, Telegram xabari, rasxod, qarz eslatmasi, bo'yoq, davomat, hisobot, tizim. Bosilsa — tegishli bo'limga o'tadi.
+- Manba — mavjud Telegram xabarnomalari (yangi hodisa qo'shilmadi). Operator: buyurtma, to'lov, chat; admin: hammasi.
+- **Push** — ilova yopiq bo'lsa ham telefon/kompyuter ekranida chiqadi (Sozlamalar → Bildirishnomalar → «Yoqish»). VAPID kalitlari birinchi ishga tushishda avtomatik yaratiladi va bazada saqlanadi — qo'shimcha sozlash shart emas. iPhone'da: avval «Ulashish → Bosh ekranga qo'shish».
+- Har xodim o'zi tanlaydi: har bir turkum uchun Ilovada / Push / Ovoz, sokin soatlar (masalan 22:00–08:00), ovoz balandligi. «Muhim» xabarlar (bo'yoq tugadi, Telegram uzildi) ilovada doim ko'rinadi va sokin soatlarda ham keladi.
+- Ovozlar (UVIX uchun maxsus yaratilgan): Marimba (standart), Chime up (buyurtma), Pul tushdi (to'lov), Tink (kichik xabarlar), Muhim. Ovoz ilova ochiq bo'lganda chalinadi; ilova yopiq bo'lsa push telefonning o'z ovozi bilan keladi (brauzer cheklovi).
+- Yangi API: `GET /api/notifications`, `POST /api/notifications/read`, `PUT /api/notifications/prefs`, `POST /api/notifications/test`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`. Backend'ga `web-push` paketi qo'shildi.
+
+**Fon va shisha rejimi (faqat kompyuterda)**
+- Sozlamalar → Fon va shisha rejimi: Fonsiz, Yumshoq gradient, Tog' manzarasi, **Kun vaqti bo'yicha** (tong / kun / oqshom / tun — Toshkent vaqti bilan o'zi almashadi), **O'z rasmim** (1920 px gacha kichraytirib saqlanadi).
+- **Shisha rejimi** (Bitrix24 kabi): panellar shaffof, fon ko'rinadi, yozuvlar oq. «Oqshom va tunda qorong'i rejim» — kun vaqti fonida.
+- Har xodimning o'zi uchun (`GET/PUT /api/me/background`). Telefonda tezlik uchun fon ko'rsatilmaydi. Video fon yo'q.

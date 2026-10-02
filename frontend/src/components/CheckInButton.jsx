@@ -96,7 +96,7 @@ export function CheckInButton({ compact = false }) {
     style = { background: THEME.card, color: THEME.text, border: `1px solid ${over ? THEME.green : THEME.border}`, position: "relative", overflow: "hidden" };
     content = <>
       <Clock size={15} color={today.status === "late" ? THEME.amber : THEME.green} />
-      <span data-testid="work-timer" style={{ fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", fontWeight: 800 }}>{fmtClock(sec)}</span>
+      <span data-testid="work-timer" style={{ fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{fmtClock(sec)}</span>
       {!compact && <span style={{ color: THEME.muted, fontWeight: 600 }}>· {sch.end} gacha</span>}
       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 4, paddingLeft: 9, borderLeft: `1px solid ${THEME.border}` }}><LogOut size={14} /> Ketdim</span>
       <span aria-hidden="true" style={{ position: "absolute", left: 0, bottom: 0, height: 3, width: `${pct}%`, background: over ? THEME.green : today.status === "late" ? THEME.amber : THEME.violet, transition: "width 1s linear" }} />

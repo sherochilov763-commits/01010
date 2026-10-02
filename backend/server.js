@@ -389,14 +389,75 @@ const attPhotoStore = {
   },
 };
 const staffBot = require("./telegram-bot")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin });
-// Adminlarga shaxsiy xabar: Telegram'ini UVIX botiga ulagan adminlarga; hech kim ulanmagan bo'lsa — umumiy chatga
-async function notifyAdmins(text) {
-  let any = false;
-  for (const e of readEmployees().filter((x) => x.role === "admin")) if (await staffBot.sendToEmployee(e.id, text)) any = true;
-  return any || (await sendTelegramTo(text));
+// ==================== Telegram xabarlari: qaysi biri qayerga ====================
+// group — xodimlar guruhi (Sozlamalardagi chat ID), admin — adminning shaxsiy Telegrami (UVIX botiga ulangan),
+// both — ikkalasiga, off — yuborilmaydi. Shaxsiy Telegram ulanmagan bo'lsa, "admin" xabari guruhga ketadi (yo'qolmasin).
+// ==================== Bildirishnomalar markazi + Web Push ====================
+let webpushLib = null;
+try { webpushLib = require("web-push"); } catch { console.warn("web-push o'rnatilmagan — push bildirishnomalar o'chiq"); }
+const notifications = require("./notifications")(app, { getStmt, upsertStmt, readEmployees, requireAuth, webpush: webpushLib });
+
+const TG_ROUTE_DEFAULTS = {
+  orders: "group", payments: "admin", expenses: "admin", dailyReport: "admin", backup: "admin",
+  attendanceDaily: "group", attendanceAbsent: "admin", attendanceReports: "admin",
+  paint: "admin", debts: "admin", system: "admin", monthlyReport: "admin",
+};
+function tgRoute(cat) {
+  let s = {};
+  try { s = JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch {}
+  const r = (s.tgRoutes || {})[cat] || TG_ROUTE_DEFAULTS[cat] || "group";
+  return ["group", "admin", "both", "off"].includes(r) ? r : "group";
 }
-const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins });
-const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: sendTelegramTo, photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee });
+const adminIds = () => readEmployees().filter((x) => x.role === "admin").map((x) => x.id);
+async function notify(cat, text) {
+  // Ilova ichidagi bildirishnoma (va push) — Telegram yo'nalishidan qat'i nazar
+  try { notifications.fromTelegram(cat, text); } catch (e) { console.error("Bildirishnoma xatosi:", e.message); }
+  const r = tgRoute(cat);
+  if (r === "off") return false;
+  let personal = false;
+  if (r === "admin" || r === "both") for (const id of adminIds()) if (await staffBot.sendToEmployee(id, text)) personal = true;
+  let group = false;
+  if (r === "group" || r === "both" || (r === "admin" && !personal)) group = await sendTelegramTo(text);
+  return personal || group;
+}
+async function notifyDoc(cat, buffer, filename, caption) {
+  const r = tgRoute(cat);
+  if (r === "off") return false;
+  let personal = false;
+  if (r === "admin" || r === "both") for (const id of adminIds()) if (await staffBot.sendDocumentToEmployee(id, buffer, filename, caption)) personal = true;
+  let group = false;
+  if (r === "group" || r === "both" || (r === "admin" && !personal)) group = await sendTelegramDocument(buffer, filename, caption);
+  return personal || group;
+}
+const notifyAdmins = (text) => notify("system", text);
+// Hisobot va tahlil (foyda/zarar, pul oqimi, menejerlar) + oylik PDF (har oyning 1-kuni Telegram'ga)
+const analyticsApi = require("./analytics")(app, {
+  getStmt, upsertStmt, requireAuth, requireAdmin,
+  makePdf: require("./analytics-pdf"),
+  sendMonthlyPdf: (buf, name, caption) => notifyDoc("monthlyReport", buf, name, caption),
+});
+app.get("/api/telegram-routes", requireAuth, requireAdmin, (req, res) => {
+  let st = {};
+  try { st = JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch {}
+  const routes = Object.fromEntries(Object.keys(TG_ROUTE_DEFAULTS).map((k) => [k, tgRoute(k)]));
+  res.json({ routes, defaults: TG_ROUTE_DEFAULTS, botConfigured: !!st.telegramBotToken, groupConfigured: !!(st.telegramBotToken && st.telegramChatId), adminLinked: adminIds().some((id) => staffBot.isLinked(id)) });
+});
+const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins: (t) => notify("paint", t) });
+const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins: (t) => notify("debts", t) });
+// Mijozga xabarlar (hisob-faktura, to'lov kvitansiyasi, qarz eslatmasi) — sizning Telegram akkauntingiz orqali
+const customerMsg = require("./customer-msg")(app, {
+  getStmt, upsertStmt, requireAuth, requireAdmin,
+  sender: {
+    isConnected: () => telegramUserbot.isConnected(),
+    sendText: (peer, text) => telegramUserbot.sendMessage(peer, text),
+    sendImage: async (peer, base64, caption, ext = "png") => {
+      const file = path.join(require("os").tmpdir(), `uvix-invoice-${crypto.randomBytes(6).toString("hex")}.${ext === "jpeg" ? "jpg" : "png"}`);
+      fs.writeFileSync(file, Buffer.from(base64, "base64"));
+      try { return await telegramUserbot.sendPhoto(peer, file, { caption }); } finally { fs.unlink(file, () => {}); }
+    },
+  },
+});
+const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: (text, chatId, kind) => (chatId ? sendTelegramTo(text, chatId) : notify(kind === "daily" ? "attendanceDaily" : kind === "absent" ? "attendanceAbsent" : "attendanceReports", text)), photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee });
 
 // ==================== Dizayner / Pechatchi vazifalari ====================
 registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker });
@@ -405,10 +466,10 @@ registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWor
 // Sozlamalardagi maxfiy maydonlar — faqat admin ko'radi/o'zgartiradi
 const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
 // Oddiy xodim yozishi mumkin bo'lgan kalitlar (qolganlari — faqat admin)
-const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
+const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint");
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:");
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -536,7 +597,7 @@ function getTelegramConfig() {
 // Telegram'ga fayl (hujjat) yuborish — Excel hisobot va baza zaxirasi shu orqali jo'natiladi
 async function sendTelegramDocument(buffer, filename, caption) {
   const cfg = getTelegramConfig();
-  if (!cfg) return;
+  if (!cfg) return false;
   try {
     const form = new FormData();
     form.append("chat_id", cfg.chatId);
@@ -547,8 +608,10 @@ async function sendTelegramDocument(buffer, filename, caption) {
       const body = await res.text().catch(() => "");
       console.error("Telegram fayl yuborishda xato:", res.status, body);
     }
+    return res.ok;
   } catch (e) {
     console.error("Telegram fayl yuborishda xato:", e.message);
+    return false;
   }
 }
 
@@ -579,17 +642,22 @@ function buildDailyExcelBuffer() {
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 }
 
+// Toshkent vaqti (server UTC'da ishlaydi — Railway)
+function tashkentNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
+}
 async function runDailyBackup() {
-  const cfg = getTelegramConfig();
-  if (!cfg) return;
-  const today = new Date().toISOString().slice(0, 10);
+  const settings = JSON.parse(getStmt.get("uvix:settings")?.value || "{}");
+  if (!settings.telegramBotToken) return;
+  const today = tashkentNow().date;
   try {
     const excelBuffer = buildDailyExcelBuffer();
-    await sendTelegramDocument(excelBuffer, `UVIX_hisobot_${today}.xlsx`, `📊 Kunlik hisobot — ${today}`);
+    await notifyDoc("dailyReport", excelBuffer, `UVIX_hisobot_${today}.xlsx`, `📊 Kunlik hisobot — ${today}`);
     // serialize() — WAL jurnalidagi eng so'nggi o'zgarishlar ham kiradi (faylni to'g'ridan-to'g'ri o'qish ularni tushirib qoldirardi)
     const dbBuffer = db.serialize();
-    await sendTelegramDocument(dbBuffer, `uvix_backup_${today}.db`, `🗄 Baza zaxirasi — ${today}`);
-    upsertStmt.run("uvix:lastBackupDate", today);
+    await notifyDoc("backup", dbBuffer, `uvix_backup_${today}.db`, `🗄 Baza zaxirasi — ${today}`);
+    upsertStmt.run("uvix:lastBackupDate", JSON.stringify(today));
   } catch (e) {
     console.error("Kunlik zaxira xatosi:", e.message);
   }
@@ -602,15 +670,12 @@ setInterval(() => {
     const row = getStmt.get("uvix:settings");
     if (!row) return;
     const settings = JSON.parse(row.value);
-    if (!settings?.telegramBotToken || !settings?.telegramChatId) return;
+    if (!settings?.telegramBotToken) return;
     const backupTime = settings.backupTime || "21:00";
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
-    const nowStr = `${hh}:${mm}`;
-    const today = now.toISOString().slice(0, 10);
+    const { date: today, hm: nowStr } = tashkentNow();
     const lastRow = getStmt.get("uvix:lastBackupDate");
-    const lastDate = lastRow ? JSON.parse(lastRow.value) : null;
+    // Eski versiya sanani JSON'siz yozgan — ikkalasini ham o'qiymiz
+    const lastDate = lastRow ? (() => { try { return JSON.parse(lastRow.value); } catch { return lastRow.value; } })() : null;
     if (nowStr >= backupTime && lastDate !== today) {
       runDailyBackup();
     }
@@ -628,11 +693,11 @@ function notifyOrdersDiff(oldValue, newValue) {
     newOrders.forEach((o) => {
       const old = oldById.get(o.id);
       if (!old) {
-        sendTelegramMessage(
+        notify("orders",
           `🆕 <b>Yangi buyurtma</b>\nMijoz: ${escHtml(o.customer)}\nBuyurtma №: ${escHtml(o.orderNumber)}\nSumma: ${fmtMoney(o.agreementUzs)}`
         );
         (o.payments || []).forEach((p) => {
-          sendTelegramMessage(
+          notify("payments",
             `💰 <b>Yangi to'lov</b>\nMijoz: ${escHtml(o.customer)} (${escHtml(o.orderNumber)})\nSumma: ${fmtMoney(p.amount)}\nTuri: ${escHtml(p.paymentType)}`
           );
         });
@@ -640,7 +705,7 @@ function notifyOrdersDiff(oldValue, newValue) {
         const oldPayIds = new Set((old.payments || []).map((p) => p.id));
         (o.payments || []).forEach((p) => {
           if (!oldPayIds.has(p.id)) {
-            sendTelegramMessage(
+            notify("payments",
               `💰 <b>Yangi to'lov</b>\nMijoz: ${escHtml(o.customer)} (${escHtml(o.orderNumber)})\nSumma: ${fmtMoney(p.amount)}\nTuri: ${escHtml(p.paymentType)}`
             );
           }
@@ -659,7 +724,7 @@ function notifyExpensesDiff(oldValue, newValue) {
     const oldIds = new Set(oldTx.map((t) => t.id));
     newTx.forEach((t) => {
       if (!oldIds.has(t.id) && t.type === "chiqim") {
-        sendTelegramMessage(
+        notify("expenses",
           `💸 <b>Yangi rasxod</b>\nKategoriya: ${escHtml(t.category)}${t.subcategory ? " / " + escHtml(t.subcategory) : ""}\nSumma: ${fmtMoney(t.amount)}${t.note ? `\nIzoh: ${escHtml(t.note)}` : ""}`
         );
       }
@@ -760,10 +825,34 @@ app.put("/api/me/nav", requireAuth, (req, res) => {
   res.json({ prefs: clean });
 });
 
+// ---- Shaxsiy fon (oboi) va shisha rejimi — har xodimning o'zi uchun ----
+const BG_KINDS = new Set(["none", "preset", "dynamic", "custom"]);
+const BG_PRESETS = new Set(["mesh", "land"]);
+app.get("/api/me/background", requireAuth, (req, res) => {
+  const row = getStmt.get(`uvix:bg:${req.user.id}`);
+  let bg = null;
+  try { bg = row ? JSON.parse(row.value) : null; } catch { bg = null; }
+  res.json({ bg });
+});
+app.put("/api/me/background", requireAuth, (req, res) => {
+  const key = `uvix:bg:${req.user.id}`;
+  const b = req.body?.bg;
+  if (b === null) { deleteStmt.run(key); return res.json({ bg: null }); }
+  if (!b || typeof b !== "object" || !BG_KINDS.has(b.kind)) return res.status(400).json({ error: "invalid_bg" });
+  const clean = { kind: b.kind, preset: BG_PRESETS.has(b.preset) ? b.preset : "mesh", glass: !!b.glass, nightDark: !!b.nightDark, dim: Math.max(0, Math.min(0.8, Number(b.dim) || 0)) };
+  if (b.kind === "custom") {
+    const img = String(b.image || "");
+    if (!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(img) || img.length > 2_500_000) return res.status(400).json({ error: "invalid_image", message: "Rasm JPG/PNG/WebP va 1.8 MB dan kichik bo'lishi kerak" });
+    clean.image = img;
+  }
+  upsertStmt.run(key, JSON.stringify(clean));
+  res.json({ bg: clean });
+});
+
 // ---- Birlashtirib saqlash: faqat o'zgargan yozuvlar yuboriladi ----
 // Ikki xodim bir vaqtda ishlasa ham bir-birining o'zgarishini o'chirib yubormaydi:
 // server hozirgi ro'yxatga faqat shu xodim qo'shgan/o'zgartirgan/o'chirgan yozuvlarni qo'llaydi.
-const MERGE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit"]);
+const MERGE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers"]);
 const MAX_ITEMS = { "uvix:audit": 500 };
 app.post("/api/kv/:key/merge", (req, res) => {
   const key = req.params.key;
@@ -807,7 +896,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     return res.status(500).json({ error: "merge_failed" });
   }
   res.json({ key, rev: revOf(key), value: result.value });
-  if (key === "uvix:orders") notifyOrdersDiff(result.oldValue, result.value);
+  if (key === "uvix:orders") { notifyOrdersDiff(result.oldValue, result.value); customerMsg.onOrdersChanged(result.oldValue, result.value).catch((e) => console.error("Mijozga kvitansiya:", e.message)); }
   else if (key === "uvix:transactions") notifyExpensesDiff(result.oldValue, result.value);
 });
 
@@ -866,6 +955,7 @@ app.put("/api/kv/:key", (req, res) => {
   // Telegram xabarnomalari — javob yuborilgandan keyin, orqa fonda (foydalanuvchini kutdirmasdan)
   if (req.params.key === "uvix:orders") {
     notifyOrdersDiff(oldValue, value);
+    customerMsg.onOrdersChanged(oldValue, value).catch((e) => console.error("Mijozga kvitansiya:", e.message));
   } else if (req.params.key === "uvix:transactions") {
     notifyExpensesDiff(oldValue, value);
   }
@@ -887,8 +977,8 @@ app.get("/api/kv", (req, res) => {
 
 // Qo'lda "Hoziroq yubor" — Sozlamalar sahifasidagi tugma shu yerni chaqiradi (faqat tizimga kirgan foydalanuvchi uchun)
 app.post("/api/backup/send-now", requireAuth, requireAdmin, (req, res) => {
-  const cfg = getTelegramConfig();
-  if (!cfg) return res.status(400).json({ error: "telegram_not_configured" });
+  const st = (() => { try { return JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch { return {}; } })();
+  if (!st.telegramBotToken) return res.status(400).json({ error: "telegram_not_configured" });
   runDailyBackup()
     .then(() => res.json({ ok: true }))
     .catch((e) => res.status(500).json({ error: "send_failed", message: e.message }));
@@ -905,7 +995,7 @@ function dataCounts() {
   return { orders: countKey("uvix:orders"), transactions: countKey("uvix:transactions"), leads: countKey("uvix:leads"), employees: countKey("uvix:employees") };
 }
 app.get("/api/system/status", requireAuth, requireAdmin, (req, res) => {
-  const lastBackup = (() => { try { return JSON.parse(getStmt.get("uvix:lastBackupDate")?.value || "null"); } catch { return null; } })();
+  const lastBackup = (() => { const v = getStmt.get("uvix:lastBackupDate")?.value; try { return JSON.parse(v || "null"); } catch { return v || null; } })();
   res.json({ storage: db.STORAGE, dbPath: db.DB_PATH, counts: dataCounts(), lastBackup, backupConfigured: !!getTelegramConfig() });
 });
 
@@ -1065,6 +1155,7 @@ function handleIncomingTelegramMessage(data) {
   }
   try {
     mergeTgMessages(String(chatId), [{ ...data, out: false }]);
+    try { notifications.fromChat(data); } catch (e) { console.error("Bildirishnoma xatosi:", e.message); }
 
     rememberTgContact(String(chatId), { name: fromName, username, phone });
     // Lid bor bo'lsa — ism hali "Noma'lum" yoki telefon/username bo'sh bo'lsa, yangi ma'lumot bilan to'ldiramiz.
@@ -1188,7 +1279,7 @@ function onTelegramSessionDead(info) {
   db.prepare("DELETE FROM kv_store WHERE key = ?").run("uvix:tgSession");
   if (tgDeadNotifiedHash !== deadHash) {
     tgDeadNotifiedHash = deadHash;
-    sendTelegramMessage(`⚠️ <b>UVIX: Telegram akkaunt uzildi</b>\n${info.message}\n\nCRM chatlar ishlashi uchun: Sozlamalar → Telegram akkaunt → «Qayta ulash» (QR kod yoki telefon kodi).`);
+    notify("system", `⚠️ <b>UVIX: Telegram akkaunt uzildi</b>\n${info.message}\n\nCRM chatlar ishlashi uchun: Sozlamalar → Telegram akkaunt → «Qayta ulash» (QR kod yoki telefon kodi).`);
   }
 }
 function connectTelegramUserbot() {
