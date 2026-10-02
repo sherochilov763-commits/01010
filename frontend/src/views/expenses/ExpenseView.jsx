@@ -54,7 +54,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: THEME.rose, whiteSpace: "nowrap" }}>−{money(t.amount)}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: THEME.rose, whiteSpace: "nowrap" }}>−{money(t.amount)}</div>
                       <div style={{ display: "flex", gap: 6 }}>
                         <button onClick={() => setModal({ edit: t })} aria-label="Tahrirlash" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>
                         <button onClick={() => setConfirmDel(t)} aria-label="O'chirish" className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>

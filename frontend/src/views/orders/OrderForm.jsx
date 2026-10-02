@@ -5,9 +5,10 @@ import { generateOrderNumber, orderBrakSum, orderTotalPaid } from "../../lib/fin
 import { fmt, money, todayStr, uid, usd } from "../../lib/format.js";
 import { isWorkerRole } from "../../constants.js";
 import { THEME } from "../../theme.js";
+import { custKey } from "../../lib/customers.js";
 
 /* ---------------- ORDER FORM ---------------- */
-export function OrderForm({ initial, currentUser, categories, employees, settings, allOrders, transactions, onAddSubcategory, onClose, onSave, onUploadPhotos, onDeletePhoto, prefillCustomer }) {
+export function OrderForm({ initial, currentUser, categories, employees, settings, allOrders, transactions, onAddSubcategory, onClose, onSave, onUploadPhotos, onDeletePhoto, prefillCustomer, customers }) {
   const isEdit = !!initial;
   const [orderId] = useState(() => initial?.id || uid());
   const [photos, setPhotos] = useState(initial?.photos || []);
@@ -235,7 +236,20 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
         </Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <Field label="Mijoz">
-            <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Mijoz ismi" style={getInputStyle()} />
+            <input value={customer} onChange={(e) => setCustomer(e.target.value)} placeholder="Mijoz ismi" style={getInputStyle()} list="uvix-customer-list" autoComplete="off" data-testid="order-customer" />
+            <datalist id="uvix-customer-list">
+              {(customers || []).slice().sort((a, b) => (b.lastDate || "").localeCompare(a.lastDate || "")).slice(0, 300).map((c) => <option key={c.id} value={c.name}>{[c.phone, c.count ? `${c.count} ta buyurtma` : null].filter(Boolean).join(" · ")}</option>)}
+            </datalist>
+            {(() => {
+              const k = custKey(customer);
+              const c = k && !initial ? (customers || []).find((x) => x.keys.includes(k)) : null;
+              if (!c || (!c.count && !c.phone)) return null;
+              return (
+                <div data-testid="order-customer-hint" style={{ fontSize: 11.5, marginTop: 4, color: c.debt > 0 ? THEME.rose : THEME.muted, lineHeight: 1.4 }}>
+                  {c.count ? `Doimiy mijoz: ${c.count} ta buyurtma` : "Bazada bor"}{c.phone ? ` · ${c.phone}` : ""}{c.debt > 0 ? ` · qarzi ${c.debt.toLocaleString("ru-RU")} so'm` : ""}
+                </div>
+              );
+            })()}
           </Field>
           <Field label="Sub kategoriya">
             <div style={{ display: "flex", gap: 6, background: THEME.surface, borderRadius: 11, padding: 3 }}>
@@ -278,7 +292,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
             onChange={handleAgreementChange}
             placeholder="0"
             inputMode="numeric"
-            style={{ ...getInputStyle(), fontSize: 20, fontWeight: 800, color: THEME.violet, padding: "13px 14px" }}
+            style={{ ...getInputStyle(), fontSize: 20, fontWeight: 700, color: THEME.violet, padding: "13px 14px" }}
           />
           <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>
             Mijoz bilan kelishilgan umumiy summani shu yerga kiriting.
@@ -299,7 +313,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
                 </div>
                 <MultiPaymentLines lines={initPaymentLines} onChange={setInitPaymentLines} bg={THEME.card} />
                 {initPaymentLines.length > 1 && initPaymentNum > 0 && (
-                  <div style={{ fontSize: 13, fontWeight: 800, textAlign: "right", color: THEME.violet }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, textAlign: "right", color: THEME.violet }}>
                     Jami: {money(initPaymentNum)}
                   </div>
                 )}
@@ -315,7 +329,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
             <div style={{ fontSize: 12, fontWeight: 700, color: THEME.mutedDark, marginBottom: 8 }}>To'lovlar (avans)</div>
             <div style={{ padding: 12, background: THEME.surface, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: THEME.green }}>{money(orderTotalPaid(initial))}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: THEME.green }}>{money(orderTotalPaid(initial))}</div>
                 <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 2 }}>
                   {(initial.payments || []).filter((p) => !p.deletedAt).length} ta to'lov qayd etilgan — bu joyda o'chirilmagan, faqat forma ichida ko'rinmaydi
                 </div>
@@ -434,7 +448,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
         {/* 4) QARZDORLIK */}
         <Field label="Qarzdorlik">
           <div style={{
-            padding: "10px 12px", borderRadius: 11, fontSize: 17, fontWeight: 800,
+            padding: "10px 12px", borderRadius: 11, fontSize: 17, fontWeight: 700,
             background: debtUzs > 0 ? THEME.roseBg : THEME.greenBg,
             color: debtUzs > 0 ? THEME.rose : THEME.green,
             border: debtUzs > 0 ? `1.5px solid ${THEME.roseBorder}` : `1.5px solid ${THEME.border}`,
@@ -449,7 +463,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
         {/* 5) QO'SHILGAN QIYMAT */}
         <Field label="Qo'shilgan qiymat (avtomatik)">
           <div style={{
-            padding: "10px 12px", borderRadius: 11, fontSize: 16, fontWeight: 800,
+            padding: "10px 12px", borderRadius: 11, fontSize: 16, fontWeight: 700,
             background: addedValueUzs >= 0 ? THEME.greenBg : THEME.roseBg,
             color: addedValueUzs >= 0 ? THEME.green : THEME.rose,
             border: addedValueUzs >= 0 ? `1.5px solid ${THEME.border}` : `1.5px solid ${THEME.roseBorder}`,

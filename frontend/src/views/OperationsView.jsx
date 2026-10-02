@@ -122,7 +122,7 @@ export function OperationsView({ orders, transactions, isAdmin, onDeletePayment,
                       {t.note && <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note}</div>}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: inc ? THEME.green : THEME.rose, whiteSpace: "nowrap" }}>{inc ? "+" : "−"}{money(t.amount)}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: inc ? THEME.green : THEME.rose, whiteSpace: "nowrap" }}>{inc ? "+" : "−"}{money(t.amount)}</div>
                       {(isAdmin || t.createdBy === currentUser.name) && (
                         <button onClick={() => setConfirmDel(t)} aria-label="O'chirish" className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
                       )}
