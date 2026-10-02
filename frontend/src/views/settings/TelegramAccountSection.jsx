@@ -45,7 +45,7 @@ export function TelegramAccountSection({ settings, onSaveSettings }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 34, height: 34, borderRadius: 10, background: THEME.blueBg || THEME.surface, color: THEME.blue, display: "flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={17} /></div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 14, color: THEME.text }}>Telegram akkaunt (CRM chat)</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: THEME.text }}>Telegram akkaunt (CRM chat)</div>
             <div style={{ fontSize: 11.5, color: THEME.muted }}>Mijozlar bilan yozishmalar shu akkaunt orqali</div>
           </div>
         </div>
@@ -186,7 +186,7 @@ function TelegramLoginModal({ settings, onClose, onDone }) {
       ) : stage === "done" ? (
         <div style={{ textAlign: "center", padding: "10px 0" }}>
           <CheckCircle2 size={44} color={THEME.green} />
-          <div style={{ fontSize: 16, fontWeight: 800, marginTop: 10, color: THEME.text }}>Ulandi!</div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginTop: 10, color: THEME.text }}>Ulandi!</div>
           <div style={{ fontSize: 13, color: THEME.muted, marginTop: 4 }}>{state.user?.name}{state.user?.username ? ` · @${state.user.username}` : ""}</div>
           <Button onClick={onClose} style={{ marginTop: 16, justifyContent: "center", width: "100%" }}>Tayyor</Button>
         </div>

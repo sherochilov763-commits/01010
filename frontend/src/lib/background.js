@@ -79,3 +79,18 @@ export function useBackground(enabled) {
   }
   return { bg, resolved: resolveBg(bg), tick, save };
 }
+
+// Fon faqat telefon va planshetda (sensorli ekran) yoki juda tor oynada o'chadi.
+// Kompyuterdagi tor oyna (masalan, yon panelda ochilgan) — fon ko'rinadi.
+export const BG_OFF_QUERY = "(max-width: 640px), (hover: none) and (pointer: coarse)";
+export function useBgSuppressed() {
+  const [off, setOff] = useState(() => typeof window !== "undefined" && window.matchMedia(BG_OFF_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(BG_OFF_QUERY);
+    const on = () => setOff(mq.matches);
+    on();
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => (mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on));
+  }, []);
+  return off;
+}

@@ -43,15 +43,15 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           <Card style={{ padding: 12 }}>
             <div style={{ fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>Buyurtma</div>
-            <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2 }}>{money(order.agreementUzs)}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{money(order.agreementUzs)}</div>
           </Card>
           <Card style={{ padding: 12 }}>
             <div style={{ fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>To'langan</div>
-            <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2, color: THEME.green }}>{money(paid)}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2, color: THEME.green }}>{money(paid)}</div>
           </Card>
           <Card style={{ padding: 12, background: debt > 0 ? THEME.roseBg : THEME.greenBg, border: debt > 0 ? `1.5px solid ${THEME.roseBorder}` : `1px solid ${THEME.border}` }}>
             <div style={{ fontSize: 10.5, color: debt > 0 ? THEME.rose : THEME.green, fontWeight: 700, textTransform: "uppercase" }}>Qarzdorlik</div>
-            <div style={{ fontSize: 14, fontWeight: 800, marginTop: 2, color: debt > 0 ? THEME.rose : THEME.green }}>{money(debt)}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2, color: debt > 0 ? THEME.rose : THEME.green }}>{money(debt)}</div>
           </Card>
         </div>
 
@@ -60,11 +60,11 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
               <div>
                 <div style={{ fontSize: 10.5, color: THEME.rose, fontWeight: 700, textTransform: "uppercase" }}>Brak (ushbu buyurtma bo'yicha)</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: THEME.rose, marginTop: 2 }}>−{money(brakSum)}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: THEME.rose, marginTop: 2 }}>−{money(brakSum)}</div>
               </div>
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase" }}>Sof buyurtma summasi</div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: THEME.text, marginTop: 2 }}>{money((order.agreementUzs || 0) - brakSum)}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: THEME.text, marginTop: 2 }}>{money((order.agreementUzs || 0) - brakSum)}</div>
               </div>
             </div>
           </Card>
@@ -114,7 +114,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
           </Field>
           <MultiPaymentLines lines={lines} onChange={setLines} bg={THEME.surface} />
           {lines.length > 1 && (
-            <div style={{ fontSize: 13, fontWeight: 800, marginTop: 8, textAlign: "right", color: THEME.violet }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8, textAlign: "right", color: THEME.violet }}>
               Jami: {money(totalNew)}
             </div>
           )}

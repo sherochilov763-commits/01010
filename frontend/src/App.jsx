@@ -7,14 +7,14 @@ import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
 import { CommandPalette, SearchTrigger, useCommandHotkey } from "./components/CommandPalette.jsx";
 import { buildCustomers } from "./lib/customers.js";
 import { useNotifications } from "./lib/notify.js";
-import { useBackground } from "./lib/background.js";
+import { useBackground, useBgSuppressed, BG_OFF_QUERY } from "./lib/background.js";
 import { NotificationBell, ncenterCss } from "./components/NotificationBell.jsx";
 import { CheckInButton } from "./components/CheckInButton.jsx";
 import { AttendanceGate } from "./components/AttendanceGate.jsx";
 import { resetAttendance } from "./lib/attendanceStore.js";
 import { StorageWarning } from "./components/StorageWarning.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } from "./constants.js";
-import { generateOrderNumber } from "./lib/finance.js";
+import { generateOrderNumber, orderDebt } from "./lib/finance.js";
 import { money, paymentTypeLabel, uid } from "./lib/format.js";
 import { resumePending, storageGet, storageRefresh, storageSet, subscribeRemote } from "./lib/kv.js";
 import { SaveStatus } from "./components/SaveStatus.jsx";
@@ -101,7 +101,7 @@ export default function App() {
   });
   // Shaxsiy fon va shisha rejimi (faqat kompyuterda — telefonda tezlik uchun o'chiq)
   const bgState = useBackground(!!currentUser && !isWorkerRole(currentUser.role));
-  const narrow = useIsMobile(860);
+  const narrow = useBgSuppressed();
   const bgOn = !!bgState.resolved && !narrow;
   const glassOn = bgOn && bgState.bg.glass;
   const nightDark = bgOn && bgState.bg.kind === "dynamic" && bgState.bg.nightDark && bgState.resolved.dark;
@@ -560,6 +560,17 @@ export default function App() {
 
   latest.current = { restoreOrder, restoreTransaction, restorePayment };
 
+  // Sidebar'dagi «Mijozlar» yonidagi raqam — qarzdor mijozlar soni
+  const navBadges = useMemo(() => {
+    if (!currentUser || isWorkerRole(currentUser.role)) return {};
+    const set = new Set();
+    for (const o of orders || []) {
+      if (o.deletedAt || (currentUser.role !== "admin" && o.createdBy !== currentUser.name)) continue;
+      if (orderDebt(o) > 0) set.add(String(o.customer || "").trim().toLowerCase());
+    }
+    return { customers: set.size };
+  }, [orders, currentUser]);
+
   // Ctrl+K oynasi uchun mijozlar ro'yxati — faqat oyna ochiqligida hisoblanadi
   const cmdkCustomers = useMemo(() => {
     if (!cmdkOpen || !currentUser) return [];
@@ -629,8 +640,8 @@ export default function App() {
         body { background: ${THEME.surface}; }
         /* Fon (oboi) — sahifa ortida qotib turadi; ustida yumshoq parda, yozuvlar o'qilsin */
         .uvix-bg { position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: center; pointer-events: none; }
-        .uvix-bg::after { content: ""; position: absolute; inset: 0; background: ${glassOn ? `rgba(0,0,0,${0.22 + (bgState.bg.dim || 0)})` : withAlpha(THEME.surface, Math.min(0.85, 0.5 + (bgState.bg.dim || 0)))}; }
-        @media (max-width: 860px) { .uvix-bg { display: none; } }
+        .uvix-bg::after { content: ""; position: absolute; inset: 0; background: ${glassOn ? `rgba(0,0,0,${0.22 + (bgState.bg.dim || 0)})` : withAlpha(THEME.surface, Math.min(0.85, 0.35 + (bgState.bg.dim || 0)))}; }
+        @media ${BG_OFF_QUERY} { .uvix-bg { display: none; } }
         /* Shisha rejimi (Bitrix24 kabi): panellar shaffof, fon ko'rinadi, matn oq */
         .uvix-glass .uvix-glass-side { background: rgba(14,14,16,0.42) !important; -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); border-color: rgba(255,255,255,0.08) !important; }
         .uvix-glass .uvix-card, .uvix-glass .uvix-order-panel { background: rgba(20,20,23,0.5) !important; border-color: rgba(255,255,255,0.09) !important; -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); }
@@ -774,7 +785,7 @@ export default function App() {
       `}</style>
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden", position: "relative", zIndex: 1 }}>
-        <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }}
+        <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} badges={navBadges}
           top={<SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} />} />
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}

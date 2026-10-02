@@ -14,7 +14,7 @@ function Counts({ counts }) {
       {COUNT_LABELS.map(([k, label]) => (
         <div key={k} style={{ background: THEME.surface, border: `1px solid ${THEME.border}`, borderRadius: 10, padding: "8px 10px" }}>
           <div style={{ fontSize: 11, color: THEME.muted }}>{label}</div>
-          <div style={{ fontSize: 17, fontWeight: 800, fontFamily: THEME.fontNum }}>{counts[k] ?? 0}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, fontFamily: THEME.fontNum }}>{counts[k] ?? 0}</div>
         </div>
       ))}
     </div>

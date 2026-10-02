@@ -109,8 +109,8 @@ export function WorkerApp({ currentUser, onLogout }) {
             </button>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", background: `linear-gradient(135deg, ${THEME.violet}, ${THEME.cyan})`, color: "#fff", fontWeight: 800, fontSize: 12 }}>UV</span>
-              <span style={{ fontWeight: 700, fontSize: 15 }}>UVIX</span>
+              <span style={{ width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center", background: THEME.text, color: THEME.card, fontWeight: 700, fontSize: 11.5 }}>UV</span>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>UVIX</span>
             </div>
           )}
           <div style={{ flex: 1 }} />
@@ -156,7 +156,7 @@ export function WorkerApp({ currentUser, onLogout }) {
                 {[["board", "Doska", LayoutGrid], ["list", "Ro'yxat", List]].map(([k, l, Ic]) => (
                   <button key={k} type="button" onClick={() => setLayout(k)} aria-pressed={layout === k} aria-label={l}
                     style={{ height: 38, padding: isMobile ? "0 10px" : "0 14px", border: 0, borderRadius: 9, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, fontWeight: 600,
-                      background: layout === k ? THEME.violet : "transparent", color: layout === k ? "#fff" : THEME.muted }}>
+                      background: layout === k ? THEME.violet : "transparent", color: layout === k ? THEME.onPrimary : THEME.muted }}>
                     <Ic size={16} />{!isMobile && l}
                   </button>
                 ))}
@@ -231,7 +231,7 @@ function Column({ tasks, col, busyId, onStart, onDone, onBack, bare }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "2px 4px 12px" }}>
         <span style={{ width: 9, height: 9, borderRadius: "50%", background: col.color }} />
         <span style={{ fontWeight: 700, fontSize: 14.5 }}>{col.label}</span>
-        <span style={{ marginLeft: "auto", minWidth: 26, height: 26, borderRadius: 13, display: "grid", placeItems: "center", background: THEME.violet, color: "#fff", fontSize: 12.5, fontWeight: 700 }}>{tasks.length}</span>
+        <span style={{ marginLeft: "auto", minWidth: 26, height: 26, borderRadius: 13, display: "grid", placeItems: "center", background: THEME.violet, color: THEME.onPrimary, fontSize: 12.5, fontWeight: 700 }}>{tasks.length}</span>
       </div>
       {body}
     </section>

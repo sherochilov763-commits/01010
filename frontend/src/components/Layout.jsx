@@ -1,5 +1,5 @@
 import { ArrowLeft, LogOut, Menu } from "lucide-react";
-import { NAV, roleLabel } from "../constants.js";
+import { NAV, NAV_GROUP, roleLabel } from "../constants.js";
 import { EditNavButton, NavEditor } from "./Nav.jsx";
 import { longDateUz } from "../lib/format.js";
 import { THEME } from "../theme.js";
@@ -28,10 +28,16 @@ export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarSty
         <div style={{ overflowY: "auto", flex: 1, margin: "0 -4px", padding: "0 4px" }}><NavEditor nav={navCfg} /></div>
       ) : (
       <div className="uvix-scroll" style={{ display: "flex", flexDirection: "column", gap: isMinimal ? 0 : 2, overflowY: "auto", minHeight: 0 }}>
-        {nav.map((n) => {
+        {nav.map((n, idx) => {
           const Icon = n.icon;
           const active = view === n.key;
           const badge = badges?.[n.key];
+          // Guruh sarlavhasi: tartib o'zgartirilgan bo'lsa ham, guruh almashgan joyda chiqadi
+          const grp = NAV_GROUP[n.key] || null;
+          const prevGrp = idx ? NAV_GROUP[nav[idx - 1].key] || null : null;
+          const header = grp && grp !== prevGrp
+            ? <div key={`g-${n.key}`} className="uvix-nav-group" style={{ fontSize: 11.5, fontWeight: 500, color: THEME.navDim, padding: idx ? "14px 12px 4px" : "4px 12px 4px", flexShrink: 0 }}>{grp}</div>
+            : !grp && prevGrp ? <div key={`g-${n.key}`} style={{ height: 10, flexShrink: 0 }} /> : null;
           const itemStyle = {
             display: "flex", alignItems: "center", gap: 10, height: isMinimal ? 32 : 34, padding: "0 12px", flexShrink: 0,
             borderRadius: isClassic ? 4 : 8, border: "none", cursor: "pointer", textAlign: "left", fontSize: 13.5,
@@ -39,7 +45,7 @@ export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarSty
             background: active && !isMinimal ? (isClassic ? THEME.navHover : THEME.navActiveBg) : "transparent",
             boxShadow: isClassic && active ? `inset 2px 0 0 ${THEME.violet}` : "none",
           };
-          return (
+          return [header, (
             <button
               key={n.key}
               onClick={() => { setView(n.key); if (onClose) onClose(); }}
@@ -51,7 +57,7 @@ export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarSty
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.label}</span>
               {badge ? <span style={{ fontSize: 11, fontWeight: 700, color: THEME.rose, background: THEME.roseBg, padding: "0 7px", borderRadius: 10, lineHeight: "18px" }}>{badge > 99 ? "99+" : badge}</span> : null}
             </button>
-          );
+          )];
         })}
       </div>
       )}

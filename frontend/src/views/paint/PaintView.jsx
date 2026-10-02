@@ -138,7 +138,7 @@ function PaintCard({ it, lead }) {
         <span style={{ fontSize: 11, fontWeight: 700, color: s.color, background: `${s.color}1F`, padding: "3px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>{s.label}</span>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: THEME.fontNum, letterSpacing: -0.5, color: it.stock <= 0 ? THEME.rose : THEME.text }}>{nfmt(Math.max(0, it.stock))}</div>
+        <div style={{ fontSize: 28, fontWeight: 700, fontFamily: THEME.fontNum, letterSpacing: -0.5, color: it.stock <= 0 ? THEME.rose : THEME.text }}>{nfmt(Math.max(0, it.stock))}</div>
         <div style={{ fontSize: 14, color: THEME.muted, fontWeight: 600 }}>litr</div>
       </div>
       <div style={{ position: "relative", height: 8, borderRadius: 6, background: THEME.chip, overflow: "hidden" }} title={`Shkala: ${scale} kun`}>
@@ -288,7 +288,7 @@ function MonthTab({ state }) {
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <button type="button" onClick={() => setYm(shiftYm(ym, -1))} style={navBtn} aria-label="Oldingi oy"><ChevronLeft size={16} /></button>
-        <div style={{ fontWeight: 800, fontSize: 15, minWidth: 130, textAlign: "center" }}>{MONTHS_CAP[m - 1]} {y}</div>
+        <div style={{ fontWeight: 700, fontSize: 15, minWidth: 130, textAlign: "center" }}>{MONTHS_CAP[m - 1]} {y}</div>
         <button type="button" onClick={() => setYm(shiftYm(ym, 1))} disabled={ym >= curYm} style={{ ...navBtn, opacity: ym >= curYm ? 0.4 : 1 }} aria-label="Keyingi oy"><ChevronRight size={16} /></button>
         <div style={{ flex: 1 }} />
         {data && data.days.length > 0 && <Button variant="ghost" onClick={exportExcel} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={15} /> Excel</Button>}

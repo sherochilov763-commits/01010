@@ -57,6 +57,13 @@ export const NAV = [
   { key: "settings", label: "Sozlamalar", icon: Settings },
 ];
 
+// Sidebar'dagi guruh sarlavhalari (Dashboard va Sozlamalar guruhsiz)
+export const NAV_GROUP = {
+  orders: "Savdo", crm: "Savdo", chats: "Savdo", customers: "Savdo",
+  expense: "Moliya", operations: "Moliya", report: "Moliya",
+  paint: "Ishlab chiqarish", attendance: "Ishlab chiqarish", employees: "Ishlab chiqarish", categories: "Ishlab chiqarish",
+};
+
 export const PAYMENT_TYPES = [
   { v: "karta", l: "Karta", icon: CreditCard, color: "violet" },
   { v: "naqd", l: "Naqd", icon: Banknote, color: "green" },

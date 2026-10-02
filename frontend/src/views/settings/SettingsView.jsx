@@ -1,3 +1,4 @@
+import { Avatar as UiAvatar } from "../../components/ui.jsx";
 import { useEffect, useState } from "react";
 import { AlertTriangle, Lock, LogOut, ShieldCheck, Trash2 } from "lucide-react";
 import PasskeySection from "../../auth/PasskeySection.jsx";
@@ -10,8 +11,11 @@ import { AppearancePreviewCard, AppearanceSection } from "./AppearanceSection.js
 import { TrashSection } from "./TrashSection.jsx";
 import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
 import { TelegramAccountSection } from "./TelegramAccountSection.jsx";
+import { TelegramRoutesSection } from "./TelegramRoutesSection.jsx";
+import { NotificationsSection } from "./NotificationsSection.jsx";
+import { BackgroundSection } from "./BackgroundSection.jsx";
 
-export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
+export function SettingsView({ notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
   const [pin, setPin] = useState("");
   const [msg, setMsg] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -115,11 +119,12 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
       <div style={{ flex: "2 1 520px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
         <AppearanceSection appearance={appearance} onApply={onApplyAppearance} />
 
+        {bgState && <BackgroundSection bgState={bgState} />}
+        {notif?.prefs && <NotificationsSection n={notif} />}
+
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: "50%", background: `linear-gradient(135deg, ${THEME.violet}, ${THEME.cyan})`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700 }}>
-              {currentUser.name.slice(0, 1).toUpperCase()}
-            </div>
+            <UiAvatar name={currentUser.name} size={44} />
             <div>
               <div style={{ fontWeight: 700, fontSize: 14 }}>{currentUser.name}</div>
               <div style={{ fontSize: 12, color: THEME.muted, display: "flex", alignItems: "center", gap: 4 }}>
@@ -200,15 +205,15 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
             ) : (
               <>
             <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 12 }}>
-              Yangi buyurtma, to'lov va rasxod qo'shilganda shaxsiy Telegram'ingizga avtomatik xabar keladi.
-              Sozlash uchun: 1) Telegram'da <b style={{ color: THEME.text }}>@BotFather</b>'ga yozib yangi bot yarating (token oling),
-              2) yaratgan botingizga bironta xabar yozing, 3) <b style={{ color: THEME.text }}>@userinfobot</b>'ga yozib o'z Chat ID'ingizni bilib oling.
+              UVIX boti yangi buyurtma, to'lov, rasxod, hisobotlar va ogohlantirishlarni Telegram'ga yuboradi — har birini xodimlar guruhiga yoki faqat o'zingizga yo'naltirasiz (pastda).
+              Sozlash: 1) <b style={{ color: THEME.text }}>@BotFather</b>'da bot yarating (token oling), 2) botni xodimlar guruhiga qo'shing va guruhga bitta xabar yozing,
+              3) guruh Chat ID'sini kiriting (odatda <b style={{ color: THEME.text }}>-100…</b> bilan boshlanadi; uni guruhga <b style={{ color: THEME.text }}>@RawDataBot</b>'ni vaqtincha qo'shib bilsa bo'ladi).
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <Field label="Bot token">
                 <input value={tgToken} onChange={(e) => setTgToken(e.target.value)} style={getInputStyle()} placeholder="123456789:AAExampleTokenHere" />
               </Field>
-              <Field label="Chat ID">
+              <Field label="Xodimlar guruhi Chat ID">
                 <input value={tgChatId} onChange={(e) => setTgChatId(e.target.value)} style={getInputStyle()} placeholder="123456789" />
               </Field>
               <div style={{ display: "flex", gap: 8 }}>
@@ -220,23 +225,26 @@ export function SettingsView({ currentUser, employees, onSave, onLogout, isAdmin
                 Holat:
                 {settings?.telegramBotToken && settings?.telegramChatId ? (
                   <Badge color={THEME.green} bg={THEME.greenBg}>Yoqilgan</Badge>
+                ) : settings?.telegramBotToken ? (
+                  <Badge color={THEME.amber} bg={THEME.amberBg}>Bot bor, guruh yo'q</Badge>
                 ) : (
                   <Badge color={THEME.muted} bg={THEME.surface}>O'chirilgan</Badge>
                 )}
               </div>
             </div>
+            {settings?.telegramBotToken && <TelegramRoutesSection settings={settings} onSaveSettings={onSaveSettings} />}
             <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 14, paddingTop: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Kunlik hisobot va zaxira nusxa</div>
               <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 10 }}>
                 Har kuni belgilangan vaqtda Excel hisobot (Buyurtmalar + Rasxodlar) va butun bazaning zaxira nusxasi
-                shu Telegram'ga avtomatik yuboriladi.
+                Telegram'ga avtomatik yuboriladi (qayerga — yuqoridagi «Fayllar» qatorida).
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <Field label="Yuborish vaqti">
                   <input type="time" value={backupTime} onChange={(e) => setBackupTime(e.target.value)} style={{ ...getInputStyle(), width: "auto" }} />
                 </Field>
                 <Button onClick={saveTelegram}>Vaqtni saqlash</Button>
-                <Button variant="ghost" onClick={sendBackupNow} disabled={sendingNow || !(settings?.telegramBotToken && settings?.telegramChatId)}>
+                <Button variant="ghost" onClick={sendBackupNow} disabled={sendingNow || !settings?.telegramBotToken}>
                   {sendingNow ? "Yuborilmoqda..." : "Hoziroq yubor"}
                 </Button>
               </div>
