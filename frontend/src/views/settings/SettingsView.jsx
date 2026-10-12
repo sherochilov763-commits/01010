@@ -1,8 +1,10 @@
+// SettingsView.jsx — Sozlamalar: guruhlarga bo'lingan (kompyuterda chap menyu, telefonda ro'yxat → ichiga kirish).
+// Admin uchun tepada «Tizim holati»; matnli o'zgarishlar pastdagi bitta «Saqlash» paneli orqali saqlanadi.
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
-import { useEffect, useState } from "react";
-import { AlertTriangle, Lock, LogOut, ShieldCheck, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Bell, ChevronLeft, ChevronRight, Database, History, LayoutGrid, Lock, LogOut, Palette, Plug, Search, ShieldCheck, Tag, Trash2, UserRound } from "lucide-react";
 import PasskeySection from "../../auth/PasskeySection.jsx";
-import { authLogin } from "../../storage.js";
+import { authLogin, fetchSettingsHealth } from "../../storage.js";
 import { Badge, Button, Card, Field, Modal, getInputStyle } from "../../components/ui.jsx";
 import { money } from "../../lib/format.js";
 import { roleLabel } from "../../constants.js";
@@ -16,8 +18,146 @@ import { NotificationsSection } from "./NotificationsSection.jsx";
 import { BackgroundSection } from "./BackgroundSection.jsx";
 import { QuickRepliesSection } from "./QuickRepliesSection.jsx";
 import { PriceListSection } from "./PriceListSection.jsx";
+import { loadSales, useSales } from "../quotes/useSales.js";
+import { rateText } from "../../lib/production.js";
+import { SaveBarProvider, useDirty, useSaveBar } from "./saveBar.jsx";
+import { buildStatusItems, ModulesSection, SettingsJournal, SystemStatus, SETTINGS_SECTIONS } from "./settingsParts.jsx";
+import { SETTINGS_EVENT } from "../../lib/deeplink.js";
 
-export function SettingsView({ categories, notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
+const SEC_KEY = "uvix:settingsSection";
+const ICONS = { profil: UserRound, korinish: Palette, bildirish: Bell, savdo: Tag, integratsiya: Plug, bolimlar: LayoutGrid, malumotlar: Database, jurnal: History };
+const useNarrow = () => {
+  const q = "(max-width: 760px)";
+  const [n, setN] = useState(() => typeof window !== "undefined" && window.matchMedia?.(q).matches);
+  useEffect(() => { const m = window.matchMedia?.(q); if (!m) return undefined; const f = () => setN(m.matches); m.addEventListener?.("change", f); return () => m.removeEventListener?.("change", f); }, []);
+  return n;
+};
+
+export function SettingsView(props) {
+  return <SaveBarProvider><SettingsLayout {...props} /></SaveBarProvider>;
+}
+
+function SettingsLayout(props) {
+  const { isAdmin, notif } = props;
+  const narrow = useNarrow();
+  const bar = useSaveBar();
+  const sections = SETTINGS_SECTIONS.filter((s) => (!s.admin || isAdmin) && (s.id !== "bildirish" || notif));
+  const valid = (id) => sections.some((s) => s.id === id);
+  const [sec, setSec] = useState(() => { try { const v = sessionStorage.getItem(SEC_KEY); return v && valid(v) ? v : null; } catch { return null; } });
+  const current = sec && valid(sec) ? sec : narrow ? null : sections[0].id;
+  const go = (id) => {
+    if (id === current) return;
+    if (!bar.confirmLeave()) return;
+    bar.resetAll();
+    setSec(id);
+    try { id ? sessionStorage.setItem(SEC_KEY, id) : sessionStorage.removeItem(SEC_KEY); } catch { /* shart emas */ }
+    window.scrollTo?.({ top: 0 });
+  };
+  useEffect(() => {
+    const on = (e) => { const id = e.detail?.section; if (id && valid(id)) setSec(id); };
+    window.addEventListener(SETTINGS_EVENT, on);
+    return () => window.removeEventListener(SETTINGS_EVENT, on);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+  const [status, setStatus] = useState(null);
+  const reloadStatus = () => {
+    if (!isAdmin) return;
+    fetchSettingsHealth().then((st) => {
+      const items = buildStatusItems(st);
+      setStatus({ ...st, items, warnings: items.filter((x) => !x.ok).map((x) => ({ section: x.section || "bolimlar" })) });
+    }).catch(() => {});
+  };
+  useEffect(reloadStatus, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { S, modal } = useSettingsBody(props);
+  const meta = sections.find((s) => s.id === current);
+  const warnFor = (id) => (status ? (status.warnings || []).filter((w) => w.section === id).length : 0);
+
+  // ---- Telefon: ro'yxat ----
+  if (narrow && !current) {
+    return (
+      <div data-testid="settings-list" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 640, margin: "0 auto" }}>
+        {isAdmin && status && (status.warnings || []).length > 0 && <SystemStatus status={status} compact onGo={go} onOpenView={props.onOpenView} />}
+        {[false, true].map((adm) => {
+          const list = sections.filter((s) => !!s.admin === adm);
+          if (!list.length) return null;
+          return (
+            <div key={String(adm)}>
+              {adm && <div style={{ fontSize: 12, color: THEME.dim, textTransform: "uppercase", letterSpacing: 0.4, margin: "4px 14px 6px" }}>Admin</div>}
+              <div style={{ background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 14, overflow: "hidden" }}>
+                {list.map((s, i) => {
+                  const Ic = ICONS[s.id];
+                  const w = warnFor(s.id);
+                  return (
+                    <button key={s.id} type="button" onClick={() => go(s.id)} data-section={s.id}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "0 14px", height: 54, border: 0, borderTop: i ? `1px solid ${THEME.border}` : 0, background: "none", color: THEME.text, fontFamily: "inherit", fontSize: 15, fontWeight: 500, cursor: "pointer", textAlign: "left" }}>
+                      <span style={{ width: 30, height: 30, borderRadius: 8, background: s.color, color: "#fff", display: "grid", placeItems: "center", flexShrink: 0 }}><Ic size={17} /></span>
+                      <span style={{ flex: 1 }}>{s.label}</span>
+                      {w > 0 && <span style={{ fontSize: 11.5, fontWeight: 700, color: THEME.amber, background: THEME.amberBg, borderRadius: 999, padding: "1px 8px" }}>{w}</span>}
+                      <ChevronRight size={17} color={THEME.dim} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        {modal}
+      </div>
+    );
+  }
+
+  const content = (
+    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }} data-testid={`settings-section-${current}`}>
+      {narrow && (
+        <button type="button" onClick={() => go(null)} style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4, border: 0, background: "none", color: THEME.violet, fontWeight: 600, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit", padding: "2px 0" }}><ChevronLeft size={18} /> Sozlamalar</button>
+      )}
+      {narrow && <div style={{ fontSize: 22, fontWeight: 700 }}>{meta?.label}</div>}
+      {isAdmin && status && !narrow && meta?.admin && <SystemStatus status={status} onGo={go} onOpenView={props.onOpenView} />}
+      {S[current]}
+    </div>
+  );
+  if (narrow) return <div style={{ maxWidth: 640, margin: "0 auto", paddingBottom: 70 }}>{content}{modal}</div>;
+
+  return (
+    <div style={{ display: "flex", gap: 22, alignItems: "flex-start", maxWidth: 1240, margin: "0 auto", paddingBottom: 70 }}>
+      <nav aria-label="Sozlamalar bo'limlari" data-testid="settings-nav" style={{ width: 228, flexShrink: 0, position: "sticky", top: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+        <SettingsSearchButton />
+        {sections.map((s, i) => {
+          const Ic = ICONS[s.id];
+          const on = s.id === current;
+          const w = warnFor(s.id);
+          return [
+            s.admin && !sections[i - 1]?.admin ? <div key={`h-${s.id}`} style={{ fontSize: 12, color: THEME.dim, padding: "12px 10px 4px" }}>Admin</div> : null,
+            <button key={s.id} type="button" onClick={() => go(s.id)} data-section={s.id} aria-current={on ? "page" : undefined}
+              style={{ display: "flex", alignItems: "center", gap: 10, height: 40, padding: "0 10px", borderRadius: 9, border: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 14, textAlign: "left",
+                background: on ? THEME.card : "transparent", boxShadow: on ? `0 1px 2px rgba(0,0,0,.06), 0 0 0 1px ${THEME.border}` : "none", color: on ? THEME.text : THEME.mutedDark || THEME.text, fontWeight: on ? 600 : 500 }}>
+              <Ic size={17} /><span style={{ flex: 1 }}>{s.label}</span>
+              {w > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: THEME.amber, background: THEME.amberBg, borderRadius: 999, padding: "1px 7px" }}>{w}</span>}
+            </button>,
+          ];
+        })}
+      </nav>
+      {content}
+      {modal}
+    </div>
+  );
+}
+
+// Ctrl K — sozlamani nomidan topish (umumiy qidiruv oynasi ochiladi)
+function SettingsSearchButton() {
+  return (
+    <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("uvix:open-cmdk", { detail: { q: "" } }))}
+      style={{ display: "flex", alignItems: "center", gap: 8, height: 38, border: `1px solid ${THEME.border}`, background: THEME.card, borderRadius: 10, padding: "0 10px", color: THEME.dim, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", marginBottom: 10 }}>
+      <Search size={15} /> Sozlamani qidirish <kbd style={{ marginLeft: "auto", fontFamily: "inherit", fontSize: 11, border: `1px solid ${THEME.border2}`, borderRadius: 5, padding: "0 5px", color: THEME.muted }}>Ctrl K</kbd>
+    </button>
+  );
+}
+
+function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings: rawSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
+  // Bir nechta bo'lim ketma-ket saqlansa ham bir-birini bosib ketmasin — eng so'nggi holatga qo'shib boramiz
+  const latest = useRef(settings || {});
+  useEffect(() => { latest.current = settings || {}; }, [settings]);
+  const onSaveSettings = async (next) => { latest.current = next; await rawSaveSettings(next); };
+  const patchSettings = (patch) => onSaveSettings({ ...latest.current, ...patch });
   const [pin, setPin] = useState("");
   const [msg, setMsg] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -25,6 +165,9 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
   const [resetPinError, setResetPinError] = useState("");
   const [rateStr, setRateStr] = useState(settings ? String(settings.usdRate) : "");
   const [rateMsg, setRateMsg] = useState("");
+  const sales = useSales();
+  const fx = sales.fx;
+  const rateAuto = settings?.usdRateAuto !== false;
   const [tgToken, setTgToken] = useState(settings?.telegramBotToken || "");
   const [tgChatId, setTgChatId] = useState(settings?.telegramChatId || "");
   const [tgMsg, setTgMsg] = useState("");
@@ -35,14 +178,6 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
   const [tgUnlockPin, setTgUnlockPin] = useState("");
   const [tgUnlockError, setTgUnlockError] = useState("");
   const [tgUnlocking, setTgUnlocking] = useState(false);
-  const [gmailUser, setGmailUser] = useState(settings?.gmailUser || "");
-  const [gmailAppPassword, setGmailAppPassword] = useState(settings?.gmailAppPassword || "");
-  const [gmailMsg, setGmailMsg] = useState("");
-
-  function saveGmail() {
-    onSaveSettings({ ...settings, gmailUser: gmailUser.trim(), gmailAppPassword: gmailAppPassword.trim() });
-    setGmailMsg("Saqlandi");
-  }
 
   async function unlockTelegram() {
     setTgUnlocking(true);
@@ -60,14 +195,14 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
     }
   }
 
-  function saveTelegram() {
-    onSaveSettings({ ...settings, telegramBotToken: tgToken.trim(), telegramChatId: tgChatId.trim(), backupTime });
-    setTgMsg("Saqlandi");
+  async function saveTelegram() {
+    await patchSettings({ telegramBotToken: tgToken.trim(), telegramChatId: tgChatId.trim() });
   }
+  async function saveBackupTime() { await patchSettings({ backupTime }); }
   function disableTelegram() {
     setTgToken("");
     setTgChatId("");
-    onSaveSettings({ ...settings, telegramBotToken: "", telegramChatId: "" });
+    patchSettings({ telegramBotToken: "", telegramChatId: "" });
     setTgMsg("Xabarnomalar o'chirildi");
   }
   async function sendBackupNow() {
@@ -83,18 +218,23 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
     }
   }
 
-  function changePin() {
-    if (!/^\d{4,6}$/.test(pin)) return setMsg("PIN 4-6 xonali raqam bo'lishi kerak");
+  async function changePin() {
+    if (!/^\d{4,6}$/.test(pin)) throw new Error("PIN 4-6 xonali raqam bo'lishi kerak");
     const next = employees.map((e) => (e.id === currentUser.id ? { ...e, pin } : e));
-    onSave(next);
+    await onSave(next);
     setMsg("PIN yangilandi");
     setPin("");
   }
-  function saveRate() {
+  async function saveRate() {
     const rate = parseFloat(rateStr.replace(/\s/g, "").replace(",", "."));
-    if (!rate || rate <= 0) return setRateMsg("Kursni to'g'ri kiriting");
-    onSaveSettings({ ...settings, usdRate: rate });
-    setRateMsg("Kurs yangilandi");
+    if (!rate || rate <= 0) throw new Error("Kursni to'g'ri kiriting");
+    await patchSettings({ usdRate: rate });
+    loadSales(true).catch(() => {});
+  }
+  async function setRateAuto(on) {
+    await patchSettings({ usdRateAuto: on });
+    setRateMsg("");
+    loadSales(true).catch(() => {});
   }
   async function verifyPin(pinToCheck) {
     try {
@@ -104,6 +244,14 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
       return false;
     }
   }
+  // ---- Saqlash paneli: o'zgargan maydonlar ----
+  const rateDirty = isAdmin && rateStr !== "" && String(parseFloat(String(rateStr).replace(/\s/g, "").replace(",", "."))) !== String(settings?.usdRate ?? "");
+  useDirty("rate", { dirty: rateDirty, label: "Dollar kursi", save: saveRate, reset: () => setRateStr(settings ? String(settings.usdRate) : "") });
+  useDirty("pin", { dirty: pin.length > 0, label: "PIN", save: changePin, reset: () => setPin("") });
+  const tgDirty = isAdmin && tgUnlocked && (tgToken.trim() !== (settings?.telegramBotToken || "") || tgChatId.trim() !== (settings?.telegramChatId || ""));
+  useDirty("telegram", { dirty: tgDirty, label: "Telegram bot", save: saveTelegram, reset: () => { setTgToken(settings?.telegramBotToken || ""); setTgChatId(settings?.telegramChatId || ""); } });
+  useDirty("backup", { dirty: isAdmin && backupTime !== (settings?.backupTime || "21:00"), label: "Zaxira vaqti", save: saveBackupTime, reset: () => setBackupTime(settings?.backupTime || "21:00") });
+
   async function confirmResetWithPin() {
     const ok = await verifyPin(resetPin);
     if (!ok) {
@@ -116,17 +264,10 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
     setResetPinError("");
   }
 
-  return (
-    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start", maxWidth: 1240, margin: "0 auto" }}>
-      <div style={{ flex: "2 1 520px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-        <AppearanceSection appearance={appearance} onApply={onApplyAppearance} />
 
-        {bgState && <BackgroundSection bgState={bgState} />}
-        {notif?.prefs && <NotificationsSection n={notif} />}
-        {isAdmin && <PriceListSection categories={categories} />}
-        {isAdmin && <QuickRepliesSection />}
-
-        <Card>
+  const S = {
+    profil: <>
+              <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
             <UiAvatar name={currentUser.name} size={44} />
             <div>
@@ -137,52 +278,56 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
             </div>
           </div>
           <Field label="Yangi PIN kod">
-            <div style={{ display: "flex", gap: 8 }}>
-              <input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} style={getInputStyle()} placeholder="0000" inputMode="numeric" maxLength={6} />
-              <Button onClick={changePin} style={{ flexShrink: 0 }}>Saqlash</Button>
-            </div>
+            <input value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setMsg(""); }} style={getInputStyle()} placeholder="4–6 raqam" inputMode="numeric" maxLength={6} type="password" data-testid="profile-pin" />
           </Field>
           {msg && <div style={{ fontSize: 12, color: THEME.green, marginTop: 8 }}>{msg}</div>}
           <Button variant="ghost" onClick={onLogout} style={{ marginTop: 14 }}><LogOut size={14} /> Chiqish</Button>
         </Card>
 
-        <PasskeySection currentUser={currentUser} theme={THEME} Card={Card} />
 
-        <Card>
-          <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>Valyuta formati</div>
-          <div style={{ fontSize: 12.5, color: THEME.muted }}>Barcha summalar o'zbek so'mi formatida ko'rsatiladi, masalan: <b style={{ color: THEME.text }}>{money(1500000)}</b></div>
-        </Card>
-
+      <PasskeySection currentUser={currentUser} theme={THEME} Card={Card} />
+    </>,
+    korinish: <>
+      <AppearanceSection appearance={appearance} onApply={onApplyAppearance} />
+      <AppearancePreviewCard appearance={appearance} />
+      {bgState && <BackgroundSection bgState={bgState} />}
+    </>,
+    bildirish: notif?.prefs ? <NotificationsSection n={notif} /> : <Card><div style={{ fontSize: 13, color: THEME.muted }}>Bildirishnomalar yuklanmoqda…</div></Card>,
+    savdo: isAdmin && <>
+      <PriceListSection categories={categories} />
         {isAdmin && (
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Valyuta kursi (USD → so'm)</div>
-            <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 10 }}>
-              Tushum bo'limida 1 kv/m narxi dollarda kiritiladi va shu kurs orqali so'mga o'giriladi. Kurs faqat
-              yangi kiritilayotgan yozuvlarga ta'sir qiladi — eski yozuvlar o'sha paytdagi kursda saqlanib qoladi.
+          <Card data-testid="rate-card">
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Dollar kursi (USD → so'm)</div>
+            <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 10, lineHeight: 1.45 }}>
+              Kalkulyatorda narx dollarda kiritilsa, shu kurs bo'yicha so'mga o'giriladi (menejer har bir smetada kursni qo'lda o'zgartira oladi).
+              Kurs pozitsiyada saqlanadi — keyin kurs o'zgarsa ham eski smeta va buyurtmalar summasi o'zgarmaydi. Mijozga summa faqat so'mda yuboriladi.
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input value={rateStr} onChange={(e) => setRateStr(e.target.value.replace(/[^0-9.,]/g, ""))} style={getInputStyle()} placeholder="12700" inputMode="decimal" />
-              <Button onClick={saveRate} style={{ flexShrink: 0 }}>Saqlash</Button>
+            <div role="radiogroup" aria-label="Kurs manbai" style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+              {[[true, "Markaziy bank kursi (avtomatik)", fx?.cbu ? `bugun: 1 $ = ${rateText(fx.cbu.rate)} so'm${fx.cbu.date ? ` · ${fx.cbu.date.split("-").reverse().join(".")}` : ""}` : "cbu.uz dan kuniga bir necha marta olinadi; olib bo'lmasa — qo'lda kiritilgan kurs"],
+                [false, "Qo'lda kiritilgan kurs", "pastdagi qiymat ishlatiladi"]].map(([v, t, sub]) => (
+                <label key={String(v)} style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer", padding: "8px 10px", borderRadius: 10, border: `1px solid ${rateAuto === v ? THEME.violet : THEME.border}` }}>
+                  <input type="radio" name="usd-rate-src" checked={rateAuto === v} onChange={() => setRateAuto(v)} data-testid={v ? "rate-auto" : "rate-manual"} style={{ marginTop: 3 }} />
+                  <span><span style={{ fontSize: 13, fontWeight: 600 }}>{t}</span><br /><span style={{ fontSize: 12, color: THEME.muted }}>{sub}</span></span>
+                </label>
+              ))}
             </div>
+            <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 6 }}>Qo'lda kurs{rateAuto ? " (Markaziy bank kursi olinmasa ishlatiladi)" : ""}. Tushum bo'limidagi dollar narxlar ham shu kursdan foydalanadi.</div>
+            <input value={rateStr} onChange={(e) => setRateStr(e.target.value.replace(/[^0-9.,]/g, ""))} style={getInputStyle()} placeholder="12700" inputMode="decimal" aria-label="Qo'lda kurs" data-testid="rate-manual-input" />
             {rateMsg && <div style={{ fontSize: 12, color: THEME.green, marginTop: 8 }}>{rateMsg}</div>}
-            <div style={{ fontSize: 12, color: THEME.muted, marginTop: 10 }}>
-              Joriy kurs: <b style={{ color: THEME.text }}>1 $ = {money(settings?.usdRate || 0)}</b>
+            <div style={{ fontSize: 12, color: THEME.muted, marginTop: 10 }} data-testid="rate-effective">
+              Kalkulyatordagi kurs: <b style={{ color: THEME.text }}>1 $ = {fx ? `${rateText(fx.rate)} so'm` : money(settings?.usdRate || 0)}</b>{fx ? ` · ${fx.source === "cbu" ? "Markaziy bank" : "qo'lda"}` : ""}
             </div>
           </Card>
         )}
 
-        {isAdmin && onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} />}
 
-        {isAdmin && (
-          <Card>
-            <BackupRestoreSection />
-          </Card>
-        )}
-
+      <div data-testid="quick-replies-anchor"><QuickRepliesSection /></div>
+    </>,
+    integratsiya: isAdmin && <>
         {isAdmin && (
           <Card>
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
-              <Lock size={14} color={THEME.muted} /> Telegram xabarnomalari
+              <Lock size={14} color={THEME.muted} /> Telegram bot va xabarnomalar
             </div>
             {!tgUnlocked ? (
               <div>
@@ -220,10 +365,7 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
               <Field label="Xodimlar guruhi Chat ID">
                 <input value={tgChatId} onChange={(e) => setTgChatId(e.target.value)} style={getInputStyle()} placeholder="123456789" />
               </Field>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Button onClick={saveTelegram}>Saqlash</Button>
-                {(settings?.telegramBotToken || tgToken) && <Button variant="ghost" onClick={disableTelegram}>O'chirish</Button>}
-              </div>
+              {settings?.telegramBotToken && <div><Button variant="ghost" onClick={disableTelegram}>Botni o'chirish</Button></div>}
               {tgMsg && <div style={{ fontSize: 12, color: THEME.green }}>{tgMsg}</div>}
               <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6 }}>
                 Holat:
@@ -237,66 +379,37 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
               </div>
             </div>
             {settings?.telegramBotToken && <TelegramRoutesSection settings={settings} onSaveSettings={onSaveSettings} />}
-            <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 14, paddingTop: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Kunlik hisobot va zaxira nusxa</div>
-              <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 10 }}>
-                Har kuni belgilangan vaqtda Excel hisobot (Buyurtmalar + Rasxodlar) va butun bazaning zaxira nusxasi
-                Telegram'ga avtomatik yuboriladi (qayerga — yuqoridagi «Fayllar» qatorida).
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-                <Field label="Yuborish vaqti">
-                  <input type="time" value={backupTime} onChange={(e) => setBackupTime(e.target.value)} style={{ ...getInputStyle(), width: "auto" }} />
-                </Field>
-                <Button onClick={saveTelegram}>Vaqtni saqlash</Button>
-                <Button variant="ghost" onClick={sendBackupNow} disabled={sendingNow || !settings?.telegramBotToken}>
-                  {sendingNow ? "Yuborilmoqda..." : "Hoziroq yubor"}
-                </Button>
-              </div>
-              {backupMsg && <div style={{ fontSize: 12, color: backupMsg.includes("xato") ? THEME.rose : THEME.green, marginTop: 8 }}>{backupMsg}</div>}
-            </div>
-            <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 14, paddingTop: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>Email orqali PIN tiklash (Gmail)</div>
-              <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 10 }}>
-                Xodim PIN'ini unutsa, "PIN'ni unutdingizmi?" havolasi orqali email'iga tasdiqlash kodi yuboriladi.
-                Buning uchun Gmail hisobingizdan <b style={{ color: THEME.text }}>App Password</b> (ilova paroli) kerak —
-                oddiy Gmail parolingiz emas. Google hisobingizda 2 bosqichli tasdiqlashni yoqib,
-                myaccount.google.com/apppasswords sahifasidan yarating.
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <Field label="Gmail manzili">
-                  <input value={gmailUser} onChange={(e) => setGmailUser(e.target.value)} style={getInputStyle()} placeholder="sizniki@gmail.com" type="email" />
-                </Field>
-                <Field label="App Password (16 belgili)">
-                  <input value={gmailAppPassword} onChange={(e) => setGmailAppPassword(e.target.value)} style={getInputStyle()} placeholder="xxxx xxxx xxxx xxxx" type="password" />
-                </Field>
-                <div><Button onClick={saveGmail}>Saqlash</Button></div>
-                {gmailMsg && <div style={{ fontSize: 12, color: THEME.green }}>{gmailMsg}</div>}
-                <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6 }}>
-                  Holat:
-                  {settings?.gmailUser && settings?.gmailAppPassword ? (
-                    <Badge color={THEME.green} bg={THEME.greenBg}>Yoqilgan</Badge>
-                  ) : (
-                    <Badge color={THEME.muted} bg={THEME.surface}>O'chirilgan</Badge>
-                  )}
-                </div>
-              </div>
-            </div>
               </>
             )}
           </Card>
         )}
 
+
+      {onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} />}
+    </>,
+    bolimlar: isAdmin && <ModulesSection onOpenView={onOpenView} />,
+    malumotlar: isAdmin && <>
         {isAdmin && (
-          <Card style={{ borderColor: THEME.roseBorder }}>
-            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, color: THEME.rose }}>Xavfli hudud</div>
-            <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 10 }}>Barcha tushum va rasxod ma'lumotlarini butunlay o'chirish. Bu amalni bekor qilib bo'lmaydi.</div>
-            <Button variant="danger" onClick={() => setConfirmReset(true)}><Trash2 size={14} /> Barcha ma'lumotlarni tozalash</Button>
+          <Card data-testid="backup-time-card">
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Kunlik hisobot va zaxira nusxa</div>
+            <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 10, lineHeight: 1.45 }}>
+              Har kuni belgilangan vaqtda Excel hisobot (Buyurtmalar + Rasxodlar) va butun bazaning zaxira nusxasi Telegram'ga avtomatik yuboriladi
+              (qayerga — Integratsiyalar → Telegram yo'nalishlari, «Fayllar» qatori).
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <Field label="Yuborish vaqti">
+                <input type="time" value={backupTime} onChange={(e) => setBackupTime(e.target.value)} style={{ ...getInputStyle(), width: "auto" }} />
+              </Field>
+              <Button variant="ghost" onClick={sendBackupNow} disabled={sendingNow || !settings?.telegramBotToken}>
+                {sendingNow ? "Yuborilmoqda..." : "Hoziroq yubor"}
+              </Button>
+            </div>
+            {!settings?.telegramBotToken && <div style={{ fontSize: 12, color: THEME.muted, marginTop: 8 }}>Avval Integratsiyalar bo'limida Telegram botni ulang.</div>}
+            {backupMsg && <div style={{ fontSize: 12, color: backupMsg.includes("xato") ? THEME.rose : THEME.green, marginTop: 8 }}>{backupMsg}</div>}
           </Card>
         )}
-      </div>
 
-      <div style={{ flex: "1 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-        <AppearancePreviewCard appearance={appearance} />
+        <Card><BackupRestoreSection /></Card>
         {isAdmin && (
           <TrashSection
             orders={orders}
@@ -309,8 +422,19 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
             onPermanentDeletePayment={onPermanentDeletePayment}
           />
         )}
-      </div>
 
+        {isAdmin && (
+          <Card style={{ borderColor: THEME.roseBorder }}>
+            <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, color: THEME.rose }}>Xavfli hudud</div>
+            <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 10 }}>Barcha tushum va rasxod ma'lumotlarini butunlay o'chirish. Bu amalni bekor qilib bo'lmaydi.</div>
+            <Button variant="danger" onClick={() => setConfirmReset(true)}><Trash2 size={14} /> Barcha ma'lumotlarni tozalash</Button>
+          </Card>
+        )}
+
+    </>,
+    jurnal: isAdmin && <SettingsJournal />,
+  };
+  return { S, modal: <>
       {confirmReset && (
         <Modal title="Xavfsizlik tasdiqlash" onClose={() => { setConfirmReset(false); setResetPin(""); setResetPinError(""); }} width={380}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -341,6 +465,6 @@ export function SettingsView({ categories, notif, bgState, currentUser, employee
           </div>
         </Modal>
       )}
-    </div>
-  );
+
+  </> };
 }

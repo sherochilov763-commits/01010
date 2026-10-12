@@ -19,12 +19,31 @@ function toJpeg(source, w, h) {
   return c.toDataURL("image/jpeg", 0.72);
 }
 
-export function SelfieCapture({ onDone, onCancel }) {
+// Bir martalik ogohlantirish: «Keldim»da rasm olinadi (shaxsiy ma'lumot — xodim bilishi shart)
+const NOTICE_KEY = "uvix:selfieNotice:v1";
+const noticeSeen = () => { try { return localStorage.getItem(NOTICE_KEY) === "1"; } catch { return true; } };
+
+// auto — kamera tayyor bo'lgach ~1 soniyada o'zi suratga oladi va darhol yuboradi (ko'rib chiqish yo'q)
+export function SelfieCapture({ onDone, onCancel, auto = true }) {
   const video = useRef(null);
   const stream = useRef(null);
   const [shot, setShot] = useState(null);
   const [err, setErr] = useState("");
   const [ready, setReady] = useState(false);
+  const [ack, setAck] = useState(noticeSeen);
+  const [count, setCount] = useState(null);
+  useEffect(() => {
+    if (!auto || !ready || !ack || shot) return;
+    setCount(1);
+    const t = setTimeout(() => {
+      const v = video.current;
+      if (!v || !v.videoWidth) return;
+      const img = toJpeg(v, v.videoWidth, v.videoHeight);
+      setShot(img);
+      onDone(img);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [auto, ready, ack, shot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let stopped = false;
@@ -59,10 +78,19 @@ export function SelfieCapture({ onDone, onCancel }) {
           {shot ? <img src={shot} alt="Selfi" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             : <video ref={video} playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)" }} />}
           {!shot && ready && <div style={{ position: "absolute", inset: "12% 18% 22%", border: "2px dashed rgba(255,255,255,0.5)", borderRadius: "50%", pointerEvents: "none" }} />}
+          {auto && ack && !shot && ready && count && <div data-testid="selfie-auto" style={{ position: "absolute", left: 0, right: 0, bottom: 18, textAlign: "center", color: "#fff", fontWeight: 700, fontSize: 15, textShadow: "0 1px 6px rgba(0,0,0,.6)" }}>Kameraga qarang…</div>}
+          {!ack && (
+            <div data-testid="selfie-notice" style={{ position: "absolute", inset: 0, background: "rgba(11,8,22,.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 26, textAlign: "center", color: "#fff" }}>
+              <Camera size={34} />
+              <div style={{ fontWeight: 700, fontSize: 17 }}>«Keldim» bosilganda rasm olinadi</div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "rgba(255,255,255,.8)" }}>Kamera o'zi bir soniyada suratga oladi — tugma bosish shart emas. Rasm ishga kelganingizni tasdiqlash uchun, uni faqat administrator ko'radi va muddat o'tgach o'chiriladi.</div>
+              <button type="button" data-testid="selfie-ack" onClick={() => { try { localStorage.setItem(NOTICE_KEY, "1"); } catch { /* shart emas */ } setAck(true); }} style={{ height: 46, padding: "0 22px", borderRadius: 14, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>Tushunarli</button>
+            </div>
+          )}
           {err && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", color: "#FFB4B6", fontSize: 14, lineHeight: 1.5 }}>{err}</div>}
         </div>
         <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 12.5, textAlign: "center" }}>Yuzingiz ramkaga tushsin. Rasmni faqat administrator ko'radi.</div>
-        {shot ? (
+        {auto ? (shot ? <div style={{ color: "#fff", textAlign: "center", fontWeight: 700 }}>Yuborilmoqda…</div> : null) : shot ? (
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" onClick={() => setShot(null)} style={{ flex: 1, height: 52, borderRadius: 16, border: "1px solid rgba(255,255,255,0.2)", background: "none", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit" }}><RotateCcw size={18} /> Qayta</button>
             <button type="button" data-testid="selfie-send" onClick={() => onDone(shot)} style={{ flex: 2, height: 52, borderRadius: 16, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>Keldim ✓</button>

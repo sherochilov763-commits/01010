@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { ClipboardList, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ClipboardList, KeyRound, Plus, Send, Trash2, Users } from "lucide-react";
+import { fetchPinHelp, fetchStaffTelegram, giveTempPin } from "../storage.js";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
 import { uid } from "../lib/format.js";
 import { roleLabel } from "../constants.js";
@@ -25,30 +26,35 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
   const [pin, setPin] = useState("");
-  const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
   const [tab, setTab] = useState("list");
-  const [editEmailFor, setEditEmailFor] = useState(null);
-  const [editEmailValue, setEditEmailValue] = useState("");
-  const [editEmailError, setEditEmailError] = useState("");
-
-  function saveEmail() {
-    const trimmed = editEmailValue.trim();
-    if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return setEditEmailError("Email manzili noto'g'ri formatda");
-    onSave(employees.map((e) => (e.id === editEmailFor.id ? { ...e, email: trimmed } : e)));
-    setEditEmailFor(null);
-    setEditEmailError("");
+  // Kirish holati: Telegram ulanganmi (PIN tiklash kodi shu yerga keladi) va kim PIN so'radi
+  const isAdmin = currentUser?.role === "admin";
+  const [tg, setTg] = useState(null);
+  const [help, setHelp] = useState({});
+  const [temp, setTemp] = useState(null); // { emp, stage: "confirm" | "busy" | "done", pin, expiresAt, error }
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetchStaffTelegram().then(setTg).catch(() => setTg({}));
+    fetchPinHelp().then(setHelp).catch(() => {});
+  }, [isAdmin]);
+  async function makeTemp() {
+    setTemp((t) => ({ ...t, stage: "busy", error: "" }));
+    try {
+      const r = await giveTempPin(temp.emp.id);
+      setTemp((t) => ({ ...t, stage: "done", pin: r.pin, expiresAt: r.expiresAt }));
+      setHelp((h) => { const n = { ...h }; delete n[temp.emp.id]; return n; });
+    } catch (e) { setTemp((t) => ({ ...t, stage: "confirm", error: e.message })); }
   }
 
   function addEmployee() {
     if (!name.trim()) return setError("Ismni kiriting");
     if (!/^\d{4,6}$/.test(pin)) return setError("PIN 4-6 xonali raqam bo'lishi kerak");
     if (employees.some((e) => e.name.toLowerCase() === name.trim().toLowerCase())) return setError("Bu ism band");
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError("Email manzili noto'g'ri formatda");
-    const next = [...employees, { id: uid(), name: name.trim(), role, pin, email: email.trim() }];
+    const next = [...employees, { id: uid(), name: name.trim(), role, pin }];
     onSave(next);
-    setModal(false); setName(""); setPin(""); setRole("operator"); setEmail(""); setError("");
+    setModal(false); setName(""); setPin(""); setRole("operator"); setError("");
   }
   function removeEmployee(emp) {
     onSave(employees.filter((e) => e.id !== emp.id));
@@ -70,7 +76,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
             <thead>
               <tr style={{ textAlign: "left", background: "transparent", borderBottom: `1.5px solid ${THEME.border}` }}>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Ism</th>
-                <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Email</th>
+                <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Kirish</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Rol</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Ruxsatlar</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}></th>
@@ -80,17 +86,19 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
               {employees.map((e) => (
                 <tr key={e.id} className="uvix-row" style={{ borderBottom: `1px solid ${THEME.border}` }}>
                   <td style={{ padding: "13px 16px", fontWeight: 600 }}>{e.name}</td>
-                  <td style={{ padding: "13px 16px", color: THEME.muted, fontSize: 12.5 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {e.email || <span style={{ color: THEME.rose }}>Kiritilmagan</span>}
-                      <button
-                        onClick={() => { setEditEmailFor(e); setEditEmailValue(e.email || ""); setEditEmailError(""); }}
-                        className="uvix-iconbtn"
-                        style={{ ...getIconBtn(), padding: 3 }}
-                        title="Email'ni tahrirlash"
-                      >
-                        <Pencil size={12} />
-                      </button>
+                  <td style={{ padding: "13px 16px", fontSize: 12.5 }} data-access={e.id}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {tg && (tg[e.id]
+                        ? <span title={`PIN tiklash kodi va eslatmalar shu Telegram'ga keladi`} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: THEME.muted }}><Send size={12} color="#229ED9" />{tg[e.id].username ? `@${tg[e.id].username}` : "Telegram ulangan"}</span>
+                        : <span data-testid="tg-missing" title="Xodim UVIX'ga kirib, Sozlamalar → «Telegram'ni ulash»ni bosishi kerak (faqat o'zi ulay oladi)" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: THEME.amber || "#B45309", background: THEME.amberBg || "#FDF3E3", borderRadius: 999, padding: "2px 8px", fontWeight: 600, fontSize: 11.5 }}><Send size={11} /> Telegram ulanmagan</span>)}
+                      {help[e.id] && <span data-testid="pin-help" style={{ color: THEME.rose, background: THEME.roseBg || "#FDECEC", borderRadius: 999, padding: "2px 8px", fontWeight: 600, fontSize: 11.5 }}>PIN'ni unutdi</span>}
+                      {e.mustChangePin && <span style={{ color: THEME.muted, fontSize: 11.5 }}>· vaqtinchalik PIN berilgan</span>}
+                      {isAdmin && e.id !== currentUser.id && (
+                        <button type="button" onClick={() => setTemp({ emp: e, stage: "confirm" })} className="uvix-iconbtn" data-testid="temp-pin-btn"
+                          style={{ ...getIconBtn(), padding: "3px 8px", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: help[e.id] ? THEME.violet : THEME.muted }} title="Vaqtinchalik PIN berish">
+                          <KeyRound size={12} /> Vaqtinchalik PIN
+                        </button>
+                      )}
                     </div>
                   </td>
                   <td style={{ padding: "13px 16px" }}>
@@ -154,9 +162,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
             <Field label="PIN kod (4-6 raqam)">
               <input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} style={getInputStyle()} placeholder="0000" inputMode="numeric" maxLength={6} />
             </Field>
-            <Field label="Email (PIN unutilganda tiklash uchun)">
-              <input value={email} onChange={(e) => setEmail(e.target.value)} style={getInputStyle()} placeholder="xodim@gmail.com" type="email" />
-            </Field>
+            <div style={{ fontSize: 12, color: THEME.muted, lineHeight: 1.45 }}>PIN unutilsa — xodim Telegram orqali kod oladi (Telegram'ni o'zi ulagan bo'lsa) yoki sizdan vaqtinchalik PIN so'raydi.</div>
             {error && <div style={{ color: THEME.rose, fontSize: 12.5 }}>{error}</div>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <Button variant="ghost" onClick={() => setModal(false)}>Bekor qilish</Button>
@@ -172,18 +178,25 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
           onConfirm={() => removeEmployee(confirmDel)}
         />
       )}
-      {editEmailFor && (
-        <Modal title={`${editEmailFor.name} — email`} onClose={() => setEditEmailFor(null)} width={380}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <Field label="Email (PIN unutilganda tiklash uchun)">
-              <input value={editEmailValue} onChange={(e) => setEditEmailValue(e.target.value)} style={getInputStyle()} placeholder="xodim@gmail.com" type="email" autoFocus />
-            </Field>
-            {editEmailError && <div style={{ color: THEME.rose, fontSize: 12.5 }}>{editEmailError}</div>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Button variant="ghost" onClick={() => setEditEmailFor(null)}>Bekor qilish</Button>
-              <Button onClick={saveEmail}>Saqlash</Button>
+      {temp && (
+        <Modal title={`${temp.emp.name} — vaqtinchalik PIN`} onClose={() => setTemp(null)} width={400}>
+          {temp.stage === "done" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="temp-pin-result">
+              <div style={{ fontSize: 13, color: THEME.muted }}>Bu PIN'ni xodimga ayting (yoki yozib bering):</div>
+              <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: 8, textAlign: "center", padding: "12px 0", borderRadius: 12, background: THEME.chip || THEME.hover, fontVariantNumeric: "tabular-nums" }} data-testid="temp-pin-value">{temp.pin}</div>
+              <div style={{ fontSize: 12.5, color: THEME.muted, lineHeight: 1.5 }}>24 soat amal qiladi ({new Date(temp.expiresAt).toLocaleString("uz-UZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} gacha). Xodim u bilan kirishi bilan o'zining yangi PIN'ini qo'yadi — siz uni bilmaysiz.</div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}><Button onClick={() => setTemp(null)}>Tayyor</Button></div>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>{temp.emp.name}ning hozirgi PIN'i bekor qilinadi va 6 xonali vaqtinchalik PIN yaratiladi. Xodim u bilan kirgach, o'z PIN'ini qo'yishi shart.</div>
+              {temp.error && <div style={{ color: THEME.rose, fontSize: 12.5 }}>{temp.error}</div>}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <Button variant="ghost" onClick={() => setTemp(null)}>Bekor qilish</Button>
+                <Button onClick={makeTemp} disabled={temp.stage === "busy"} data-testid="temp-pin-confirm">Vaqtinchalik PIN yaratish</Button>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>

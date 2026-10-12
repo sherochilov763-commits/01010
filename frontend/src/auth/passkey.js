@@ -102,6 +102,21 @@ export async function loginWithPrepared(prepared) {
   return data.employee;
 }
 
+// ---------- Kirgan xodim o'zini qayta tasdiqlaydi («Keldim», kompyuterga QR orqali kirish) ----------
+function myId() {
+  try { const p = JSON.parse(atob(String(getToken() || "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))); return p.sub || null; } catch { return null; }
+}
+export const prepareConfirm = () => { const id = myId(); return id ? prepareLogin(id) : Promise.resolve(null); };
+export async function confirmWithPrepared(prepared) {
+  const response = await startAuthentication({ optionsJSON: prepared.options });
+  return post("/auth/passkey/confirm", { response }, true);
+}
+// Faqat imzo (yuborishni chaqiruvchi o'zi qiladi — masalan QR orqali kompyuterga kirish)
+export async function confirmWithPreparedResponse(prepared) {
+  return startAuthentication({ optionsJSON: prepared.options });
+}
+export const isEnrolledMe = () => { const id = myId(); return !!id && isEnrolledHere(id); };
+
 // ---------- Yoqish (PIN bilan kirgandan keyin) ----------
 export async function prepareEnroll() {
   return post("/auth/passkey/register/options", {}, true);

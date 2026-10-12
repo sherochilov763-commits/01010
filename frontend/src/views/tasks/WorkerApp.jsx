@@ -12,6 +12,7 @@ import PasskeySection from "../../auth/PasskeySection.jsx";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
 import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
 import { CheckInButton } from "../../components/CheckInButton.jsx";
+import { QrApproveHost, QrScanButton } from "../../components/PhoneToDesktop.jsx";
 
 const COLUMNS = [
   { key: "new", label: "Yangi", color: "#3B82F6" },
@@ -114,6 +115,7 @@ export function WorkerApp({ currentUser, onLogout }) {
             </div>
           )}
           <div style={{ flex: 1 }} />
+          <QrScanButton compact />
           <CheckInButton compact />
           <div className="uvix-worker-name" style={{ textAlign: "right", lineHeight: 1.25 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{currentUser.name}</div>
@@ -211,6 +213,7 @@ export function WorkerApp({ currentUser, onLogout }) {
           onConfirm={() => { const t = confirmDone; setConfirmDone(null); change(t, "done"); }}
         />
       )}
+      <QrApproveHost />
     </div>
   );
 }

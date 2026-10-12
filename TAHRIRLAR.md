@@ -1,0 +1,11 @@
+# Tahrirlar ro'yxati — HAMMASI BAJARILDI (2026-10-12)
+
+1. **Kalkulyator — o'lcham mm da.** Standart — mm (masalan 2000 × 1600); kerak bo'lsa mm / sm / m tanlash. Maydon va narx m² da hisoblanaveradi; smeta/buyurtmada o'lcham mm ko'rinishida.
+2. **PIN unutilganda tiklash.** Telegram bot kodi (faqat xodim o'zi ulagan shaxsiy chatga, «@ja•••ov ga yuborildi») + «Admindan so'rash» → vaqtinchalik PIN (FAQAT admin beradi, xodim birinchi kirishda yangisini qo'yadi). **Email orqali tiklash olib tashlanadi.** Ulangan Telegram almashsa — eski akkauntga va adminga xabar. Admin o'zi unutsa — Telegram kod yoki `reset-admin-pin.js`. Kod 6 xonali, 10 daqiqa, 5 urinish, jurnal + adminga xabar.
+3. **Davomat — xodimga qo'shimcha xabarlar.** «Keldim/Ketdim» tasdig'i; admin qo'lda to'g'rilasa xodimga xabar; oylik shaxsiy xulosa; Xodimlar ro'yxatida Telegram ulanmaganlar belgisi + havola yuborish.
+4. **Kechikish / erta ketish / qo'shimcha vaqt — kun : soat : daqiqa.** 1 kun = ish kuni (xodim jadvali, masalan 9 soat). Ko'rinish: «1 kun 2 soat 15 daq» (bo'sh qismlar yashiriladi). Hamma joyda: Davomat, Telegram xabarlari, hisobotlar, Excel.
+5. **Selfi bir bosishda.** «Keldim» → kamera ~1 soniyada o'zi suratga oladi → darhol kiradi. Birinchi marta bir martalik ogohlantirish.
+6. **«Ketdim»ni osonlashtirish — a, b, c, d:** (a) unutilsa avtomatik Ketdim = jadval tugash vaqti, «avto» belgisi, qo'shimcha vaqt yo'q; (b) sexdan tashqarida ham bosish mumkin — adminga «sexdan tashqarida · 1,2 km»; (c) Telegram eslatmada «Ketdim» tugmasi; (d) ish tugagach ilova ochilsa katta «Ketdim» taklifi.
+7. **«Keldim»dan oldin Face ID tasdig'i** — Davomat sozlamalarida yoqiladigan qilib (standart: o'chiq), telefonda ishlaydi.
+8. **Sozlamalar tuzilishi** (tasdiqlandi): guruhlar (Profil, Ko'rinish, Bildirishnomalar | Savdo, Integratsiyalar, Bo'limlar, Ma'lumotlar, Jurnal), «Tizim holati» kartasi, bir xil saqlash paneli, Ctrl K da sozlamalar, o'zgarishlar jurnali; «Valyuta formati» va Gmail kartalari olib tashlanadi.
+9. **Kompyuterdan kirish ekrani — A + telefon** (tasdiqlandi): chapda fon + soat + sana; o'ngda «PIN bilan | Telefon bilan» yorliqlari. PIN: xodimlar ro'yxati (↑↓), 4 katak, klaviatura, Enter. Telefon: QR (60 s, bir martalik) → telefonda «Kompyuterga kirish» → «Kompyuterga kirasizmi? Chrome · Windows» → Face ID → kompyuter ochiladi.

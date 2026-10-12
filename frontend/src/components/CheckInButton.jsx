@@ -5,6 +5,7 @@ import { checkAttendance } from "../storage.js";
 import { getPosition } from "../lib/geo.js";
 import { refreshAttendance, useMyAttendance } from "../lib/attendanceStore.js";
 import { SelfieCapture } from "./SelfieCapture.jsx";
+import { confirmWithPrepared, isCancel, makePreparer, prepareConfirm } from "../auth/passkey.js";
 import { THEME } from "../theme.js";
 
 const toMin = (hm) => { const [h, m] = String(hm || "0:0").split(":").map(Number); return h * 60 + m; };
@@ -21,6 +22,7 @@ function sinceIn(today) {
   if (!start || isNaN(start)) { const [h, m] = String(today.in).split(":").map(Number); start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m, 0); }
   return Math.max(0, Math.floor((d - start) / 1000));
 }
+const fmtLate = (m) => { const h = Math.floor(m / 60), r = m % 60; return [h ? `${h} soat` : "", r ? `${r} daq` : ""].filter(Boolean).join(" ") || "0 daq"; };
 export const fmtClock = (sec) => `${pad(Math.floor(sec / 3600))}:${pad(Math.floor((sec % 3600) / 60))}:${pad(sec % 60)}`;
 
 // Keldim/Ketdim jarayoni: joylashuv → (oldindan tekshiruv) → selfi → yozish
@@ -35,11 +37,30 @@ export function useCheckIn() {
     hide.current = setTimeout(() => setMsg(null), ok ? 4000 : 8000);
   }
   const askSelfie = () => new Promise((resolve) => setSelfie({ resolve }));
+  // Face ID («Keldim»dan oldin, sozlamada yoqilgan bo'lsa) — Safari uchun so'rov oldindan tayyorlanadi
+  const { data: att } = useMyAttendance();
+  const needBioFirst = !!att?.faceIdRequired && !att?.today?.in;
+  const bioPrep = useRef(null);
+  useEffect(() => {
+    if (!needBioFirst) return;
+    bioPrep.current = makePreparer(prepareConfirm);
+    bioPrep.current.refresh();
+  }, [needBioFirst]);
+  async function confirmBio() {
+    const p = bioPrep.current ? await bioPrep.current.get() : await prepareConfirm();
+    if (!p) throw new Error("Face ID tayyor emas — sahifani yangilab qayta urining");
+    bioPrep.current?.invalidate();
+    try { await confirmWithPrepared(p); }
+    catch (e) { throw new Error(isCancel(e) ? "Face ID bekor qilindi" : e.message || "Face ID bilan tasdiqlab bo'lmadi"); }
+    finally { bioPrep.current?.refresh(); }
+  }
   async function run(type) {
     setBusy(true); setMsg(null);
     try {
+      if (type === "in" && needBioFirst) await confirmBio(); // tugma bosilgan zahoti — Face ID oynasi
       const pos = await getPosition();
       const pre = await checkAttendance(type, { ...pos, dryRun: true });
+      if (pre.needBio && !needBioFirst) await confirmBio();
       let photo;
       if (pre.needPhoto) {
         setBusy(false);
@@ -51,8 +72,8 @@ export function useCheckIn() {
       navigator.vibrate?.(30);
       await refreshAttendance();
       const t = type === "in" ? r.record?.in : r.record?.out;
-      if (type === "in") flash(r.already ? `Bugun ${hmNow(t)} da belgilangansiz` : r.today?.status === "late" ? `Keldingiz: ${hmNow(t)} — ${r.today.lateMin} daqiqa kechikish` : `Keldingiz: ${hmNow(t)}. Ishingizga omad!`, true);
-      else flash(`Ketdingiz: ${hmNow(t)}. Yaxshi dam oling!`, true);
+      if (type === "in") flash(r.already ? `Bugun ${hmNow(t)} da belgilangansiz` : r.today?.status === "late" ? `Keldingiz: ${hmNow(t)} — ${fmtLate(r.today.lateMin)} kechikish` : `Keldingiz: ${hmNow(t)}. Ishingizga omad!`, true);
+      else flash(`Ketdingiz: ${hmNow(t)}.${r.record?.outFar ? " Sexdan tashqarida belgilandi — administratorga ko'rinadi." : ""} Yaxshi dam oling!`, true);
       return true;
     } catch (e) {
       flash(e.message || "Belgilab bo'lmadi", false);
@@ -62,10 +83,15 @@ export function useCheckIn() {
     }
   }
   const selfieModal = selfie ? (
-    <SelfieCapture onDone={(img) => { selfie.resolve(img); setSelfie(null); }} onCancel={() => { selfie.resolve(null); setSelfie(null); }} />
+    <SelfieCapture auto onDone={(img) => { selfie.resolve(img); setSelfie(null); }} onCancel={() => { selfie.resolve(null); setSelfie(null); }} />
   ) : null;
   return { busy, msg, setMsg, run, selfieModal };
 }
+
+// Telegram eslatmasidagi «Ketdim» tugmasi ilovani ?checkout=1 bilan ochadi
+const wantCheckout = (() => { try { return new URLSearchParams(window.location.search).get("checkout") === "1"; } catch { return false; } })();
+const PROMPT_KEY = "uvix:outPrompt";
+const promptDismissed = (date) => { try { const v = JSON.parse(sessionStorage.getItem(PROMPT_KEY) || "null"); return v && v.date === date && Date.now() < v.until; } catch { return false; } };
 
 export function CheckInButton({ compact = false }) {
   const { data } = useMyAttendance();
@@ -74,11 +100,26 @@ export function CheckInButton({ compact = false }) {
   const today = data?.today || {};
   const working = !!today.in && !today.out;
   useTick(working ? 1000 : 30000);
+  // Ish vaqti tugagach ilova ochilsa (yoki Telegram'dagi «Ketdim» bosilsa) — katta «Ketdim» taklifi
+  const [forced, setForced] = useState(wantCheckout);
+  const [dismissTick, setDismissTick] = useState(0);
+  useEffect(() => {
+    if (!wantCheckout) return;
+    try { const u = new URL(window.location.href); u.searchParams.delete("checkout"); window.history.replaceState(null, "", u.toString()); } catch { /* shart emas */ }
+  }, []);
 
   if (!data || !data.config?.enabled || !data.schedule?.track || !data.config?.officeSet) return null;
   const sch = data.schedule;
   const nowM = new Date().getHours() * 60 + new Date().getMinutes();
   const planMin = Math.max(1, toMin(sch.end) - toMin(sch.start));
+
+  const ended = nowM >= toMin(sch.end);
+  const showPrompt = working && (forced || (ended && !promptDismissed(today.date))) && !busy;
+  void dismissTick;
+  function dismissPrompt() {
+    try { sessionStorage.setItem(PROMPT_KEY, JSON.stringify({ date: today.date, until: Date.now() + 60 * 60 * 1000 })); } catch { /* shart emas */ }
+    setForced(false); setDismissTick((x) => x + 1);
+  }
 
   let content, style, onClick, title;
   if (!today.in) {
@@ -86,7 +127,7 @@ export function CheckInButton({ compact = false }) {
     title = "Ishga kelganingizni belgilang";
     onClick = () => run("in");
     style = { background: late ? THEME.rose : THEME.green, color: "#fff", border: "none", boxShadow: `0 6px 18px ${late ? THEME.rose : THEME.green}55` };
-    content = <>{data.config.photo ? <Camera size={16} /> : <MapPin size={16} />} Keldim{late && !compact ? ` · ${nowM - toMin(sch.start)} daq kech` : ""}</>;
+    content = <>{data.config.photo ? <Camera size={16} /> : <MapPin size={16} />} Keldim{late && !compact ? ` · ${fmtLate(nowM - toMin(sch.start))} kech` : ""}</>;
   } else if (working) {
     const sec = sinceIn(today);
     const pct = Math.min(100, (sec / 60 / planMin) * 100);
@@ -98,7 +139,7 @@ export function CheckInButton({ compact = false }) {
       <Clock size={15} color={today.status === "late" ? THEME.amber : THEME.green} />
       <span data-testid="work-timer" style={{ fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{fmtClock(sec)}</span>
       {!compact && <span style={{ color: THEME.muted, fontWeight: 600 }}>· {sch.end} gacha</span>}
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 4, paddingLeft: 9, borderLeft: `1px solid ${THEME.border}` }}><LogOut size={14} /> Ketdim</span>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, marginLeft: 4, paddingLeft: compact ? 7 : 9, borderLeft: `1px solid ${THEME.border}` }} aria-label="Ketdim"><LogOut size={14} />{!compact && " Ketdim"}</span>
       <span aria-hidden="true" style={{ position: "absolute", left: 0, bottom: 0, height: 3, width: `${pct}%`, background: over ? THEME.green : today.status === "late" ? THEME.amber : THEME.violet, transition: "width 1s linear" }} />
     </>;
   } else {
@@ -137,6 +178,19 @@ export function CheckInButton({ compact = false }) {
               <button type="button" onClick={() => setMsg(null)} aria-label="Yopish" style={{ border: 0, background: "none", color: THEME.muted, cursor: "pointer", padding: 0 }}><X size={14} /></button>
             </div>
           )}
+        </div>
+      )}
+      {showPrompt && (
+        <div role="dialog" aria-label="Ish vaqti tugadi" data-testid="out-prompt" style={{ position: "fixed", inset: 0, zIndex: 390, background: "rgba(10,10,14,.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 16 }}>
+          <div style={{ width: "min(420px, 100%)", background: THEME.card, borderRadius: 22, padding: "22px 20px 18px", boxShadow: THEME.shadowLg, textAlign: "center", marginBottom: "max(8px, env(safe-area-inset-bottom))" }}>
+            <div style={{ width: 54, height: 54, borderRadius: 16, background: THEME.greenBg, color: THEME.green, display: "grid", placeItems: "center", margin: "0 auto" }}><LogOut size={26} /></div>
+            <div style={{ fontWeight: 700, fontSize: 19, marginTop: 12 }}>{ended ? "Ish vaqti tugadi" : "Ketyapsizmi?"}</div>
+            <div style={{ fontSize: 14, color: THEME.muted, marginTop: 6, lineHeight: 1.5 }}>
+              Bugun {today.in} da keldingiz · ish {sch.end} da {ended ? "tugadi" : "tugaydi"}.{!ended ? " Hozir ketsangiz — erta ketish sifatida yoziladi." : ""}
+            </div>
+            <button type="button" data-testid="out-prompt-go" onClick={() => { setForced(false); run("out"); }} style={{ width: "100%", height: 54, marginTop: 16, borderRadius: 16, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><LogOut size={20} /> Ketdim</button>
+            <button type="button" onClick={dismissPrompt} style={{ width: "100%", height: 44, marginTop: 8, borderRadius: 14, border: 0, background: "none", color: THEME.muted, fontWeight: 600, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}>Hali ishlayapman</button>
+          </div>
         </div>
       )}
       {selfieModal}

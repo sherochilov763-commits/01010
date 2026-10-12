@@ -842,3 +842,48 @@ Buyurtma endi **bitta yo'l** bilan yaratiladi: smeta (bir yoki bir nechta pozits
 - API: `GET/PUT /api/sales/config`, `PUT /api/quotes/:leadId`, `POST /api/quotes`, `POST /api/quotes/convert`, `POST /api/orders/pay-batch`, `POST /api/orders/:id/stage`, `POST /api/orders/:id/task`.
 - Buyurtmaga qo'shilgan maydonlar: `title, leadId, groupId, groupIdx, groupSize, quoteNo, prodStage, prodAt, readyAt, deliveredAt, design, print`; to'lovda `batchId`. Lidda: `quote, orderIds`. Bazaga migratsiya kerak emas — eski buyurtmalar holati bog'langan lid bosqichidan ko'rsatiladi (yoki qo'lda belgilanadi).
 - Eskirgan nusxadan himoya: menejer eski ma'lumot bilan saqlasa ham ishchi o'zgartirgan holat, server kiritgan to'lovlar va smeta yo'qolmaydi.
+
+## 💵 Kalkulyatorda dollar narx va kurs (2026-10)
+
+- Kalkulyatorda «1 m²» narxi yonida **so'm | $** almashtirgichi bor. $ tanlansa, narx dollarda yoziladi va kurs bo'yicha darhol so'mga o'giriladi: `3,2 m² × 32,8 $ = 104,96 $ → 1 348 245 so'm`.
+- **Kurs** avtomatik qo'yiladi (pastda manbasi yoziladi: «Markaziy bank · 12.10» yoki «Sozlamalardagi kurs»). Menejer shu smeta uchun kursni qo'lda o'zgartira oladi — «… ga qaytarish» bilan asl kursga qaytadi.
+- Valyuta almashtirilganda kiritilgan narx o'giriladi; qiymatga tegmay qaytarilsa — asl narx tiklanadi.
+- **Kurs pozitsiyada saqlanadi** (`cur: "usd"`, `priceUsd`, `rate`, `totalUsd`). Keyin kurs o'zgarsa ham eski smeta va buyurtmalar summasi o'zgarmaydi. Buyurtma izohida: «32,8 $/m² (kurs 12 900)», buyurtmaning `exchangeRate` — shu kurs.
+- To'lov, qarzdorlik, hisobotlar — **faqat so'mda**. Mijozga yuboriladigan smeta matni ham faqat so'mda.
+- **Sozlamalar → Valyuta kursi:** «Markaziy bank kursi (avtomatik)» yoki «Qo'lda kiritilgan kurs». Markaziy bank kursi `cbu.uz` dan 3 soatda bir marta olinadi va `uvix:fx` da saqlanadi; internet bo'lmasa oxirgi ma'lum kurs, umuman olinmagan bo'lsa — qo'lda kurs ishlatiladi. Tushum bo'limidagi eski $ hisob-kitob qo'lda kursdan foydalanishda davom etadi.
+- **Sozlamalar → Narxlar va smeta:** har materialga narx valyutasi (so'm yoki $) tanlanadi. Masalan «Oniks — 52 $/m²» — kalkulyatorda avtomatik so'mga o'giriladi.
+- Server summani o'zi qayta hisoblaydi: `total = maydon × priceUsd × kurs` (kurs 1 000 – 1 000 000 oralig'ida bo'lishi shart).
+- Fayllar: `backend/fx.js` (yangi), `backend/quotes.js`, `frontend/src/views/quotes/QuoteBuilder.jsx`, `frontend/src/lib/production.js`, `frontend/src/views/settings/PriceListSection.jsx`, `SettingsView.jsx`.
+
+## 🔐 Kirish, PIN tiklash, davomat, sozlamalar (2026-10, 9 ta tahrir)
+
+**1. Kalkulyatorda o'lcham — mm.** Standart birlik mm (2000 × 1600), kerak bo'lsa sm yoki m (tanlov shu brauzerda eslab qolinadi). Ichkarida doim metrda saqlanadi (mm aniqligida); smeta, buyurtma izohi va dizayner vazifasida o'lcham pozitsiya birligida yoziladi: «2000×1600 mm». Eski pozitsiyalar — m. Juda kichik qiymat (mm da 50 dan kam) yozilsa — «metrda yozgan bo'lsangiz, m ni tanlang» ogohlantirishi.
+
+**2. PIN unutilganda (email olib tashlandi).** `backend/pin-recovery.js`
+- *Telegram kodi* — faqat xodim o'zi (ilovaga kirib) ulagan shaxsiy chatga; ekranda «Kod @az•••_k ga yuborildi». 6 xonali, 10 daqiqa, 5 urinish; tiklangach adminga xabar va jurnalga yoziladi.
+- *Admindan so'rash* — adminga Telegram xabari, Xodimlar ro'yxatida «PIN'ni unutdi» belgisi. Admin «Vaqtinchalik PIN» beradi (6 xonali, 24 soat); xodim u bilan kirgach, darhol o'z PIN'ini qo'yadi (`mustChangePin`, `POST /api/me/pin`). Muddati o'tgan vaqtinchalik PIN bilan kirib bo'lmaydi.
+- Xodim Telegram akkauntini almashtirsa — eski akkauntga va adminga ogohlantirish.
+- Gmail sozlamasi, email maydonlari va `/api/auth/forgot-pin` olib tashlandi. Admin o'z PIN'ini unutsa: Telegram kodi yoki serverda `node reset-admin-pin.js`.
+
+**3. Davomat — xodimga xabarlar** (Davomat → Sozlamalar'da har biri yoqiladi/o'chiriladi): «✅ Keldingiz: 08:57» / «👋 Ketdingiz: 18:05, ishladingiz: 9 soat 5 daq»; admin qo'lda to'g'rilasa — nima o'zgargani va sababi; oylik shaxsiy xulosa (har oyning 1-sanasi). Xodimlar ro'yxatida «Telegram ulanmagan» belgisi.
+
+**4. Kechikish / erta ketish / qo'shimcha vaqt — «1 kun 2 soat 15 daq».** 1 kun = xodimning ish kuni (jadval bo'yicha, masalan 09:00–18:00 = 9 soat). Kun faqat yig'indilarda (hafta/oy, Excel «JAMI» qatori); bitta kun uchun — soat va daqiqa.
+
+**5. Selfi bir bosishda.** «Keldim» → kamera ~1 soniyada o'zi suratga oladi → darhol yuboriladi. Birinchi marta bir martalik ogohlantirish («Keldim bosilganda rasm olinadi»).
+
+**6. «Ketdim» osonlashtirildi.**
+- (a) Unutilsa — ish tugaganidan 3 soat keyin jadval bo'yicha tugash vaqti yoziladi, «avto» belgisi, qo'shimcha vaqt hisoblanmaydi (xodimga xabar).
+- (b) Sexdan tashqarida ham bosish mumkin — adminga «sexdan tashqarida · 1,3 km» bilan ko'rinadi (Excel izohida ham).
+- (c) «Ketdim bosishni unutmang» Telegram xabarida «👋 Ketdim» tugmasi → ilova `?checkout=1` bilan ochiladi.
+- (d) Ish vaqti tugagach ilova ochilsa — katta «Ketdim» oynasi («Hali ishlayapman» — 1 soatga yashiriladi).
+
+**7. «Keldim»dan oldin Face ID** — Davomat sozlamalarida yoqiladi (standart: o'chiq). Face ID yoqilgan telefonlarda «Keldim» bosilganda avval Face ID so'raladi; server buni `bio_required` bilan tekshiradi (`POST /api/auth/passkey/confirm`).
+
+**8. Sozlamalar qayta tuzildi.** Guruhlar: Profil · Ko'rinish · Bildirishnomalar | Admin: Savdo · Integratsiyalar · Bo'limlar · Ma'lumotlar · O'zgarishlar jurnali. Kompyuterda chap menyu, telefonda ro'yxat → ichiga kirish.
+- «Tizim holati» (`GET /api/system-status`): Telegram bot, zaxira, sex joylashuvi, xodimlar Telegrami, PIN so'rovlari, dollar kursi — e'tibor talab qiladiganlari sariq va bir bosishda tegishli joyga olib boradi.
+- Matnli o'zgarishlar pastdagi bitta «Saqlanmagan o'zgarish · Bekor · Saqlash» paneli orqali saqlanadi; saqlamay boshqa bo'limga o'tilsa — ogohlantirish.
+- Ctrl K: sozlamalar ham qidiriladi («kurs» → Dollar kursi). «Bo'limlar»: Davomat, Bo'yoq, Mijozlarga xabarlar, Chatlar, Xodimlar sozlamalariga yorliqlar.
+- O'zgarishlar jurnali (`backend/settings-log.js`, `uvix:settingsLog`): narx, avans, kurs, davomat qoidalari, Telegram, zaxira vaqti, vaqtinchalik PIN — kim, qachon, eski → yangi.
+- «Valyuta formati» va Gmail kartalari olib tashlandi.
+
+**9. Kompyuterdan kirish — yangi ekran + telefon orqali.** Kompyuterda (≥1000 px, sichqoncha) chapda fon (kun vaqtiga qarab) + soat, o'ngda «PIN bilan | Telefon bilan». PIN: ro'yxat (↑↓), 4–6 katak, klaviatura, Enter. Telefon: QR (`backend/qr-login.js`) — 60 s, bir martalik; QR ichida faqat id, token olish kaliti faqat kompyuterda. Telefonda: «Yana» menyusi → «Kompyuterga kirish» (kamera skaneri) yoki telefon kamerasi bilan to'g'ridan-to'g'ri → «Kompyuterga kirasizmi? Chrome · Windows» → Face ID (Face ID yo'q telefonda — PIN) → kompyuter ochiladi. Kirish jurnalga yoziladi. Telefon va planshetda avvalgi PIN klaviatura ekrani qoladi.

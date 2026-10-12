@@ -59,7 +59,7 @@ export async function authLogin(employeeId, pin) {
     throw err;
   }
   setToken(data.token);
-  return data.employee;
+  return data.mustChangePin ? { ...data.employee, mustChangePin: true } : data.employee;
 }
 
 export async function authLoginByName(name, pin) {
@@ -75,7 +75,7 @@ export async function authLoginByName(name, pin) {
     throw err;
   }
   setToken(data.token);
-  return data.employee;
+  return data.mustChangePin ? { ...data.employee, mustChangePin: true } : data.employee;
 }
 
 export async function sendBackupNow() {
@@ -87,29 +87,24 @@ export async function sendBackupNow() {
   return data;
 }
 
-export async function requestPinReset(email) {
-  const res = await fetch(`${API_BASE}/auth/forgot-pin`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
+// ---- PIN tiklash (Telegram kodi yoki admin bergan vaqtinchalik PIN) ----
+async function publicPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.message || data.error || `request failed: ${res.status}`);
-  }
+  if (!res.ok) { const err = new Error(data.message || data.error || `xato: ${res.status}`); err.status = res.status; err.code = data.error; throw err; }
   return data;
 }
+export const pinRecoveryOptions = (employeeId) => publicPost("/auth/pin-recovery/options", { employeeId });
+export const pinRecoveryTelegram = (employeeId) => publicPost("/auth/pin-recovery/telegram", { employeeId });
+export const pinRecoveryVerify = (employeeId, code, newPin) => publicPost("/auth/pin-recovery/verify", { employeeId, code, newPin });
+export const pinAskAdmin = (employeeId) => publicPost("/auth/pin-recovery/ask-admin", { employeeId });
 
-export async function confirmPinReset(email, code, newPin) {
-  const res = await fetch(`${API_BASE}/auth/reset-pin-with-code`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, code, newPin }),
-  });
+// ---- Kompyuterga telefon orqali kirish (QR) ----
+export const qrStart = () => publicPost("/auth/qr/start", {});
+export async function qrPoll(id, key) {
+  const res = await fetch(`${API_BASE}/auth/qr/${encodeURIComponent(id)}?key=${encodeURIComponent(key)}`);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(data.message || data.error || `reset failed: ${res.status}`);
-  }
+  if (data.status === "approved" && data.token) setToken(data.token);
   return data;
 }
 
@@ -566,8 +561,16 @@ async function apiReq(path, method = "GET", body) {
   if (!res.ok) { const e = new Error(d.message || d.error || `Xato: ${res.status}`); e.status = res.status; e.data = d; throw e; }
   return d;
 }
-export const fetchSalesConfig = () => apiReq("/sales/config").then((d) => d.config);
-export const saveSalesConfig = (cfg) => apiReq("/sales/config", "PUT", cfg).then((d) => d.config);
+export const qrInfo = (id) => apiReq(`/auth/qr/${encodeURIComponent(id)}/info`);
+export const qrApprove = (id, body) => apiReq(`/auth/qr/${encodeURIComponent(id)}/approve`, "POST", body);
+export const qrReject = (id) => apiReq(`/auth/qr/${encodeURIComponent(id)}/reject`, "POST", {});
+export const fetchSettingsHealth = () => apiReq("/system-status");
+export const fetchSettingsLog = () => apiReq("/settings-log").then((d) => d.log || []);
+export const setMyPin = (newPin) => apiReq("/me/pin", "POST", { newPin });
+export const fetchPinHelp = () => apiReq("/pin-help").then((d) => d.requests || {});
+export const giveTempPin = (employeeId) => apiReq(`/employees/${encodeURIComponent(employeeId)}/temp-pin`, "POST", {});
+export const fetchSalesConfig = () => apiReq("/sales/config").then((d) => (d.config ? { ...d.config, fx: d.fx || null } : d.config));
+export const saveSalesConfig = (cfg) => apiReq("/sales/config", "PUT", cfg).then((d) => (d.config ? { ...d.config, fx: d.fx || null } : d.config));
 export const saveQuote = (leadId, body) => apiReq(`/quotes/${encodeURIComponent(leadId)}`, "PUT", body);
 export const createQuote = (body) => apiReq("/quotes", "POST", body);
 export const convertQuote = (body) => apiReq("/quotes/convert", "POST", body);

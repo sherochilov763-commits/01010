@@ -1,6 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LoginScreen from "./auth/LoginScreen.jsx";
-import { authBootstrap, authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
+import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
+import { QrApproveHost, QrScanButton } from "./components/PhoneToDesktop.jsx";
+import { authBootstrap, authListEmployees, authLogout, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
@@ -111,8 +113,14 @@ export default function App() {
   if (themeKeyRef.current !== themeKey) { setTheme(buildTheme(effectiveAppearance)); themeKeyRef.current = themeKey; }
   const openNotifySettings = () => {
     setNavFilter(null); setView("settings");
-    setTimeout(() => document.querySelector("[data-testid=notify-settings]")?.scrollIntoView({ behavior: "smooth", block: "start" }), 450);
+    openSettingsSection("bildirish", "notify-settings");
   };
+  // Sozlamalardagi «Sozlamani qidirish» tugmasi umumiy Ctrl K oynasini ochadi
+  useEffect(() => {
+    const on = () => setCmdkOpen(true);
+    window.addEventListener("uvix:open-cmdk", on);
+    return () => window.removeEventListener("uvix:open-cmdk", on);
+  }, []);
 
   function navigateWithFilter(targetView, filter) {
     setNavFilter(filter || {});
@@ -624,8 +632,6 @@ export default function App() {
           setCurrentUser(user);
         }}
         onAuthenticated={(user) => setCurrentUser(user)}
-        onRequestPinReset={requestPinReset}
-        onConfirmPinReset={confirmPinReset}
       />
     );
   }
@@ -808,11 +814,11 @@ export default function App() {
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
         <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} badges={navBadges}
-          top={<SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} />} />
+          top={<><SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} /><QrScanButton full onClick={() => setSidebarOpen(false)} /></>} />
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={false} /></>} />
+          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
             <Suspense fallback={<ViewFallback />}>
@@ -953,6 +959,7 @@ export default function App() {
             )}
             {view === "settings" && (
               <SettingsView
+                onOpenView={goView}
                 categories={categories}
                 notif={notif}
                 bgState={bgState}
@@ -1008,11 +1015,18 @@ export default function App() {
         leads={leads}
         customers={cmdkCustomers}
         onNavigate={goView}
+        isAdmin={isAdmin}
+        onOpenSetting={(it) => {
+          setNavFilter(null);
+          if (it.view) { if (it.view[1]) setOpenTab(it.view[0], it.view[1]); setView(it.view[0]); }
+          else { setView("settings"); openSettingsSection(it.section, it.anchor); }
+        }}
         onSearchOrders={(q) => navigateWithFilter("orders", { search: q })}
         onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
         onNewLead={visibleNav.some((n) => n.key === "crm") ? () => { setNavFilter(null); setView("crm"); setQuickAdd({ kind: "lead", n: Date.now() }); } : null}
       />
       <SaveStatus />
+      <QrApproveHost />
       <BottomNav
         view={view}
         tabs={navCfg.mobileBar}

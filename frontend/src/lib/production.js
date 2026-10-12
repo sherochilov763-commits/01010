@@ -56,31 +56,58 @@ export function stageHint(order, empById, nowMs = Date.now()) {
 export const toNum = (v) => { const n = Number(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
 const round2 = (n) => Math.round(n * 100) / 100;
 export const dec = (n) => String(round2(n)).replace(".", ",");
+// O'lcham birligi: mm (standart) / sm / m. Ichkarida doim metrda saqlanadi.
+export const DIM_UNITS = [["mm", "mm"], ["sm", "sm"], ["m", "m"]];
+export const DIM_DIV = { mm: 1000, sm: 100, m: 1 };
+export function fromMeters(v, du) {
+  if (!v) return "";
+  if (du === "mm") return String(Math.round(v * 1000));
+  if (du === "sm") return String(Math.round(v * 1000) / 10).replace(".", ",");
+  return dec(v);
+}
+export function sizeText(it) {
+  if (!(it.w && it.h)) return "";
+  const du = DIM_DIV[it.du] ? it.du : "m";
+  return `${fromMeters(it.w, du)}×${fromMeters(it.h, du)} ${du}`;
+}
 export function computeItem(it) {
   const unit = it.unit === "pcs" ? "pcs" : "m2";
   const w = toNum(it.w), h = toNum(it.h);
   const qty = Math.max(1, Math.round(toNum(it.qty) || 1));
-  const price = Math.max(0, Math.round(toNum(it.price)));
+  const isUsd = it.cur === "usd";
+  const priceUsd = isUsd ? Math.max(0, round2(toNum(it.priceUsd))) : 0;
+  const rate = isUsd ? Math.max(0, round2(toNum(it.rate))) : 0;
+  const price = isUsd ? Math.round(priceUsd * rate) : Math.max(0, Math.round(toNum(it.price)));
   const minArea = Math.max(0, toNum(it.minArea));
   const rawArea = w > 0 && h > 0 ? round2(w * h * qty) : 0;
   const area = unit === "m2" ? Math.max(rawArea, rawArea > 0 ? minArea : 0) : rawArea;
-  const total = unit === "m2" ? Math.round(area * price) : price * qty;
-  return { ...it, unit, w, h, qty, price, minArea, rawArea, area, total, minApplied: unit === "m2" && rawArea > 0 && minArea > rawArea };
+  const units = unit === "m2" ? area : qty;
+  // Server bilan bir xil: dollar narxida summa priceUsd × kurs dan (yaxlitlangan so'm narxidan emas)
+  const total = isUsd ? Math.round(units * priceUsd * rate) : Math.round(units * price);
+  const extra = isUsd ? { cur: "usd", priceUsd, rate, totalUsd: round2(units * priceUsd) } : { cur: "uzs" };
+  return { ...it, ...extra, unit, w, h, qty, price, minArea, rawArea, area, total, minApplied: unit === "m2" && rawArea > 0 && minArea > rawArea };
 }
+// Dollar summa: 104,96 $
+export const usdText = (n) => `${rateText(n)} $`;
+// Kurs: 12 845,32
+export function rateText(n) { const [a, b] = String(round2(n)).split("."); return a.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + (b ? "," + b : ""); }
 export function describeItem(it) {
-  const size = it.w && it.h ? `${dec(it.w)}×${dec(it.h)} m` : "";
-  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : ""].filter(Boolean).join(" · ");
+  const size = sizeText(it);
+  const usd = it.cur === "usd" ? `${usdText(it.priceUsd)}/${it.unit === "pcs" ? "dona" : "m²"}` : "";
+  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : "", usd].filter(Boolean).join(" · ");
 }
 export function formulaOf(it) {
-  if (it.unit === "pcs") return `${it.qty} dona × ${fmt(it.price)}`;
+  const pr = it.cur === "usd" ? usdText(it.priceUsd) : fmt(it.price);
+  if (it.unit === "pcs") return `${it.qty} dona × ${pr}`;
   const one = round2(it.w * it.h);
-  const base = it.qty > 1 ? `${dec(one)} m² × ${it.qty} = ${dec(it.rawArea)} m²` : `${dec(it.rawArea)} m²`;
-  return `${base}${it.minApplied ? ` → min ${dec(it.minArea)} m²` : ""} × ${fmt(it.price)}`;
+  const sz = sizeText(it);
+  const base = it.qty > 1 ? `${sz} = ${dec(one)} m² × ${it.qty} = ${dec(it.rawArea)} m²` : `${sz} = ${dec(it.rawArea)} m²`;
+  return `${base}${it.minApplied ? ` → min ${dec(it.minArea)} m²` : ""} × ${pr}${it.cur === "usd" ? ` = ${usdText(it.totalUsd)}` : ""}`;
 }
 // Mijozga yuborish uchun matn (ixtiyoriy)
 export function quoteText(items, { no, advancePct } = {}) {
   const total = items.reduce((s, i) => s + i.total, 0);
-  const rows = items.map((i, k) => `${k + 1}. ${i.title || i.material}${i.title && i.material ? ` (${i.material})` : ""}${i.w && i.h ? `, ${dec(i.w)}×${dec(i.h)} m` : ""}${i.qty > 1 ? ` × ${i.qty} dona` : ""} — ${money(i.total)}`);
+  const rows = items.map((i, k) => `${k + 1}. ${i.title || i.material}${i.title && i.material ? ` (${i.material})` : ""}${i.w && i.h ? `, ${sizeText(i)}` : ""}${i.qty > 1 ? ` × ${i.qty} dona` : ""} — ${money(i.total)}`);
   return [`Hisob-kitob${no ? ` ${no}` : ""}:`, ...rows, `Jami: ${money(total)}`, advancePct ? `Avans (${advancePct}%): ${money(Math.ceil((total * advancePct) / 100))}` : ""].filter(Boolean).join("\n");
 }
 

@@ -13,6 +13,7 @@ import { TG_BLUE } from "../../components/LeadSource.jsx";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
 import { fetchCustMsgConfig, fetchCustMsgLog, fetchDebtConfig, fetchRemindPreview, saveCustMsgConfig, saveDebtConfig, sendDebtDigest } from "../../storage.js";
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
+import { takeOpenTab } from "../../lib/deeplink.js";
 
 const WD = ["Ya", "Du", "Se", "Ch", "Pa", "Ju", "Sh"];
 const ageColor = (d) => (d > 30 ? THEME.rose : d > 7 ? THEME.amber : THEME.muted);
@@ -48,7 +49,7 @@ export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, t
   const today = todayStr();
   const all = useMemo(() => buildCustomers(orders, leads, profiles, today), [orders, leads, profiles, today]);
   const debtors = useMemo(() => all.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt), [all]);
-  const [tab, setTab] = useState("list");
+  const [tab, setTab] = useState(() => takeOpenTab("customers", ["list","debt", ...(isAdmin ? ["msg"] : [])]) || "list");
   const [openId, setOpenId] = useState(null);
   const [edit, setEdit] = useState(null); // customer | {} (yangi)
   const [payFor, setPayFor] = useState(null);
