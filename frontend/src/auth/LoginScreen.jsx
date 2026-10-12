@@ -33,7 +33,7 @@ function BioIcon({ kind, size = 24 }) {
   return kind === "face" ? <ScanFace size={size} strokeWidth={1.6} /> : <Fingerprint size={size} strokeWidth={1.6} />;
 }
 
-export default function LoginScreen({ employees, onAuthenticated, onRequestPinReset, onConfirmPinReset }) {
+export default function LoginScreen({ employees, needsSetup, onCreateFirstAdmin, onAuthenticated, onRequestPinReset, onConfirmPinReset }) {
   const [step, setStep] = useState("pick"); // pick | quick | pin | offer | forgot
   const [selected, setSelected] = useState(null);
   const [query, setQuery] = useState("");
@@ -98,7 +98,9 @@ export default function LoginScreen({ employees, onAuthenticated, onRequestPinRe
           <span className="ul-wordmark">UVIX <span>Moliya</span></span>
         </div>
 
-        {step === "pick" && (
+        {needsSetup && onCreateFirstAdmin && <SetupStep onCreate={onCreateFirstAdmin} />}
+
+        {!needsSetup && step === "pick" && (
           <section className="ul-step" aria-labelledby="ul-pick-title">
             <h1 id="ul-pick-title" className="ul-title">Kim kiryapti?</h1>
             <p className="ul-sub">Ismingizni tanlang</p>
@@ -436,6 +438,53 @@ function OfferStep({ employee, bio, onDone }) {
 }
 
 /* ================= PIN tiklash ================= */
+// Tizimda hali birorta xodim yo'q — birinchi administrator o'z ismi va PIN'i bilan yaratiladi
+function SetupStep({ onCreate }) {
+  const [name, setName] = useState("");
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!name.trim()) return setError("Ismingizni kiriting");
+    if (!/^\d{4,6}$/.test(pin)) return setError("PIN 4–6 xonali raqam bo'lishi kerak");
+    if (pin !== pin2) return setError("PIN'lar mos kelmadi");
+    setBusy(true); setError("");
+    try { await onCreate(name.trim(), pin); }
+    catch (err) { setError(err?.status === 409 ? "Administrator allaqachon yaratilgan — sahifani yangilang" : err?.message || "Yaratib bo'lmadi"); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <section className="ul-step" aria-labelledby="ul-setup-title">
+      <h1 id="ul-setup-title" className="ul-title">Birinchi administrator</h1>
+      <p className="ul-sub">Tizimda hali xodim yo'q. Bu hisob barcha ma'lumotlarni boshqaradi.</p>
+      <form onSubmit={submit}>
+        <div className="ul-field">
+          <label htmlFor="ul-setup-name">Ismingiz</label>
+          <input id="ul-setup-name" autoFocus autoComplete="username" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="ul-field">
+          <label htmlFor="ul-setup-pin">PIN (4–6 raqam)</label>
+          <input id="ul-setup-pin" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6}
+            value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} style={{ letterSpacing: "0.3em" }} />
+        </div>
+        <div className="ul-field">
+          <label htmlFor="ul-setup-pin2">PIN'ni takrorlang</label>
+          <input id="ul-setup-pin2" type="password" inputMode="numeric" autoComplete="new-password" maxLength={6}
+            value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))} style={{ letterSpacing: "0.3em" }} />
+        </div>
+        <div className="ul-msg err" aria-live="polite">{error}</div>
+        <button className="ul-primary" type="submit" disabled={busy} style={{ marginTop: 6 }}>
+          {busy ? <Loader2 size={18} className="ul-spin" /> : "Yaratish va kirish"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
 function ForgotStep({ onBack, onRequest, onConfirm }) {
   const [stage, setStage] = useState("email");
   const [email, setEmail] = useState("");

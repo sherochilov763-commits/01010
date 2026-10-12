@@ -43,9 +43,8 @@ cp .env.example .env      # kerak bo'lsa VITE_API_BASE ni o'zgartiring
 npm run dev
 ```
 
-Brauzerda `http://localhost:5173` ni oching. Standart admin bilan kiring:
-**Administrator** / PIN **0000** (birinchi kirishdan keyin darhol PIN'ni
-Sozlamalar bo'limidan o'zgartiring).
+Brauzerda `http://localhost:5173` ni oching. Birinchi ochilganda tizim
+**birinchi administratorni yaratish**ni so'raydi — o'z ismingiz va PIN'ingizni kiriting.
 
 ## 2. Production uchun build qilish
 
@@ -175,15 +174,15 @@ ketadi:
 
 ### 5. Tayyor!
 Shu manzilni istalgan qurilmada (kompyuter, iPhone, Android) ochib
-ishlatishingiz mumkin — standart **Administrator / 0000** bilan kirasiz,
-so'ng PIN'ni albatta o'zgartiring (Sozlamalar → Profil).
+ishlatishingiz mumkin. Birinchi ochilganda administrator hisobini o'zingiz
+yaratasiz (ism + PIN).
 
 ---
 
 ## 🔒 1-bosqich: xavfsizlik yangilanishi (2026-09)
 
 **Yopilgan teshiklar:**
-- `POST /api/auth/reset-admin-pin` olib tashlandi (internetdagi har kim admin PIN'ini 0000 ga qaytara olardi). Endi faqat server konsolidan: `node backend/reset-admin-pin.js [yangiPIN]`
+- `POST /api/auth/reset-admin-pin` olib tashlandi (internetdagi har kim admin PIN'ini 0000 ga qaytara olardi). Endi faqat server konsolidan: `node backend/reset-admin-pin.js <yangiPIN>` (PIN majburiy)
 - Oddiy xodim endi o'zini admin qila olmaydi, boshqalarning PIN'ini o'zgartira olmaydi — faqat o'z PIN'ini
 - PIN hash'lari brauzerga umuman yuborilmaydi
 - Telegram token, Gmail parol, Telegram sessiya — faqat admin ko'radi

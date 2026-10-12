@@ -71,9 +71,6 @@ export const PAYMENT_TYPES = [
   { v: "bank", l: "Bank o'tkazma", icon: Landmark, color: "blue" },
 ];
 
-export const SEED_EMPLOYEES = [
-  { id: "admin1", name: "Administrator", role: "admin", pin: "0000" },
-];
 export const DEFAULT_SETTINGS = { usdRate: 12700 };
 
 export const DASHBOARD_SIZE_SPANS = { sm: 3, md: 4, lg: 6, full: 12 };

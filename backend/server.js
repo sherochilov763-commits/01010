@@ -123,10 +123,8 @@ function pinMatches(inputPin, storedPin) {
   return crypto.timingSafeEqual(Buffer.from(storedPin), Buffer.from(inputPin));
 }
 
-// Birinchi ishga tushirilganda — standart admin (hash qilingan PIN bilan) avtomatik yaratiladi
-if (readEmployees().length === 0) {
-  writeEmployees([{ id: "admin1", name: "Administrator", role: "admin", pin: bcrypt.hashSync("0000", 10) }]);
-}
+// Standart admin avtomatik YARATILMAYDI — bo'sh tizimda birinchi administrator Kirish ekranida
+// /api/auth/bootstrap orqali o'z ismi va PIN'i bilan yaratiladi (ochiq "0000" hech qachon bo'lmaydi).
 
 // ==================== Login urinishlarini cheklash (brute-force himoyasi) ====================
 const loginAttempts = new Map(); // ip -> { count, resetAt }
@@ -482,7 +480,7 @@ require("./quotes")(app, {
 
 // ==================== KV kirish huquqlari ====================
 // Sozlamalardagi maxfiy maydonlar — faqat admin ko'radi/o'zgartiradi
-const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
+const SECRET_SETTING_FIELDS = ["telegramBotToken", "telegramChatId", "gmailUser", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
 // Oddiy xodim yozishi mumkin bo'lgan kalitlar (qolganlari — faqat admin)
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
@@ -961,15 +959,19 @@ app.put("/api/kv/:key", (req, res) => {
   }
 
   if (key === "uvix:settings" && !isAdmin) {
-    // Oddiy xodim maxfiy maydonlarni ko'rmaydi va o'zgartira olmaydi — eskisini saqlab qolamiz
-    let next;
-    try { next = JSON.parse(value); } catch { return res.status(400).json({ error: "invalid_json" }); }
-    const prev = oldValue ? JSON.parse(oldValue) : {};
-    SECRET_SETTING_FIELDS.forEach((f) => {
-      if (f in prev) next[f] = prev[f]; else delete next[f];
-    });
-    upsertStmt.run(key, JSON.stringify(next));
-    return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeSettingsForClient(next, false)) });
+    // Sozlamalarni faqat admin o'zgartiradi. Aks holda xodim telegramChatId/tgRoutes'ni o'z chatiga
+    // burib, kunlik to'liq baza zaxirasini (Telegram sessiyasi, parollar bilan) o'ziga oqizishi mumkin edi.
+    // 403 o'rniga joriy holat qaytariladi — frontend xato ko'rsatmasdan server qiymatini qabul qiladi.
+    // Yagona istisno: sozlamalar hali umuman yo'q bo'lsa — faqat valyuta kursi yoziladi.
+    let current = oldValue ? JSON.parse(oldValue) : null;
+    if (!current) {
+      let next = {};
+      try { next = JSON.parse(value) || {}; } catch { return res.status(400).json({ error: "invalid_json" }); }
+      const rate = Number(next.usdRate);
+      current = Number.isFinite(rate) && rate > 0 ? { usdRate: rate } : {};
+      upsertStmt.run(key, JSON.stringify(current));
+    }
+    return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeSettingsForClient(current, false, req.user)) });
   }
 
   if (key === "uvix:leads") {

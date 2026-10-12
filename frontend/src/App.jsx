@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LoginScreen from "./auth/LoginScreen.jsx";
-import { authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
+import { authBootstrap, authListEmployees, authLogout, confirmPinReset, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, requestPinReset, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
@@ -119,17 +119,21 @@ export default function App() {
     setView(targetView);
   }
   const [toast, setToast] = useState(null);
+  const [needsSetup, setNeedsSetup] = useState(false); // tizimda hali birorta xodim yo'q
 
   useEffect(() => {
     if (currentUser) return; // tizimdan chiqilganda ro'yxat (va Face ID holati) yangilanadi
     (async () => {
       let emp = [];
+      let loaded = false;
       try {
         emp = await authListEmployees();
+        loaded = true;
       } catch (e) {
         emp = [];
       }
       setEmployees(emp);
+      setNeedsSetup(loaded && emp.length === 0);
       setReady(true);
     })();
   }, [currentUser]);
@@ -613,6 +617,12 @@ export default function App() {
     return (
       <LoginScreen
         employees={employees}
+        needsSetup={needsSetup}
+        onCreateFirstAdmin={async (name, pin) => {
+          const user = await authBootstrap(name, pin);
+          setNeedsSetup(false);
+          setCurrentUser(user);
+        }}
         onAuthenticated={(user) => setCurrentUser(user)}
         onRequestPinReset={requestPinReset}
         onConfirmPinReset={confirmPinReset}

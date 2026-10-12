@@ -1,13 +1,13 @@
 // reset-admin-pin.js — admin PIN'ini tiklash (faqat serverga kirish huquqi borlar uchun).
-// Ishlatish:  node reset-admin-pin.js            → birinchi admin PIN'i "0000" bo'ladi
-//             node reset-admin-pin.js 482913     → berilgan PIN o'rnatiladi
-// Railway'da: loyiha → servis → "..." → "Shell" (yoki `railway run node backend/reset-admin-pin.js`)
+// Ishlatish:  node reset-admin-pin.js 482913     → birinchi admin PIN'i 482913 bo'ladi
+// (PIN majburiy — taxmin qilinadigan "0000" standart qiymati yo'q)
+// Railway'da: loyiha → servis → "..." → "Shell" (yoki `railway run node backend/reset-admin-pin.js <PIN>`)
 const bcrypt = require("bcryptjs");
 const db = require("./db");
 
-const newPin = process.argv[2] || "0000";
+const newPin = process.argv[2] || "";
 if (!/^\d{4,6}$/.test(newPin)) {
-  console.error("PIN 4-6 xonali raqam bo'lishi kerak");
+  console.error("Ishlatish: node reset-admin-pin.js <yangi PIN (4-6 raqam)>");
   process.exit(1);
 }
 const row = db.prepare("SELECT value FROM kv_store WHERE key = ?").get("uvix:employees");
