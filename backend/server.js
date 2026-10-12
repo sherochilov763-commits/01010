@@ -1110,6 +1110,19 @@ app.post("/api/backup/restore", requireAuth, requireAdmin, restoreUpload.single(
   }
 });
 
+// ---- Android ilova (TWA / PWABuilder) uchun Digital Asset Links ----
+// Railway'da: ANDROID_PACKAGE=uz.uvix.app, ANDROID_SHA256=AA:BB:...(bir nechta bo'lsa vergul bilan)
+// Shu fayl bo'lmasa, APK ichida yuqorida manzil satri ko'rinib turadi.
+app.get("/.well-known/assetlinks.json", (req, res) => {
+  const pkg = (process.env.ANDROID_PACKAGE || "").trim();
+  const fingerprints = (process.env.ANDROID_SHA256 || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!pkg || !fingerprints.length) return res.status(404).json([]);
+  res.json([{
+    relation: ["delegate_permission/common.handle_all_urls"],
+    target: { namespace: "android_app", package_name: pkg, sha256_cert_fingerprints: fingerprints },
+  }]);
+});
+
 // ---- (ixtiyoriy) frontend build'ini shu serverdan ham berish uchun ----
 const FRONTEND_DIST = path.join(__dirname, "..", "frontend", "dist");
 // /assets/ ichidagi fayllar nomida xesh bor (index-AbC123.js) — ular hech qachon o'zgarmaydi,
