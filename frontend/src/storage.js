@@ -541,3 +541,36 @@ export async function saveMyBackground(bg) {
   if (!res.ok) throw new Error(d.message || "Fonni saqlab bo'lmadi");
   return d.bg || null;
 }
+
+// ---- Chatlar: mas'ul, mahkamlash, arxiv, ichki izohlar, tayyor javoblar ----
+async function ctReq(path, method = "GET", body) {
+  const res = await fetch(`${API_BASE}/chat-tools${path}`, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...authHeaders() }, body: body ? JSON.stringify(body) : undefined });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || d.error || `Xato: ${res.status}`);
+  return d;
+}
+export const fetchChatTools = () => ctReq("/state");
+export const saveChatMeta = (chatId, patch) => ctReq(`/meta/${encodeURIComponent(chatId)}`, "PUT", patch);
+export const fetchChatNotes = (chatId) => ctReq(`/notes/${encodeURIComponent(chatId)}`).then((d) => d.notes || []);
+export const addChatNote = (chatId, text) => ctReq(`/notes/${encodeURIComponent(chatId)}`, "POST", { text }).then((d) => d.note);
+export const deleteChatNote = (chatId, id) => ctReq(`/notes/${encodeURIComponent(chatId)}/${encodeURIComponent(id)}`, "DELETE");
+export const sendChatTyping = (chatId, stop) => ctReq("/typing", "POST", { chatId, stop: !!stop });
+export const searchChatMessages = (q) => ctReq(`/search?q=${encodeURIComponent(q)}`).then((d) => d.results || []);
+export const saveQuickReplies = (replies) => ctReq("/replies", "PUT", { replies }).then((d) => d.replies);
+export const saveChatConfig = (config) => ctReq("/config", "PUT", config).then((d) => d.config);
+
+// ---- Smeta → buyurtmalar, narxlar, buyurtma holati, umumiy to'lov ----
+async function apiReq(path, method = "GET", body) {
+  const res = await fetch(`${API_BASE}${path}`, { method, headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...authHeaders() }, body: body ? JSON.stringify(body) : undefined });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(d.message || d.error || `Xato: ${res.status}`); e.status = res.status; e.data = d; throw e; }
+  return d;
+}
+export const fetchSalesConfig = () => apiReq("/sales/config").then((d) => d.config);
+export const saveSalesConfig = (cfg) => apiReq("/sales/config", "PUT", cfg).then((d) => d.config);
+export const saveQuote = (leadId, body) => apiReq(`/quotes/${encodeURIComponent(leadId)}`, "PUT", body);
+export const createQuote = (body) => apiReq("/quotes", "POST", body);
+export const convertQuote = (body) => apiReq("/quotes/convert", "POST", body);
+export const payOrdersBatch = (body) => apiReq("/orders/pay-batch", "POST", body);
+export const setOrderStage = (id, stage) => apiReq(`/orders/${encodeURIComponent(id)}/stage`, "POST", { stage });
+export const assignOrderTask = (id, body) => apiReq(`/orders/${encodeURIComponent(id)}/task`, "POST", body);

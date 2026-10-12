@@ -15,6 +15,7 @@ const { TG_API } = require("./telegram-bot");
 const multer = require("multer");
 const db = require("./db");
 const { registerTaskRoutes, mergeLeadTaskState } = require("./tasks");
+const { mergeOrderState } = require("./production");
 
 // ==================== Rasm (foto hisobot) saqlash ====================
 // Rasmlar bazaning o'zi bilan bir joyda (doimiy diskda) saqlanadi — Railway'da
@@ -397,6 +398,13 @@ let webpushLib = null;
 try { webpushLib = require("web-push"); } catch { console.warn("web-push o'rnatilmagan — push bildirishnomalar o'chiq"); }
 const notifications = require("./notifications")(app, { getStmt, upsertStmt, readEmployees, requireAuth, webpush: webpushLib });
 
+// ==================== Chatlar: mas'ul, izohlar, tayyor javoblar, javobsiz ogohlantirish ====================
+const chatTools = require("./chat-tools")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff,
+  notify: ({ chatId, name, mins, to }) => notifications.emit("chats", { title: `Javobsiz: ${name}`, body: `${mins} daqiqadan beri mijozga javob berilmadi`, view: "chats", to: to || null }),
+});
+setInterval(() => { try { chatTools.slaTick(); } catch (e) { console.error("Javobsiz chat tekshiruvi:", e.message); } }, 60 * 1000);
+
 const TG_ROUTE_DEFAULTS = {
   orders: "group", payments: "admin", expenses: "admin", dailyReport: "admin", backup: "admin",
   attendanceDaily: "group", attendanceAbsent: "admin", attendanceReports: "admin",
@@ -460,7 +468,17 @@ const customerMsg = require("./customer-msg")(app, {
 const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: (text, chatId, kind) => (chatId ? sendTelegramTo(text, chatId) : notify(kind === "daily" ? "attendanceDaily" : kind === "absent" ? "attendanceAbsent" : "attendanceReports", text)), photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee });
 
 // ==================== Dizayner / Pechatchi vazifalari ====================
-registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker });
+const onOrderReady = (order) => customerMsg.sendReady(order).catch((e) => console.error("Mijozga «tayyor» xabari:", e.message));
+registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, onOrderReady });
+
+// ==================== Smeta → buyurtmalar, holatlar, umumiy to'lov ====================
+require("./quotes")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrderReady,
+  onOrdersWritten: (oldValue, newValue) => {
+    notifyOrdersDiff(oldValue, newValue);
+    customerMsg.onOrdersChanged(oldValue, newValue).catch((e) => console.error("Mijozga kvitansiya:", e.message));
+  },
+});
 
 // ==================== KV kirish huquqlari ====================
 // Sozlamalardagi maxfiy maydonlar — faqat admin ko'radi/o'zgartiradi
@@ -469,7 +487,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:");
+  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -690,27 +708,39 @@ function notifyOrdersDiff(oldValue, newValue) {
     const newOrders = JSON.parse(newValue);
     if (!Array.isArray(newOrders)) return;
     const oldById = new Map(oldOrders.map((o) => [o.id, o]));
+    // Smetadan birga yaratilgan buyurtmalar va bitta umumiy to'lov — bitta xabar bo'lib boradi
+    const groups = new Map(); // groupId -> [orders]
+    const batches = new Map(); // batchId -> [{ o, p }]
+    const payMsg = (o, p) => notify("payments",
+      `💰 <b>Yangi to'lov</b>\nMijoz: ${escHtml(o.customer)} (${escHtml(o.orderNumber)})\nSumma: ${fmtMoney(p.amount)}\nTuri: ${escHtml(p.paymentType)}`);
+    const onPay = (o, p) => {
+      if (p.batchId) { const b = batches.get(p.batchId) || []; b.push({ o, p }); batches.set(p.batchId, b); }
+      else payMsg(o, p);
+    };
     newOrders.forEach((o) => {
       const old = oldById.get(o.id);
       if (!old) {
-        notify("orders",
-          `🆕 <b>Yangi buyurtma</b>\nMijoz: ${escHtml(o.customer)}\nBuyurtma №: ${escHtml(o.orderNumber)}\nSumma: ${fmtMoney(o.agreementUzs)}`
-        );
-        (o.payments || []).forEach((p) => {
-          notify("payments",
-            `💰 <b>Yangi to'lov</b>\nMijoz: ${escHtml(o.customer)} (${escHtml(o.orderNumber)})\nSumma: ${fmtMoney(p.amount)}\nTuri: ${escHtml(p.paymentType)}`
-          );
-        });
+        if (o.groupId) { const g = groups.get(o.groupId) || []; g.push(o); groups.set(o.groupId, g); }
+        else notify("orders", `🆕 <b>Yangi buyurtma</b>\nMijoz: ${escHtml(o.customer)}\nBuyurtma №: ${escHtml(o.orderNumber)}\nSumma: ${fmtMoney(o.agreementUzs)}`);
+        (o.payments || []).forEach((p) => onPay(o, p));
       } else {
         const oldPayIds = new Set((old.payments || []).map((p) => p.id));
-        (o.payments || []).forEach((p) => {
-          if (!oldPayIds.has(p.id)) {
-            notify("payments",
-              `💰 <b>Yangi to'lov</b>\nMijoz: ${escHtml(o.customer)} (${escHtml(o.orderNumber)})\nSumma: ${fmtMoney(p.amount)}\nTuri: ${escHtml(p.paymentType)}`
-            );
-          }
-        });
+        (o.payments || []).forEach((p) => { if (!oldPayIds.has(p.id)) onPay(o, p); });
       }
+    });
+    groups.forEach((list) => {
+      const sum = list.reduce((s, o) => s + (o.agreementUzs || 0), 0);
+      const rows = list.map((o) => `• ${escHtml(o.orderNumber)} — ${escHtml(o.title || o.materialType || "")}: ${fmtMoney(o.agreementUzs)}`).join("\n");
+      notify("orders", list.length > 1
+        ? `🆕 <b>Yangi buyurtmalar (${list.length} ta, ${escHtml(list[0].quoteNo || list[0].groupId)})</b>\nMijoz: ${escHtml(list[0].customer)}\n${rows}\nJami: ${fmtMoney(sum)}`
+        : `🆕 <b>Yangi buyurtma</b>\nMijoz: ${escHtml(list[0].customer)}\nBuyurtma №: ${escHtml(list[0].orderNumber)}\nSumma: ${fmtMoney(sum)}`);
+    });
+    batches.forEach((list) => {
+      if (list.length === 1) return payMsg(list[0].o, list[0].p);
+      const sum = list.reduce((s, x) => s + (x.p.amount || 0), 0);
+      const types = [...new Set(list.map((x) => x.p.paymentType))].join(", ");
+      const nums = [...new Set(list.map((x) => x.o.orderNumber))].join(", ");
+      notify("payments", `💰 <b>Yangi to'lov</b>\nMijoz: ${escHtml(list[0].o.customer)}\nSumma: ${fmtMoney(sum)}\nTuri: ${escHtml(types)}\nBuyurtmalar: ${escHtml(nums)}`);
     });
   } catch (e) {
     console.error("Buyurtma xabarnomasi xatosi:", e.message);
@@ -883,6 +913,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     }
     let next = [...toStart, ...list, ...toEnd];
     if (key === "uvix:leads") next = mergeLeadTaskState(next, oldValue ? JSON.parse(oldValue) : []);
+    if (key === "uvix:orders") next = mergeOrderState(next, oldValue ? JSON.parse(oldValue) : []);
     if (MAX_ITEMS[key] && next.length > MAX_ITEMS[key]) next = next.slice(0, MAX_ITEMS[key]);
     const value = JSON.stringify(next);
     upsertStmt.run(key, value);
@@ -947,6 +978,17 @@ app.put("/api/kv/:key", (req, res) => {
       const merged = mergeLeadTaskState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []);
       upsertStmt.run(key, JSON.stringify(merged));
       return res.json({ key, rev: revOf(key), value: JSON.stringify(merged) });
+    } catch { /* JSON emas — pastda oddiy saqlanadi */ }
+  }
+  if (key === "uvix:orders") {
+    // Dizayner/pechatchi holati va server kiritgan to'lovlar eskirgan nusxa bilan yo'qolmasin
+    try {
+      const merged = JSON.stringify(mergeOrderState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []));
+      upsertStmt.run(key, merged);
+      res.json({ key, rev: revOf(key), value: merged });
+      notifyOrdersDiff(oldValue, merged);
+      customerMsg.onOrdersChanged(oldValue, merged).catch((e) => console.error("Mijozga kvitansiya:", e.message));
+      return;
     } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
   upsertStmt.run(req.params.key, value);

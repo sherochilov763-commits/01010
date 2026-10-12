@@ -492,8 +492,10 @@ export default function App() {
 
 
   function moveLead(lead, newStage) {
-    if (newStage === "design" && !lead.design?.assigneeId) return setTaskAssign({ lead, kind: "design", targetStage: newStage });
-    if (newStage === "printing" && !lead.print?.assigneeId) return setTaskAssign({ lead, kind: "print", targetStage: newStage });
+    // Smetadan buyurtmaga aylangan bitimda vazifalar har bir buyurtmaning o'zida — lid uchun alohida tayinlash so'ralmaydi
+    const viaOrders = lead.quote?.status === "converted";
+    if (!viaOrders && newStage === "design" && !lead.design?.assigneeId) return setTaskAssign({ lead, kind: "design", targetStage: newStage });
+    if (!viaOrders && newStage === "printing" && !lead.print?.assigneeId) return setTaskAssign({ lead, kind: "print", targetStage: newStage });
     const next = leads.map((l) => {
       if (l.id !== lead.id) return l;
       const nowIso = new Date().toISOString();
@@ -510,15 +512,25 @@ export default function App() {
     persistLeads(next);
     addLog(`Lid bosqichi o'zgardi: ${lead.customer} -> ${LEAD_STAGES.find((s) => s.key === newStage)?.label}`);
   }
+  // Server bajargan amal (smeta → buyurtmalar, umumiy to'lov, holat) — natijani darhol ko'rsatamiz,
+  // so'ng serverdagi aniq holatni tortib olamiz (keyingi saqlashlar to'g'ri asosdan hisoblansin)
+  async function onServerChange({ lead, orders: changed } = {}) {
+    if (lead) setLeads((prev) => (prev.some((l) => l.id === lead.id) ? prev.map((l) => (l.id === lead.id ? lead : l)) : [lead, ...prev]));
+    if (changed?.length) {
+      setOrders((prev) => {
+        const byId = new Map(changed.map((o) => [o.id, o]));
+        const known = new Set(prev.map((o) => o.id));
+        return [...changed.filter((o) => !known.has(o.id)), ...prev.map((o) => byId.get(o.id) || o)];
+      });
+    }
+    for (const [key, setter] of [["uvix:orders", setOrders], ["uvix:leads", setLeads], ["uvix:audit", setAuditLog]]) {
+      const fresh = await storageRefresh(key);
+      if (Array.isArray(fresh)) setter(fresh);
+    }
+  }
   function createOrderFromLead(lead) {
     setPendingLeadForOrder(lead);
     setView("orders");
-  }
-  function linkOrderToLead(lead, order) {
-    const next = leads.map((l) => (l.id === lead.id ? { ...l, orderId: order.id } : l));
-    persistLeads(next);
-    setPendingLeadForOrder(null);
-    addLog(`Lid buyurtmaga bog'landi: ${lead.customer} -> ${order.orderNumber}`);
   }
   function permanentlyDeleteOrder(order) {
     const next = orders.filter((o) => o.id !== order.id);
@@ -552,7 +564,7 @@ export default function App() {
   }
   function permanentlyDeletePayment(orderId, paymentId) {
     const order = orders.find((o) => o.id === orderId);
-    const next = orders.map((o) => (o.id === orderId ? { ...o, payments: (o.payments || []).filter((p) => p.id !== paymentId) } : o));
+    const next = orders.map((o) => (o.id === orderId ? { ...o, payments: (o.payments || []).filter((p) => p.id !== paymentId), purgedPaymentIds: [...(o.purgedPaymentIds || []), paymentId].slice(-50) } : o));
     persistOrders(next);
     addLog(`To'lov butunlay o'chirildi: ${order?.orderNumber || ""}`);
     showToast("Butunlay o'chirildi");
@@ -639,7 +651,7 @@ export default function App() {
         .uvix-scroll::-webkit-scrollbar-thumb:hover { background: ${THEME.isDark ? "rgba(255,255,255,0.25)" : "#A1A1AA"}; }
         body { background: ${THEME.surface}; }
         /* Fon (oboi) — sahifa ortida qotib turadi; ustida yumshoq parda, yozuvlar o'qilsin */
-        .uvix-bg { position: fixed; inset: 0; z-index: 0; background-size: cover; background-position: center; pointer-events: none; }
+        .uvix-bg { position: fixed; inset: 0; z-index: -1; background-size: cover; background-position: center; pointer-events: none; }
         .uvix-bg::after { content: ""; position: absolute; inset: 0; background: ${glassOn ? `rgba(0,0,0,${0.22 + (bgState.bg.dim || 0)})` : withAlpha(THEME.surface, Math.min(0.85, 0.35 + (bgState.bg.dim || 0)))}; }
         @media ${BG_OFF_QUERY} { .uvix-bg { display: none; } }
         /* Shisha rejimi (Bitrix24 kabi): panellar shaffof, fon ko'rinadi, matn oq */
@@ -784,7 +796,7 @@ export default function App() {
         ${BOTTOM_NAV_CSS}
       `}</style>
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
-      <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden", position: "relative", zIndex: 1 }}>
+      <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
         <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} badges={navBadges}
           top={<SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} />} />
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
@@ -819,7 +831,9 @@ export default function App() {
                 pendingLead={pendingLeadForOrder}
                 leads={leads}
                 customerProfiles={customers}
-                onOrderLinkedToLead={linkOrderToLead}
+                onPendingLeadHandled={() => setPendingLeadForOrder(null)}
+                onServerChange={onServerChange}
+                showToast={showToast}
               />
             )}
             {view === "crm" && (
@@ -856,6 +870,17 @@ export default function App() {
                 onInitialChatHandled={() => setOpenChatId(null)}
                 isAdmin={isAdmin}
                 onOpenSettings={() => { setNavFilter(null); setView("settings"); }}
+                currentUser={currentUser}
+                employees={employees}
+                orders={myOrders}
+                allOrders={orders}
+                transactions={myTx}
+                customerProfiles={customers}
+                onCreateOrderFromLead={createOrderFromLead}
+                onAssignTask={(lead, kind, attachment) => setTaskAssign({ lead, kind, attachment })}
+                onServerChange={onServerChange}
+                onAddPayment={addPayment}
+                onDeletePayment={deletePayment}
               />
             )}
             {view === "expense" && (
@@ -918,6 +943,7 @@ export default function App() {
             )}
             {view === "settings" && (
               <SettingsView
+                categories={categories}
                 notif={notif}
                 bgState={bgState}
                 currentUser={currentUser}
@@ -955,8 +981,9 @@ export default function App() {
       {taskAssign && (
         <Suspense fallback={null}>
         <TaskAssignModal
-          lead={taskAssign.lead}
+          lead={leads.find((l) => l.id === taskAssign.lead.id) || taskAssign.lead}
           kind={taskAssign.kind}
+          attachment={taskAssign.attachment || null}
           employees={employees}
           onSave={saveTaskAssignment}
           onCancel={() => setTaskAssign(null)}

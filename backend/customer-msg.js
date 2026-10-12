@@ -1,6 +1,7 @@
 // customer-msg.js — mijozga Telegram xabarlari (sizning Telegram akkauntingiz — userbot orqali):
 //   • Hisob-faktura — faqat qo'lda: xodim «Hisob-faktura yuborish»ni bosadi (rasm brauzerda chiziladi)
 //   • «To'lov qabul qilindi» — buyurtmaga yangi to'lov kiritilganda avtomatik (kvitansiya)
+//   • «Buyurtmangiz tayyor» — pechat tugaganda yoki xodim «Tayyor» deb belgilaganda (sozlamada yoqilsa)
 //   • Qarz eslatmasi — qarz N kundan oshsa, mijozga yumshoq eslatma (har mijozga ko'pi bilan har N kunda 1 marta)
 //
 // Qabul qiluvchi: mijozning CRM lididagi Telegram chati (eng ishonchli), bo'lmasa — mijozlar bazasidagi
@@ -14,6 +15,7 @@ const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avg
 const DEFAULT_CONFIG = {
   cardNumber: "", cardHolder: "", managerPhone: "", managerName: "", companyLine: "UV bosma ustaxonasi",
   receipt: true, // to'lov qabul qilindi
+  readyNotify: false, // buyurtma tayyor bo'lganda «olib ketishingiz mumkin»
   debtRemind: false, debtDays: 7, remindEvery: 7, remindAt: "11:00", days: [1, 2, 3, 4, 5, 6], maxPerDay: 20,
 };
 
@@ -78,6 +80,8 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     if (!Array.isArray(newOrders)) return;
     const oldById = new Map((Array.isArray(oldOrders) ? oldOrders : []).map((o) => [o.id, o]));
     const nowMs = nowFn().getTime();
+    // Bitta umumiy to'lov (batchId) bir nechta buyurtmaga bo'lingan bo'lsa — mijozga bitta kvitansiya
+    const batches = new Map();
     for (const o of newOrders) {
       if (!o || o.deletedAt) continue;
       const old = oldById.get(o.id);
@@ -85,10 +89,13 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
       // Faqat hozirgina kiritilgan to'lovlar (import yoki eski ma'lumot tiklanganda mijozga yuborilmaydi)
       const fresh = (o.payments || []).filter((p) => !p.deletedAt && !oldIds.has(p.id) && p.amount > 0 && (!p.createdAt || nowMs - new Date(p.createdAt).getTime() < 15 * 60 * 1000));
       if (!fresh.length) continue;
+      const own = fresh.filter((p) => !p.batchId);
+      for (const p of fresh.filter((x) => x.batchId)) { const b = batches.get(p.batchId) || { orders: new Map(), pays: [] }; b.orders.set(o.id, o); b.pays.push(p); batches.set(p.batchId, b); }
+      if (!own.length) continue;
       const rcp = recipientFor(o.customer, o.id);
       if (!rcp) continue;
-      const sum = fresh.reduce((s, p) => s + p.amount, 0);
-      const types = [...new Set(fresh.map((p) => PAY_LABEL[p.paymentType] || p.paymentType).filter(Boolean))].join(", ");
+      const sum = own.reduce((s, p) => s + p.amount, 0);
+      const types = [...new Set(own.map((p) => PAY_LABEL[p.paymentType] || p.paymentType).filter(Boolean))].join(", ");
       const debt = debtOf(o);
       const text = [
         `✅ To'lov qabul qilindi`,
@@ -98,6 +105,49 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
       ].join("\n");
       await deliver("receipt", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: o.orderNumber, amount: sum });
     }
+    for (const b of batches.values()) {
+      const list = [...b.orders.values()];
+      const rcp = recipientFor(list[0].customer, list[0].id);
+      if (!rcp) continue;
+      const sum = b.pays.reduce((s, p) => s + p.amount, 0);
+      const types = [...new Set(b.pays.map((p) => PAY_LABEL[p.paymentType] || p.paymentType).filter(Boolean))].join(", ");
+      const debt = list.reduce((s, o) => s + debtOf(o), 0);
+      const text = [
+        `✅ To'lov qabul qilindi: ${money(sum)}${types ? ` (${types})` : ""}`,
+        list.length > 1 ? `Buyurtmalar: ${list.map((o) => o.orderNumber).join(", ")}` : `Buyurtma ${list[0].orderNumber || ""}`,
+        debt > 0 ? `Qoldiq: ${money(debt)}` : (list.length > 1 ? `Buyurtmalar to'liq to'landi.` : `Buyurtma to'liq to'landi.`),
+        `Rahmat!`,
+      ].join("\n");
+      await deliver("receipt", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: list.map((o) => o.orderNumber).join(", "), amount: sum });
+    }
+  }
+
+  // ---- «Buyurtmangiz tayyor» ----
+  // Guruh (bitta smetadan bir nechta buyurtma) bo'lsa — hammasi tayyor bo'lganda bitta xabar
+  async function sendReady(order) {
+    const cfg = config();
+    if (!cfg.readyNotify || !order) return { ok: false, skipped: true };
+    let list = [order];
+    if (order.groupId) {
+      const all = (readJson("uvix:orders", []) || []).filter((o) => o && !o.deletedAt && o.groupId === order.groupId);
+      if (all.some((o) => o.prodStage !== "ready" && o.prodStage !== "delivered")) return { ok: false, waiting: true };
+      list = all.filter((o) => o.prodStage === "ready");
+      if (!list.length) return { ok: false, skipped: true };
+    }
+    const rcp = recipientFor(order.customer, order.id);
+    if (!rcp) return { ok: false, error: "no_recipient" };
+    const debt = list.reduce((s, o) => s + debtOf(o), 0);
+    const what = list.length > 1
+      ? list.map((o) => `• ${o.title || o.materialType || "Buyurtma"} (${o.orderNumber})`).join("\n")
+      : `${list[0].title || list[0].materialType || "Buyurtma"} (${list[0].orderNumber})`;
+    const text = [
+      list.length > 1 ? `✅ Buyurtmalaringiz tayyor!` : `✅ Buyurtmangiz tayyor!`,
+      what,
+      `Olib ketishingiz mumkin.`,
+      debt > 0 ? `To'lanishi kerak: ${money(debt)}` : "",
+      cfg.managerPhone ? `Savollar bo'yicha: ${cfg.managerPhone}${cfg.managerName ? ` (${cfg.managerName})` : ""}` : "",
+    ].filter(Boolean).join("\n");
+    return deliver("ready", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: list.map((o) => o.orderNumber).join(", ") });
   }
 
   // ---- Qarz eslatmasi mijozga ----
@@ -176,6 +226,7 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
       managerPhone: str(b.managerPhone, 40, cur.managerPhone), managerName: str(b.managerName, 60, cur.managerName),
       companyLine: str(b.companyLine, 80, cur.companyLine),
       receipt: b.receipt == null ? cur.receipt : !!b.receipt,
+      readyNotify: b.readyNotify == null ? cur.readyNotify : !!b.readyNotify,
       debtRemind: b.debtRemind == null ? cur.debtRemind : !!b.debtRemind,
       debtDays: int(b.debtDays, 1, 120, cur.debtDays), remindEvery: int(b.remindEvery, 3, 60, cur.remindEvery),
       remindAt: /^\d{2}:\d{2}$/.test(b.remindAt || "") ? b.remindAt : cur.remindAt,
@@ -215,6 +266,6 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     res.json({ list: list.slice(0, 50), sample: g ? remindText(g, cfg) : null });
   });
 
-  return { onOrdersChanged, tick, recipientFor };
+  return { onOrdersChanged, tick, recipientFor, sendReady };
 };
 module.exports.DEFAULT_CONFIG = DEFAULT_CONFIG;

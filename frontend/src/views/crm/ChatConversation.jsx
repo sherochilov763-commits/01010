@@ -1,12 +1,14 @@
 // ChatConversation.jsx — suhbat oynasi: xabarlar (rasm, ovoz, joylashuv, javob, reaksiya) va yozish paneli
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CheckCheck, Copy, MoreHorizontal, Download, File as FileIcon, FileText, Image as ImageIcon, Loader2, MapPin, Mic, Pause, Paperclip, Play, Reply, Send, SmilePlus, Trash2, X } from "lucide-react";
+import { Lock, Palette, Zap, CheckCheck, Copy, MoreHorizontal, Download, File as FileIcon, FileText, Image as ImageIcon, Loader2, MapPin, Mic, Pause, Paperclip, Play, Reply, Send, SmilePlus, Trash2, X } from "lucide-react";
 import { useBackToClose } from "../../lib/history.js";
 
 export const REACTIONS = ["👍", "❤", "🔥", "😁", "😢", "🙏", "👌"];
 
 import { C } from "./chatPalette.js";
 
+// Dizaynerga yuborsa bo'ladigan xabar: mijoz yuborgan rasm yoki hujjat (ilova serverida saqlangan)
+export const isDesignable = (m) => !!m && (m.mediaType === "photo" || m.mediaType === "document") && /^\/api\/photos\//.test(String(m.mediaUrl || ""));
 const time = (iso) => new Date(iso).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
 function snippet(m) {
   if (!m) return "Xabar";
@@ -72,7 +74,7 @@ export const chatCss = () => `
 `;
 
 /* ============================ XABARLAR ============================ */
-export function MessageList({ messages, loading, isMobile, customerName, onReply, onReact }) {
+export function MessageList({ messages, loading, isMobile, customerName, onReply, onReact, onToDesigner, onDeleteNote, myName }) {
   const [menu, setMenu] = useState(null); // { m, rect }
   const [lightbox, setLightbox] = useState(null);
   const byTgId = useMemo(() => {
@@ -100,6 +102,21 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
     <>
       {messages.map((m, i) => {
         const newDay = i === 0 || dayKey(messages[i - 1].date) !== dayKey(m.date);
+        if (m.note) {
+          // Ichki izoh — faqat xodimlar ko'radi, Telegram'ga yuborilmaydi
+          return (
+            <Fragment key={m.id}>
+              {newDay && <div style={{ alignSelf: "center", margin: "8px 0 4px", padding: "4px 12px", borderRadius: 12, background: C.dayBg, color: C.muted, fontSize: 12.5, fontWeight: 600 }}>{dayTitle(m.date)}</div>}
+              <div className="uc-note" data-testid="chat-note" style={{ alignSelf: "stretch", margin: isMobile ? "2px 4px" : "2px 48px", background: C.noteBg, border: `1px dashed ${C.noteBorder}`, borderRadius: 10, padding: "8px 12px", color: C.noteText, fontSize: 13.5, lineHeight: 1.45, position: "relative" }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, marginBottom: 2, color: C.noteHead }}>
+                  <Lock size={11} /> Ichki izoh · faqat xodimlar ko'radi · {m.by}<span style={{ fontWeight: 500, marginLeft: "auto" }}>{time(m.date)}</span>
+                  {onDeleteNote && <button type="button" onClick={() => onDeleteNote(m)} aria-label="Izohni o'chirish" title="O'chirish" className="uc-note-del" style={{ border: 0, background: "none", padding: 0, cursor: "pointer", color: "inherit", display: "flex" }}><X size={13} /></button>}
+                </div>
+                <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.text}</div>
+              </div>
+            </Fragment>
+          );
+        }
         const quoted = m.replyToTgId ? byTgId.get(m.replyToTgId) : null;
         const bubbleBg = m.out ? C.outBubble : C.inBubble;
         const canAct = !!m.tgId;
@@ -115,6 +132,7 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
               <div className="uc-quick" style={m.out ? { right: "calc(100% + 6px)" } : { left: "calc(100% + 6px)" }}>
                 <button type="button" aria-label="Javob berish" title="Javob berish" onClick={() => onReply(m)}><Reply size={15} /></button>
                 <button type="button" aria-label="Reaksiya" title="Reaksiya" onClick={(e) => setMenu({ m, rect: e.currentTarget.parentElement.parentElement.getBoundingClientRect() })}><SmilePlus size={15} /></button>
+                {onToDesigner && isDesignable(m) && <button type="button" aria-label="Dizaynerga yuborish" title="Dizaynerga yuborish" onClick={() => onToDesigner(m)}><Palette size={15} /></button>}
               </div>
             )}
             <div
@@ -171,6 +189,7 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
           onReply={() => { onReply(menu.m); setMenu(null); }}
           onReact={(emoji) => { onReact(menu.m, emoji); setMenu(null); }}
           onView={menu.m.mediaType === "photo" && menu.m.mediaUrl ? () => { setMenu(null); setTimeout(() => setLightbox(menu.m.mediaUrl), 0); } : null}
+          onToDesigner={onToDesigner && isDesignable(menu.m) ? () => { const mm = menu.m; setMenu(null); setTimeout(() => onToDesigner(mm), 0); } : null}
         />
       )}
       {lightbox && <Lightbox url={lightbox} onClose={() => setLightbox(null)} />}
@@ -304,7 +323,7 @@ function VoicePlayer({ url, altUrl, out, knownDuration }) {
   );
 }
 
-function MessageMenu({ m, rect, isMobile, onClose, onReply, onReact, onView }) {
+function MessageMenu({ m, rect, isMobile, onClose, onReply, onReact, onView, onToDesigner }) {
   useBackToClose(true, onClose);
   const boxRef = useRef(null);
   const [pos, setPos] = useState(null);
@@ -346,6 +365,7 @@ function MessageMenu({ m, rect, isMobile, onClose, onReply, onReact, onView }) {
           <div style={{ fontSize: 12, color: C.muted, padding: "6px 10px 8px" }}>Bu xabar yangilanishdan oldin kelgan — reaksiya va javob faqat yangi xabarlarga ishlaydi.</div>
         )}
         {onView && <button type="button" className="uc-menuitem" onClick={onView}><ImageIcon size={18} color={C.muted} /> Rasmni ko'rish</button>}
+        {onToDesigner && <button type="button" className="uc-menuitem" onClick={onToDesigner}><Palette size={18} color={C.muted} /> Dizaynerga yuborish</button>}
         <button type="button" className="uc-menuitem" onClick={onReply} disabled={!canAct}><Reply size={18} color={C.muted} /> Javob berish</button>
         {m.text && <button type="button" className="uc-menuitem" onClick={copy}><Copy size={18} color={C.muted} /> Nusxa olish</button>}
         {isMobile && <button type="button" className="uc-menuitem" onClick={onClose} style={{ justifyContent: "center", color: C.muted }}>Bekor qilish</button>}
@@ -377,8 +397,30 @@ function pickRecorderMime() {
   return "";
 }
 
-export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSendText, onSendFile, onSendVoice, onSendLocation }) {
+export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSendText, onSendFile, onSendVoice, onSendLocation, replies = [], onSendNote, insert, onTyping }) {
   const [text, setText] = useState("");
+  const [mode, setMode] = useState("client"); // "client" — mijozga, "note" — ichki izoh
+  const [tplOpen, setTplOpen] = useState(false); // ⚡ tugmasi bilan ochilgan to'liq ro'yxat
+  const [tplIdx, setTplIdx] = useState(0);
+  const isNote = mode === "note";
+  // "/na" yozilganda mos tayyor javoblar
+  const slashQ = !isNote && /^\/[^\s]*$/.test(text) ? text.slice(1).toLowerCase() : null;
+  const tplList = (slashQ !== null ? replies.filter((r) => r.key.toLowerCase().startsWith(slashQ)) : tplOpen ? replies : []);
+  const showTpl = tplList.length > 0 && (slashQ !== null || tplOpen);
+  useEffect(() => { setTplIdx(0); }, [slashQ, tplOpen]);
+  // Kalkulyator yoki boshqa joydan matn qo'shish
+  useEffect(() => {
+    if (!insert?.text) return;
+    setMode("client");
+    setText((t) => (t.trim() ? `${t.trim()} ${insert.text}` : insert.text));
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, [insert?.n]); // eslint-disable-line react-hooks/exhaustive-deps
+  function pickTpl(r) {
+    if (!r) return;
+    setText(r.text);
+    setTplOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [attachOpen, setAttachOpen] = useState(false);
@@ -415,8 +457,17 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
     const t = text.trim();
     if (!t || busy) return;
     setText("");
-    const ok = await run(() => onSendText(t));
+    const ok = await run(() => (isNote ? onSendNote(t) : onSendText(t)));
     if (!ok) setText(t);
+  }
+  function onInputKey(e) {
+    if (showTpl) {
+      if (e.key === "ArrowDown") { e.preventDefault(); return setTplIdx((i) => Math.min(tplList.length - 1, i + 1)); }
+      if (e.key === "ArrowUp") { e.preventDefault(); return setTplIdx((i) => Math.max(0, i - 1)); }
+      if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); return pickTpl(tplList[tplIdx]); }
+      if (e.key === "Escape") { e.preventDefault(); setTplOpen(false); if (slashQ !== null) setText(""); return; }
+    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(); }
   }
 
   // ---- Foto/video va hujjat ----
@@ -512,7 +563,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
   }
 
   const hasText = text.trim().length > 0;
-  const bar = { display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "8px 8px" : "10px 14px", background: C.panel, borderTop: `1px solid ${C.border}` };
+  const bar = { display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "8px 8px" : "10px 14px", background: C.panel, borderTop: onSendNote && !rec ? "none" : `1px solid ${C.border}` };
 
   return (
     <div style={{ position: "relative" }}>
@@ -533,6 +584,31 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
         </div>
       )}
 
+      {onSendNote && !rec && (
+        <div role="tablist" aria-label="Kimga" style={{ display: "flex", gap: 4, padding: isMobile ? "6px 10px 0" : "8px 14px 0", background: C.panel, borderTop: `1px solid ${C.border}` }}>
+          {[["client", "Mijozga"], ["note", "🔒 Ichki izoh"]].map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={mode === k} data-mode={k} onClick={() => { setMode(k); setTplOpen(false); setTimeout(() => inputRef.current?.focus(), 0); }}
+              style={{ height: 26, padding: "0 10px", borderRadius: 6, border: 0, cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                background: mode === k ? (k === "note" ? C.noteBg : C.hover) : "transparent", color: mode === k ? (k === "note" ? C.noteHead : C.text) : C.muted }}>{l}</button>
+          ))}
+        </div>
+      )}
+      {showTpl && (
+        <>
+          {tplOpen && <div onClick={() => setTplOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 300 }} />}
+          <div role="listbox" aria-label="Tayyor javoblar" data-testid="tpl-menu"
+            style={{ position: "absolute", left: isMobile ? 6 : 14, right: isMobile ? 6 : "auto", width: isMobile ? "auto" : 460, maxWidth: "calc(100% - 12px)", bottom: "calc(100% - 4px)", zIndex: 301, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, boxShadow: C.shadow, padding: 6, maxHeight: 320, overflowY: "auto" }}>
+            <div style={{ fontSize: 11.5, color: C.muted, padding: "4px 8px 6px" }}>Tayyor javoblar — ↑↓ va Enter</div>
+            {tplList.map((r, i) => (
+              <div key={r.id || r.key} role="option" aria-selected={i === tplIdx} data-tpl={r.key} onMouseEnter={() => setTplIdx(i)} onMouseDown={(e) => { e.preventDefault(); pickTpl(r); }}
+                style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "7px 8px", borderRadius: 7, cursor: "pointer", background: i === tplIdx ? C.hover : "transparent" }}>
+                <code style={{ fontFamily: "inherit", fontWeight: 700, fontSize: 13, color: C.link, minWidth: 72 }}>/{r.key}</code>
+                <span style={{ fontSize: 13, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isMobile ? "normal" : "nowrap", minWidth: 0 }}>{r.text}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {rec ? (
         <div style={bar}>
           <button type="button" className="uc-iconbtn" onClick={() => finishRecording(false)} aria-label="Ovozli xabarni bekor qilish" style={{ color: C.red }}><Trash2 size={20} /></button>
@@ -548,19 +624,23 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
         </div>
       ) : (
         <div style={bar}>
-          <button type="button" className="uc-iconbtn" onClick={() => setAttachOpen((v) => !v)} aria-label="Biriktirish" aria-expanded={attachOpen} disabled={busy}><Paperclip size={21} /></button>
+          {!isNote && <button type="button" className="uc-iconbtn" onClick={() => setAttachOpen((v) => !v)} aria-label="Biriktirish" aria-expanded={attachOpen} disabled={busy}><Paperclip size={21} /></button>}
+          {!isNote && replies.length > 0 && (
+            <button type="button" className="uc-iconbtn" onClick={() => setTplOpen((v) => !v)} aria-label="Tayyor javoblar" title="Tayyor javoblar (yoki «/» yozing)" aria-expanded={showTpl} data-testid="tpl-btn"><Zap size={19} /></button>
+          )}
           <input
             ref={inputRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendText())}
-            placeholder="Xabar yozing..."
-            aria-label="Xabar"
-            style={{ flex: 1, minWidth: 0, background: C.hover, border: "none", borderRadius: 20, padding: "11px 16px", fontSize: isMobile ? 16 : 14, outline: "none", color: C.text }}
+            onChange={(e) => { setText(e.target.value); if (!isNote) onTyping?.(); }}
+            onKeyDown={onInputKey}
+            placeholder={isNote ? "Ichki izoh — mijoz ko'rmaydi..." : replies.length ? "Xabar yozing...  ( / — tayyor javob)" : "Xabar yozing..."}
+            aria-label={isNote ? "Ichki izoh" : "Xabar"}
+            data-testid="composer-input"
+            style={{ flex: 1, minWidth: 0, background: isNote ? C.noteBg : C.hover, border: isNote ? `1px dashed ${C.noteBorder}` : "none", borderRadius: 20, padding: "11px 16px", fontSize: isMobile ? 16 : 14, outline: "none", color: C.text }}
           />
-          {hasText ? (
-            <button type="button" onClick={sendText} disabled={busy} aria-label="Yuborish"
-              style={{ width: 44, height: 44, borderRadius: "50%", background: C.blue, border: "none", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0, opacity: busy ? 0.6 : 1 }}>
+          {hasText || isNote ? (
+            <button type="button" onClick={sendText} disabled={busy || !hasText} aria-label={isNote ? "Izohni saqlash" : "Yuborish"}
+              style={{ width: 44, height: 44, borderRadius: "50%", background: isNote ? C.noteHead : C.blue, border: "none", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0, opacity: busy ? 0.6 : 1 }}>
               {busy ? <Loader2 size={18} className="uc-spin" /> : <Send size={18} />}
             </button>
           ) : (

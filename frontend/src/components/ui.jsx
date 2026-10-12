@@ -88,7 +88,7 @@ export function MetricCard({ label, value, sub, accent: accentProp, bg: bgProp, 
     </Card>
   );
 }
-export function Button({ children, onClick, variant = "primary", style, type = "button", disabled }) {
+export function Button({ children, onClick, variant = "primary", style, type = "button", disabled, title, "data-testid": testId, "aria-label": ariaLabel }) {
   const base = {
     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, minHeight: 36, padding: "0 14px", borderRadius: Math.max(6, THEME.radius - 2),
     fontSize: 13, fontWeight: 600, cursor: disabled ? "not-allowed" : "pointer", border: "1px solid transparent", lineHeight: 1.2,
@@ -101,7 +101,7 @@ export function Button({ children, onClick, variant = "primary", style, type = "
   };
   const classNames = { primary: "uvix-btn-primary", ghost: "uvix-btn-ghost", danger: "uvix-btn-danger" };
   return (
-    <button type={type} disabled={disabled} onClick={onClick} className={classNames[variant]} style={{ ...base, ...variants[variant], ...style }}>
+    <button type={type} disabled={disabled} onClick={onClick} className={classNames[variant]} title={title} aria-label={ariaLabel} data-testid={testId} style={{ ...base, ...variants[variant], ...style }}>
       {children}
     </button>
   );

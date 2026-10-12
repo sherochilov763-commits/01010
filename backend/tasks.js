@@ -5,9 +5,13 @@
 //   lead.print  = { assigneeId, quality, colorProfile, material, area, deadline, notes, status, ... }
 // status: "unassigned" (pechatchi hali tayinlanmagan) | "new" | "in_progress" | "done"
 //
+// Smetadan yaratilgan buyurtmalarda vazifa buyurtmaning o'zida: order.design / order.print
+// (har buyurtma alohida ishlanadi). Bunday vazifa id'si: "o:<orderId>:<kind>", leadId o'rnida "o:<orderId>".
+//
 // Ishchilar (dizayner/pechatchi) faqat shu yerdagi endpointlar orqali ishlaydi va
 // ularga hech qachon summa, to'lov yoki telefon raqami yuborilmaydi.
-const crypto = require("crypto");
+const { applyOrderTaskStatus, syncLeadStage } = require("./production");
+const rid = () => Math.random().toString(16).slice(2, 14).padEnd(12, "0");
 
 const KINDS = ["design", "print"];
 const STATUS = new Set(["new", "in_progress", "done"]);
@@ -34,6 +38,10 @@ function mergeLeadTaskState(incoming, current) {
         out[k] = { ...inc, status: d.status, statusAt: d.statusAt, startedAt: d.startedAt, doneAt: d.doneAt };
       }
     }
+    // Smeta va bog'langan buyurtmalar server tomonidan yoziladi — eskirgan nusxa ularni o'chirmasin
+    if (db.quote && (!out.quote || (db.quote.updatedAt || "") > (out.quote.updatedAt || ""))) out.quote = db.quote;
+    if (Array.isArray(db.orderIds) && (!Array.isArray(out.orderIds) || db.orderIds.length > out.orderIds.length)) out.orderIds = db.orderIds;
+    if (db.orderId && !out.orderId) out.orderId = db.orderId;
     if (db.stageAutoAt && (!out.stageAutoAt || db.stageAutoAt > out.stageAutoAt)) {
       out.stage = db.stage;
       out.stageAutoAt = db.stageAutoAt;
@@ -44,7 +52,7 @@ function mergeLeadTaskState(incoming, current) {
   });
 }
 
-function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker }) {
+function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, onOrderReady = () => {} }) {
   const readJson = (key, fallback) => {
     const row = getStmt.get(key);
     if (!row) return fallback;
@@ -75,6 +83,35 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
       assigneeName: (t.assigneeId && empById.get(t.assigneeId)?.name) || null,
       deadline: t.deadline || null,
       notes: t.notes || "",
+      // Mijoz chatidan biriktirilgan rasmlar (faqat ilova ichidagi fayllar)
+      refs: (Array.isArray(t.refs) ? t.refs : []).filter((r) => r && /^\/api\/photos\/[a-zA-Z0-9.]+$/.test(String(r.url || ""))).slice(0, 10).map((r) => ({ url: r.url, name: String(r.name || "").slice(0, 80), kind: r.kind === "document" ? "document" : "photo" })),
+      details: details.filter(([, v]) => v).map(([label, value]) => ({ label, value: String(value) })),
+      assignedAt: t.assignedAt || null,
+      startedAt: t.startedAt || null,
+      doneAt: t.doneAt || null,
+    };
+  }
+
+  // Buyurtmaning o'z vazifasi (smetadan yaratilgan buyurtmalar)
+  function publicOrderTask(order, kind, empById) {
+    const t = order[kind];
+    const details = kind === "design"
+      ? [["Format", t.format], ["Fayl turi", t.fileType], ["Material", order.materialType]]
+      : [["Sifat", t.quality], ["Rang profili", t.colorProfile], ["Material", t.material || order.materialType], ["Hajmi", (t.area || order.area) ? `${String(t.area || order.area).replace(".", ",")} kv/m` : ""]];
+    const group = order.groupId && order.groupSize > 1 ? ` · ${order.groupIdx}/${order.groupSize}` : "";
+    return {
+      id: `o:${order.id}:${kind}`,
+      leadId: `o:${order.id}`,
+      kind,
+      taskNo: (order.orderNumber || "") + group,
+      jobTitle: order.title || (kind === "design" ? "Maket tayyorlash" : "Bosma ish"),
+      customer: order.customer || "",
+      status: t.status,
+      assigneeId: t.assigneeId || null,
+      assigneeName: (t.assigneeId && empById.get(t.assigneeId)?.name) || null,
+      deadline: t.deadline || null,
+      notes: t.notes || "",
+      refs: (Array.isArray(t.refs) ? t.refs : []).filter((r) => r && /^\/api\/photos\/[a-zA-Z0-9.]+$/.test(String(r.url || ""))).slice(0, 10).map((r) => ({ url: r.url, name: String(r.name || "").slice(0, 80), kind: r.kind === "document" ? "document" : "photo" })),
       details: details.filter(([, v]) => v).map(([label, value]) => ({ label, value: String(value) })),
       assignedAt: t.assignedAt || null,
       startedAt: t.startedAt || null,
@@ -97,6 +134,18 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
         tasks.push(publicTask(lead, kind, orders, empById));
       }
     }
+    for (const order of Array.isArray(orders) ? orders : []) {
+      if (!order || order.deletedAt) continue;
+      for (const kind of KINDS) {
+        const t = order[kind];
+        if (!t || !t.status) continue;
+        if (worker && t.assigneeId !== req.user.id) continue;
+        // Xodim buyurtmani qo'lda keyingi holatga o'tkazgan bo'lsa — ochiq qolgan vazifa ro'yxatdan chiqadi
+        const passed = kind === "design" ? ["printing", "ready", "delivered"] : ["ready", "delivered"];
+        if (t.status !== "done" && passed.includes(order.prodStage)) continue;
+        tasks.push(publicOrderTask(order, kind, empById));
+      }
+    }
     res.json({ tasks });
   });
 
@@ -104,6 +153,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
     const { leadId, kind } = req.params;
     const { status } = req.body || {};
     if (!KINDS.includes(kind) || !STATUS.has(status)) return res.status(400).json({ error: "bad_request" });
+    if (leadId.startsWith("o:")) return orderTaskStatus(req, res, leadId.slice(2), kind, status);
     const leads = readJson("uvix:leads", []);
     const lead = leads.find((l) => l.id === leadId);
     const t = lead?.[kind];
@@ -154,7 +204,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
     const audit = readJson("uvix:audit", []);
     if (Array.isArray(audit)) {
       audit.unshift({
-        id: crypto.randomBytes(6).toString("hex"),
+        id: rid(),
         who: req.user.name,
         what: `${lead.customer}: ${KIND_LABEL[kind]} — ${STATUS_LABEL[status]}${autoNote}`,
         when: now,
@@ -165,6 +215,36 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
     const empById = new Map(readEmployees().map((e) => [e.id, e]));
     res.json({ ok: true, task: publicTask(lead, kind, readJson("uvix:orders", []), empById) });
   });
+
+  function orderTaskStatus(req, res, orderId, kind, status) {
+    const orders = readJson("uvix:orders", []);
+    const order = Array.isArray(orders) ? orders.find((o) => o && o.id === orderId && !o.deletedAt) : null;
+    const t = order?.[kind];
+    if (!t || !t.status) return res.status(404).json({ error: "not_found", message: "Vazifa topilmadi" });
+    const worker = isWorker(req.user);
+    if (worker && t.assigneeId !== req.user.id) return res.status(403).json({ error: "forbidden", message: "Bu vazifa sizga biriktirilmagan" });
+    if (t.status === "unassigned") return res.status(409).json({ error: "unassigned", message: "Vazifaga hali mas'ul tayinlanmagan" });
+    if (worker) {
+      const allowed = { new: ["in_progress"], in_progress: ["done", "new"], done: [] };
+      if (!(allowed[t.status] || []).includes(status)) return res.status(409).json({ error: "bad_transition", message: "Bu holatga o'tkazib bo'lmaydi" });
+    }
+    const now = new Date().toISOString();
+    const { note, becameReady } = applyOrderTaskStatus(order, kind, status, now);
+    upsertStmt.run("uvix:orders", JSON.stringify(orders));
+    if (order.leadId) {
+      const leads = readJson("uvix:leads", []);
+      const lead = Array.isArray(leads) ? leads.find((l) => l && l.id === order.leadId) : null;
+      if (lead && syncLeadStage(lead, orders, now)) upsertStmt.run("uvix:leads", JSON.stringify(leads));
+    }
+    const audit = readJson("uvix:audit", []);
+    if (Array.isArray(audit)) {
+      audit.unshift({ id: rid(), who: req.user.name, what: `${order.customer} (${order.orderNumber}): ${KIND_LABEL[kind]} — ${STATUS_LABEL[status]}${note}`, when: now });
+      upsertStmt.run("uvix:audit", JSON.stringify(audit.slice(0, 500)));
+    }
+    if (becameReady) { try { onOrderReady(order); } catch (e) { console.error("Tayyor xabari:", e.message); } }
+    const empById = new Map(readEmployees().map((e) => [e.id, e]));
+    res.json({ ok: true, task: publicOrderTask(order, kind, empById) });
+  }
 }
 
 module.exports = { registerTaskRoutes, mergeLeadTaskState, KINDS };

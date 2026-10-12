@@ -1,0 +1,6 @@
+node_modules/
+uvix.db
+uvix.db-*
+uvix.secret
+uploads/
+.env

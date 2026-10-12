@@ -9,7 +9,7 @@ const QUALITIES = ["720 dpi", "1080 dpi", "1440 dpi"];
 const COLOR_PROFILES = ["CMYK", "CMYK + oq", "RGB"];
 const MATERIALS = ["Shisha", "Oniks", "Akril", "Banner", "Plyonka", "Kompozit"];
 
-export function TaskAssignModal({ lead, kind, employees, onSave, onCancel }) {
+export function TaskAssignModal({ lead, kind, employees, onSave, onCancel, attachment }) {
   const isDesign = kind === "design";
   const role = isDesign ? "designer" : "printer";
   const people = (employees || []).filter((e) => e.role === role);
@@ -39,9 +39,11 @@ export function TaskAssignModal({ lead, kind, employees, onSave, onCancel }) {
     const fields = isDesign
       ? { format: f.format.trim(), fileType: f.fileType.trim() }
       : { quality: f.quality.trim(), colorProfile: f.colorProfile.trim(), material: f.material.trim(), area: f.area ? Number(String(f.area).replace(",", ".")) || "" : "" };
+    // Chatdan biriktirilgan mijoz rasmi — avvalgilariga qo'shiladi
+    const refs = attachment ? [...(existing.refs || []).filter((r) => r.url !== attachment.url), attachment].slice(-10) : existing.refs;
     onSave({
       jobTitle: f.jobTitle.trim(),
-      task: { assigneeId: f.assigneeId, deadline: f.deadline || null, notes: f.notes.trim(), ...fields },
+      task: { assigneeId: f.assigneeId, deadline: f.deadline || null, notes: f.notes.trim(), ...fields, ...(refs ? { refs } : {}) },
       preassignPrinter: isDesign ? f.preassignPrinter || null : null,
     });
   }
@@ -54,6 +56,17 @@ export function TaskAssignModal({ lead, kind, employees, onSave, onCancel }) {
           <Icon size={18} color={isDesign ? THEME.blue : THEME.cyan} />
           <span><b>{lead.customer}</b> — {isDesign ? "maket tayyorlash" : "bosma ish"}</span>
         </div>
+        {attachment && (
+          <div data-testid="task-attachment" style={{ display: "flex", alignItems: "center", gap: 12, padding: 8, border: `1px solid ${THEME.border}`, borderRadius: 10 }}>
+            {attachment.kind === "document"
+              ? <div style={{ width: 72, height: 54, borderRadius: 8, background: THEME.chip, display: "grid", placeItems: "center", color: THEME.muted, fontSize: 11 }}>Fayl</div>
+              : <img src={attachment.url} alt="" style={{ width: 72, height: 54, objectFit: "cover", borderRadius: 8, background: THEME.chip }} />}
+            <div style={{ fontSize: 12.5, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>Mijoz chatidan biriktiriladi</div>
+              <div style={{ color: THEME.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachment.name || "Rasm"} · dizayner o'z ilovasida ko'radi</div>
+            </div>
+          </div>
+        )}
 
         {people.length === 0 ? (
           <div style={{ padding: "12px 14px", borderRadius: 12, background: THEME.amberBg, color: THEME.text, fontSize: 13.5, lineHeight: 1.5 }}>

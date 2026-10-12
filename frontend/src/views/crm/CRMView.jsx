@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Send, Trash2, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
-import { LEAD_STAGES, ORDER_READY_STAGES, isWorkerRole } from "../../constants.js";
+import { LEAD_STAGES, isWorkerRole } from "../../constants.js";
+import { PROD_LABEL, PROD_STAGES, prodColors } from "../../lib/production.js";
 import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
 import { TaskChips } from "./TaskAssignModal.jsx";
 import { LeadArchive } from "./LeadArchive.jsx";
@@ -191,6 +192,35 @@ export function LeadChatModal({ lead, onClose, onFetchMessages, onSendMessage })
         </div>
       </div>
     </Modal>
+  );
+}
+
+// Bitim holati kartada: smetadan yaratilgan buyurtmalar (holat chizig'i) yoki ochiq smeta / eski bog'langan buyurtma
+function DealLine({ lead, orders, linkedOrder, onCreate }) {
+  const ids = lead.orderIds || [];
+  if (ids.length) {
+    const list = ids.map((id) => (orders || []).find((o) => o.id === id)).filter((o) => o && !o.deletedAt);
+    if (list.length) {
+      const cnt = {}; list.forEach((o) => { const k = o.prodStage || "new"; cnt[k] = (cnt[k] || 0) + 1; });
+      const done = (cnt.ready || 0) + (cnt.delivered || 0);
+      const parts = PROD_STAGES.filter((k) => cnt[k]);
+      return (
+        <div data-testid="deal-progress" title={list.map((o) => `${o.orderNumber} — ${PROD_LABEL[o.prodStage] || "Navbatda"}`).join("\n")}>
+          <div style={{ display: "flex", gap: 2, height: 5 }}>{parts.map((k) => <span key={k} style={{ flex: cnt[k], borderRadius: 3, background: k === "delivered" ? THEME.border2 : prodColors(k).color }} />)}</div>
+          <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>{parts.filter((k) => k !== "ready" && k !== "delivered").map((k) => `${cnt[k]} ${PROD_LABEL[k].toLowerCase()}`).concat([`${done}/${list.length} tayyor`]).join(" · ")}</div>
+        </div>
+      );
+    }
+  }
+  if (linkedOrder) return <div style={{ fontSize: 12, color: THEME.green, fontWeight: 600 }}>✓ Buyurtma {linkedOrder.orderNumber}</div>;
+  const q = lead.quote?.status === "open" ? lead.quote : null;
+  // Ochiq smeta bo'lsa — doim; aks holda faqat ish boshlangan bosqichlarda (avvalgidek)
+  if (!q && !["design", "printing", "ready"].includes(lead.stage)) return null;
+  return (
+    <button type="button" onClick={onCreate} className="uvix-lead-cta" data-testid="lead-quote-cta"
+      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, border: 0, background: "none", padding: 0, color: THEME.violet, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+      <Package size={13} /> {q ? `Smeta ${q.no} · ${money(q.total)} — to'lov` : "Smeta / buyurtma"}
+    </button>
   );
 }
 
@@ -398,14 +428,7 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
                       )}
                       {note && <div style={{ fontSize: 12.5, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{note}</div>}
                       <TaskChips lead={lead} employees={employees} compact onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
-                      {linkedOrder ? (
-                        <div style={{ fontSize: 12, color: THEME.green, fontWeight: 600 }}>✓ Buyurtma {linkedOrder.orderNumber}</div>
-                      ) : ORDER_READY_STAGES.includes(lead.stage) && (
-                        <button type="button" onClick={() => onCreateOrderFromLead(lead)} className="uvix-lead-cta"
-                          style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, border: 0, background: "none", padding: 0, color: THEME.violet, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                          <Package size={13} /> Buyurtma yaratish
-                        </button>
-                      )}
+                      <DealLine lead={lead} orders={orders} linkedOrder={linkedOrder} onCreate={() => onCreateOrderFromLead(lead)} />
                       {(lead.source || lead.telegramUsername || st) && (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
                           {lead.source && <SourceChip source={lead.source} />}
@@ -547,12 +570,14 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
                 {lead.notes && !isAutoTgNote(lead) && <div style={{ fontSize: 13, color: THEME.mutedDark, lineHeight: 1.45 }}>{lead.notes}</div>}
                 <TaskChips lead={lead} employees={employees} onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
 
-                {linkedOrder ? (
+                {lead.orderIds?.length ? (
+                  <DealLine lead={lead} orders={orders} linkedOrder={linkedOrder} onCreate={() => onCreateOrder(lead)} />
+                ) : linkedOrder ? (
                   <div style={{ fontSize: 12.5, color: THEME.green, fontWeight: 700, background: THEME.greenBg, padding: "6px 10px", borderRadius: 10, alignSelf: "flex-start" }}>
                     Buyurtma: {linkedOrder.orderNumber}
                   </div>
-                ) : ORDER_READY_STAGES.includes(lead.stage) && (
-                  <Button onClick={() => onCreateOrder(lead)} style={{ justifyContent: "center" }}><Package size={15} /> Buyurtma yaratish</Button>
+                ) : (lead.quote?.status === "open" || ["design", "printing", "ready"].includes(lead.stage)) && (
+                  <Button onClick={() => onCreateOrder(lead)} style={{ justifyContent: "center" }}><Package size={15} /> {lead.quote?.status === "open" ? `Smeta ${lead.quote.no} · ${money(lead.quote.total)} — to'lov` : "Smeta / buyurtma"}</Button>
                 )}
 
                 {(tel || tg || (lead.telegramChatId && onChat)) && (

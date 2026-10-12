@@ -177,6 +177,8 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
     if (addInitialPayment && (!initPaymentNum || initPaymentNum <= 0)) return setError("Boshlang'ich to'lov summasini kiriting");
 
     const order = {
+      // Tahrirlashda formada bo'lmagan maydonlar (smeta guruhi, holat, vazifalar, lid) saqlanib qoladi
+      ...(initial || {}),
       id: orderId,
       orderNumber: initial?.orderNumber || generateOrderNumber(allOrders, date),
       date,

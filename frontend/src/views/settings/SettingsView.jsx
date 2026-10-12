@@ -14,8 +14,10 @@ import { TelegramAccountSection } from "./TelegramAccountSection.jsx";
 import { TelegramRoutesSection } from "./TelegramRoutesSection.jsx";
 import { NotificationsSection } from "./NotificationsSection.jsx";
 import { BackgroundSection } from "./BackgroundSection.jsx";
+import { QuickRepliesSection } from "./QuickRepliesSection.jsx";
+import { PriceListSection } from "./PriceListSection.jsx";
 
-export function SettingsView({ notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
+export function SettingsView({ categories, notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
   const [pin, setPin] = useState("");
   const [msg, setMsg] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
@@ -121,6 +123,8 @@ export function SettingsView({ notif, bgState, currentUser, employees, onSave, o
 
         {bgState && <BackgroundSection bgState={bgState} />}
         {notif?.prefs && <NotificationsSection n={notif} />}
+        {isAdmin && <PriceListSection categories={categories} />}
+        {isAdmin && <QuickRepliesSection />}
 
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>

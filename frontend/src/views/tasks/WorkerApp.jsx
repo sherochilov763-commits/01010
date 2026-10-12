@@ -271,6 +271,17 @@ function TaskCard({ task: t, busy, onStart, onDone, onBack }) {
       {t.details.map((d) => row(d.label, d.value))}
       {row("Mas'ul", t.assigneeName || "—")}
       {t.notes && <div style={{ fontSize: 13, color: THEME.mutedDark, background: THEME.chip, padding: "8px 10px", borderRadius: 10, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{t.notes}</div>}
+      {t.refs?.length > 0 && (
+        <div data-testid="task-refs" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {t.refs.map((r) => (
+            <a key={r.url} href={r.url} target="_blank" rel="noopener noreferrer" title={r.name || "Mijoz rasmi"} onClick={(e) => e.stopPropagation()}
+              style={{ display: "block", width: 84, height: 64, borderRadius: 8, overflow: "hidden", border: `1px solid ${THEME.border}`, background: THEME.chip }}>
+              {r.kind === "document" ? <span style={{ display: "grid", placeItems: "center", height: "100%", fontSize: 11, color: THEME.muted }}>Fayl</span>
+                : <img src={r.url} alt={r.name || "Mijoz rasmi"} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+            </a>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
         <span style={{ height: 30, padding: "0 12px", borderRadius: 999, display: "inline-flex", alignItems: "center", fontSize: 13, fontWeight: 700, color: statusStyle.c, background: `${statusStyle.c}1F` }}>{statusStyle.l}</span>

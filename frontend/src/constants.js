@@ -28,12 +28,13 @@ export const LEAD_STAGES = [
   stage("negotiation", "Muzokara", "#B45309"),
   stage("design", "Jarayonda (Dizayn)", "#6D28D9"),
   stage("printing", "Jarayonda (Pechatchi)", "#0E7490"),
+  stage("ready", "Tayyor (olib ketish)", "#4D7C0F"),
   stage("won", "Yopilgan", "#15803D"),
   stage("lost", "Yo'qotilgan", "#DC2626"),
 ];
 
 // Mijoz rozi bo'lgan (ish boshlangan) bosqichlar — shu yerdan boshlab lidni buyurtmaga aylantirish mumkin
-export const ORDER_READY_STAGES = ["design", "printing", "won"];
+export const ORDER_READY_STAGES = ["design", "printing", "ready", "won"];
 
 // Rollar: admin va operator — to'liq tizim; dizayner va pechatchi — faqat o'z vazifalari (pulsiz)
 export const ROLE_LABELS = { admin: "Administrator", operator: "Operator", designer: "Dizayner", printer: "Pechatchi" };

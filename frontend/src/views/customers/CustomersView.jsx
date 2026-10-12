@@ -414,7 +414,7 @@ function EditCustomer({ c, all, onClose, onSave }) {
 }
 
 // ---------------- Xabarlar (admin): rekvizitlar, avtomatik xabarlar, jurnal ----------------
-const LOG_TYPE = { invoice: "Hisob-faktura", receipt: "To'lov qabul qilindi", debt: "Qarz eslatmasi" };
+const LOG_TYPE = { invoice: "Hisob-faktura", receipt: "To'lov qabul qilindi", debt: "Qarz eslatmasi", ready: "Buyurtma tayyor" };
 function MessagesTab() {
   const [cfg, setCfg] = useState(null);
   const [connected, setConnected] = useState(true);
@@ -460,7 +460,11 @@ function MessagesTab() {
         <div style={{ fontWeight: 700, fontSize: 14 }}>Mijozga avtomatik xabarlar</div>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, cursor: "pointer", lineHeight: 1.45 }}>
           <input type="checkbox" checked={cfg.receipt} onChange={set("receipt")} style={check} data-testid="cm-receipt" />
-          <span><b>To'lov qabul qilindi</b> — buyurtmaga to'lov kiritilganda mijozga kvitansiya: summa, to'lov turi va qolgan qarz (yoki «to'liq to'landi»).</span>
+          <span><b>To'lov qabul qilindi</b> — buyurtmaga to'lov kiritilganda mijozga kvitansiya: summa, to'lov turi va qolgan qarz (yoki «to'liq to'landi»). Umumiy to'lov bir nechta buyurtmaga bo'linsa — bitta kvitansiya.</span>
+        </label>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, cursor: "pointer", lineHeight: 1.45 }}>
+          <input type="checkbox" checked={!!cfg.readyNotify} onChange={set("readyNotify")} style={check} data-testid="cm-ready" />
+          <span><b>Buyurtma tayyor</b> — pechat tugaganda (yoki xodim «Tayyor» deb belgilaganda) mijozga «olib ketishingiz mumkin» xabari va qolgan to'lov. Bir smetadagi bir nechta buyurtma — hammasi tayyor bo'lganda bitta xabar.</span>
         </label>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, cursor: "pointer", lineHeight: 1.45 }}>
           <input type="checkbox" checked={cfg.debtRemind} onChange={set("debtRemind")} style={check} data-testid="cm-remind" />

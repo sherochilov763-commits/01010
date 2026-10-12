@@ -763,3 +763,83 @@ Faqat ko'rinish yangilandi — hisob-kitob, ma'lumotlar va mavjud funksiyalar o'
 - Sozlamalar → Fon va shisha rejimi: Fonsiz, Yumshoq gradient, Tog' manzarasi, **Kun vaqti bo'yicha** (tong / kun / oqshom / tun — Toshkent vaqti bilan o'zi almashadi), **O'z rasmim** (1920 px gacha kichraytirib saqlanadi).
 - **Shisha rejimi** (Bitrix24 kabi): panellar shaffof, fon ko'rinadi, yozuvlar oq. «Oqshom va tunda qorong'i rejim» — kun vaqti fonida.
 - Har xodimning o'zi uchun (`GET/PUT /api/me/background`). Telefonda tezlik uchun fon ko'rsatilmaydi. Video fon yo'q.
+
+## 💬 Chatlar: menejer uchun qulayliklar (2026-10)
+
+Mavjud chat funksiyalari (reaksiya, javob, rasm, ovozli xabar va h.k.) o'zgarmadi — ustiga quyidagilar qo'shildi.
+
+**Tayyor javoblar**
+- Yozish maydonida «/» yozing (masalan `/narx`) yoki ⚡ tugmasini bosing → ro'yxatdan tanlang (↑ ↓, Enter yoki Tab). Matn maydonga qo'yiladi, yuborishdan oldin tahrirlash mumkin.
+- Ro'yxatni admin boshqaradi: Sozlamalar → «Chat: tayyor javoblar». Standart: /narx, /karta, /manzil, /maket, /vaqt.
+
+**Filtrlar va javobsiz ogohlantirish**
+- Ro'yxat tepasida: Hammasi / **Javobsiz** / O'qilmagan / Meniki / CRM'siz / Arxiv (har birining soni bilan).
+- Mijoz yozib, belgilangan vaqt (standart 15 daqiqa) ichida javob berilmasa — qator qizil chiziq bilan belgilanadi, «N daq javobsiz» yoziladi va mas'ul menejerga (tayinlanmagan bo'lsa — hammaga) bildirishnoma keladi. Bitta xabar uchun bir marta, faqat ish vaqtida (standart Du–Sh, 09:00–19:00). Sozlamalar → «Chat: tayyor javoblar» pastida o'zgartiriladi.
+
+**Mas'ul menejer va «kim yozyapti»**
+- Chat sarlavhasida yoki o'ng panelda menejer tayinlanadi; ro'yxatda uning bosh harflari ko'rinadi, «Meniki» filtri shunga ishlaydi.
+- Boshqa xodim shu mijozga yozayotgan bo'lsa — «✎ Aziza yozyapti...» ko'rinadi (ikki kishi bir vaqtda javob bermasligi uchun).
+
+**Ichki izoh**
+- Yozish maydonida «🔒 Ichki izoh» tabi: yozilgan matn mijozga **yuborilmaydi**, faqat xodimlar ko'radi (sariq fon, qulf belgisi). O'z izohini muallif yoki admin o'chiradi.
+
+**O'ng panel: mijoz, buyurtma, faktura, qarz**
+- Chat mijozi bazadagi mijoz bilan avtomatik bog'lanadi: jami buyurtmalar, qarz, oxirgi 3 buyurtma.
+- Tugmalar: «Buyurtma» (forma mijoz ismi bilan ochiladi), «Faktura», «To'lov», «Dizaynerga». CRM'da lid bo'lmasa — avtomatik yaratiladi.
+- **Narx kalkulyatori**: eni × bo'yi × soni × m² narxi → jami; «Javobga qo'shish» bosilsa hisob matni yozish maydoniga tushadi. Oxirgi narx eslab qolinadi.
+
+**Rasm → dizayner vazifasi**
+- Mijoz yuborgan rasm/fayl ustidagi 🎨 tugma yoki menyudagi «Dizaynerga yuborish» → vazifa oynasi rasm bilan ochiladi. Dizayner o'z ilovasida vazifa ichida shu rasmni ko'radi.
+
+**Mahkamlash, arxiv, qidiruv**
+- Qatorni o'ng tugma bilan bosing (telefonda — uzoq bosing) yoki «⋯»: Mahkamlash / Arxivga. Mahkamlanganlar tepada alohida bo'limda turadi; arxivdagilar faqat «Arxiv» filtrida.
+- Qidiruv endi xabarlar matnidan ham izlaydi — topilgan joy 🔍 bilan ko'rsatiladi.
+
+**Texnik**
+- Yangi fayl: `backend/chat-tools.js`. API: `GET /api/chat-tools/state`, `PUT /api/chat-tools/meta/:chatId`, `GET/POST /api/chat-tools/notes/:chatId`, `DELETE /api/chat-tools/notes/:chatId/:noteId`, `POST /api/chat-tools/typing`, `GET /api/chat-tools/search?q=`, `PUT /api/chat-tools/replies` (admin), `PUT /api/chat-tools/config` (admin).
+- Ma'lumotlar mavjud kalit-qiymat jadvalida saqlanadi (`uvix:chatMeta`, `uvix:chatNotes`, `uvix:quickReplies`, `uvix:chatConfig`) — bazaga migratsiya kerak emas. Dizayner vazifasiga `refs` (biriktirilgan rasmlar) maydoni qo'shildi.
+
+## 🧮 Smeta → to'lov → buyurtmalar, ishlab chiqarish holati (2026-10)
+
+Buyurtma endi **bitta yo'l** bilan yaratiladi: smeta (bir yoki bir nechta pozitsiya) → avans to'lovi → buyurtmalar. Chatdan kelgan mijoz ham, ustaxonaga o'zi kelgan mijoz ham shu yo'ldan o'tadi.
+
+**Narxlar va smeta (Sozlamalar → «Narxlar va smeta», admin)**
+- Material, birlik (m² yoki dona), narx, minimal maydon, kraska $/m² (ixtiyoriy — buyurtmadagi kraska summasi kursdan avtomatik hisoblanadi).
+- Avans foizi (standart 50%). Kam to'lansa buyurtma yaratilmaydi; admin «Avanssiz yaratish» bilan istisno qila oladi — tarixda yoziladi.
+
+**Kalkulyator — ish quroli (chat o'ng panelida va «Yangi buyurtma» oynasida)**
+- «Nima uchun» (masalan: oshxona fartugi), material ro'yxatdan → narx o'zi tushadi (qo'lda o'zgartirsa bo'ladi), eni × bo'yi × dona.
+- Minimal maydondan kichik ish minimal maydon bo'yicha hisoblanadi (masalan, 0,2 m² shisha → 1 m²).
+- «Smetaga qo'shish» → pozitsiyalar yig'iladi (tahrirlash / nusxa / o'chirish). Hisob mijozga avtomatik ketmaydi; «Mijozga yuborish (matn)» — ixtiyoriy.
+- Chatdagi smeta mijozning CRM lidiga saqlanadi (boshqa menejer ham ko'radi). Ustaxonadagi mijoz «o'ylab ko'raman» desa — «Smetani saqlash»: CRM'da lid bo'lib turadi, buyurtmalar ro'yxatiga tushmaydi.
+
+**«To'lov va buyurtma» (aylantirish)**
+- To'lov (bir nechta usulda bo'lishi mumkin), «Avans 50%» / «To'liq» tugmalari, avans holati darhol ko'rinadi.
+- Har pozitsiya → **alohida buyurtma**, raqamlar ketma-ket, hammasi bitta guruhda (`G-014`, smeta `S-014`).
+- To'lov buyurtmalar orasida taqsimlanadi (summaga mutanosib yoki ketma-ket) — har buyurtmaning qarzi alohida to'g'ri.
+- Har pozitsiya uchun vazifa: dizayner / «Maket tayyor → pechatga» / vazifasiz; pechatchini oldindan tanlash mumkin (dizayn tugagach o'zi faollashadi).
+- Hammasi serverda **bitta amalda** yoziladi: raqamlar takrorlanmaydi, yarim-yorti saqlanib qolmaydi. Telegram'ga bitta «Yangi buyurtmalar (3 ta)» xabari, mijozga bitta kvitansiya.
+- Smeta buyurtmaga aylangan chatda yangi pozitsiya qo'shilsa — shu mijoz uchun **yangi bitim** (yangi lid) ochiladi.
+
+**Buyurtmalar bo'limi**
+- «Holat» ustuni: Navbatda / Dizaynda / Pechatda / Tayyor / Topshirildi + kim ishlayapti va qancha vaqtdan beri. Holat bo'yicha filtr chiplari.
+- O'ng panelda «Ishlab chiqarish»: holatni o'zgartirish, dizayner/pechatchi tayinlash, «Mijozga topshirildi», guruhdagi boshqa buyurtmalar.
+- **«Ro'yxat | Mijoz bo'yicha»**: mijoz qatori (buyurtmalar soni, summa, qarz, ish holati chizig'i) → ochilsa buyurtmalar smeta guruhlari bo'yicha. Tanlov har xodimga eslab qolinadi.
+- **Umumiy to'lov**: mijoz bir marta to'laydi — summa qarzdor buyurtmalariga bo'linadi (eng eski qarzdan yoki mutanosib), oldindan ko'rsatiladi. Mijozga bitta kvitansiya.
+- Mijoz bir xil odam turli nomda yozilgan bo'lsa — Mijozlar bo'limidagi «Birlashtirish» bilan bitta mijoz bo'ladi (guruhlash shunga tayanadi).
+- Tahrirlash formasi avvalgidek (kraska, material xarajati, rasmlar); smeta guruhi, holat va vazifalar tahrirlashda saqlanib qoladi.
+
+**Dizayner / pechatchi**
+- Smetadan yaratilgan buyurtmalarda vazifa har buyurtmaning o'zida: ishchi ilovasida «UV-261002-004 · 1/3» ko'rinishida chiqadi. Dizayn tugasa → pechatga, pechat tugasa → **Tayyor**.
+
+**CRM**
+- Yangi bosqich: **«Tayyor (olib ketish)»**. Smetadan yaratilgan bitimda lid bosqichi buyurtmalardan o'zi hisoblanadi: birortasi dizaynda → «Jarayonda (Dizayn)», hammasi pechatda → «Jarayonda (Pechatchi)», hammasi tayyor → «Tayyor», hammasi topshirildi → «Yopilgan».
+- Kartada holat chizig'i: «2 dizaynda · 1/3 tayyor»; ochiq smetada — «Smeta S-014 · summa — to'lov».
+
+**Mijozga «Buyurtmangiz tayyor» xabari** (Mijozlar → sozlamalar, standart o'chiq): pechat tugaganda yoki «Tayyor» belgilanganda. Bitta smetadagi buyurtmalar — hammasi tayyor bo'lganda bitta xabar, qolgan to'lov bilan.
+
+**Texnik**
+- Yangi fayllar: `backend/quotes.js` (smeta, aylantirish, umumiy to'lov, holat, tayinlash), `backend/production.js` (holat qoidalari, taqsimot, eskirgan nusxadan himoya), `frontend/src/views/quotes/*`, `frontend/src/lib/production.js`, `views/orders/BatchPayModal.jsx`, `views/settings/PriceListSection.jsx`.
+- API: `GET/PUT /api/sales/config`, `PUT /api/quotes/:leadId`, `POST /api/quotes`, `POST /api/quotes/convert`, `POST /api/orders/pay-batch`, `POST /api/orders/:id/stage`, `POST /api/orders/:id/task`.
+- Buyurtmaga qo'shilgan maydonlar: `title, leadId, groupId, groupIdx, groupSize, quoteNo, prodStage, prodAt, readyAt, deliveredAt, design, print`; to'lovda `batchId`. Lidda: `quote, orderIds`. Bazaga migratsiya kerak emas — eski buyurtmalar holati bog'langan lid bosqichidan ko'rsatiladi (yoki qo'lda belgilanadi).
+- Eskirgan nusxadan himoya: menejer eski ma'lumot bilan saqlasa ham ishchi o'zgartirgan holat, server kiritgan to'lovlar va smeta yo'qolmaydi.
