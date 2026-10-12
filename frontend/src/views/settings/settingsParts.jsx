@@ -28,7 +28,7 @@ export const SETTINGS_INDEX = [
   { label: "Avans foizi", section: "savdo", keys: "avans foiz oldindan to'lov", anchor: "price-list", admin: true },
   { label: "Dollar kursi", section: "savdo", keys: "kurs dollar usd markaziy bank cbu valyuta", anchor: "rate-card", admin: true },
   { label: "Tezkor javoblar (chat)", section: "savdo", keys: "tezkor javob shablon chat", anchor: "quick-replies-anchor", admin: true },
-  { label: "Telegram bot", section: "integratsiya", keys: "telegram bot token guruh chat id yo'nalish", admin: true },
+  { label: "Telegram bot va xabarlar yo'nalishi", section: "integratsiya", keys: "telegram bot token xabar yo'nalish kimga", admin: true },
   { label: "Telegram akkaunt (chatlar)", section: "integratsiya", keys: "telegram akkaunt shaxsiy chatlar", admin: true },
   { label: "Zaxira nusxa va kunlik hisobot", section: "malumotlar", keys: "zaxira backup hisobot excel tiklash", admin: true },
   { label: "Savat (o'chirilganlar)", section: "malumotlar", keys: "savat o'chirilgan tiklash korzina", admin: true },
@@ -45,7 +45,7 @@ export function buildStatusItems(st) {
   if (!st) return [];
   const items = [];
   items.push(st.telegram.bot
-    ? { ok: true, title: "Telegram bot", text: st.telegram.group ? "Ulangan · guruh bor" : "Ulangan · guruh yo'q", section: "integratsiya" }
+    ? { ok: true, title: "Telegram bot", text: st.telegram.adminLinked ? "Ulangan · xabarlar shaxsan boradi" : "Ulangan · sizning Telegramingiz ulanmagan", section: "integratsiya" }
     : { ok: false, title: "Telegram bot", text: "Ulanmagan — xabarnoma va zaxira ketmaydi", section: "integratsiya", act: "Ulash" });
   items.push(st.backup.configured
     ? { ok: !!st.backup.lastDate, title: "Zaxira nusxa", text: st.backup.lastDate ? `Oxirgisi: ${String(st.backup.lastDate).split("-").reverse().join(".")} · har kuni ${st.backup.time}` : `Hali yuborilmagan · har kuni ${st.backup.time}`, section: "malumotlar", act: st.backup.lastDate ? null : "Ko'rish" }

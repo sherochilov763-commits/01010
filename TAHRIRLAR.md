@@ -9,3 +9,6 @@
 7. **«Keldim»dan oldin Face ID tasdig'i** — Davomat sozlamalarida yoqiladigan qilib (standart: o'chiq), telefonda ishlaydi.
 8. **Sozlamalar tuzilishi** (tasdiqlandi): guruhlar (Profil, Ko'rinish, Bildirishnomalar | Savdo, Integratsiyalar, Bo'limlar, Ma'lumotlar, Jurnal), «Tizim holati» kartasi, bir xil saqlash paneli, Ctrl K da sozlamalar, o'zgarishlar jurnali; «Valyuta formati» va Gmail kartalari olib tashlanadi.
 9. **Kompyuterdan kirish ekrani — A + telefon** (tasdiqlandi): chapda fon + soat + sana; o'ngda «PIN bilan | Telefon bilan» yorliqlari. PIN: xodimlar ro'yxati (↑↓), 4 katak, klaviatura, Enter. Telefon: QR (60 s, bir martalik) → telefonda «Kompyuterga kirish» → «Kompyuterga kirasizmi? Chrome · Windows» → Face ID → kompyuter ochiladi.
+
+## Yangi ro'yxat (2026-10-12 19:18 dan)
+10. **Telegram — guruh o'rniga har bir xodimga shaxsan.** Guruh Chat ID majburiy emas (ixtiyoriy «qo'shimcha»ga o'tadi). Sozlash: faqat bot token + har xodim «Telegram'ni ulash». Yo'nalishlar: «Faqat menga» / «Xodimlarga shaxsan (rol bo'yicha)» / «O'chiq». Yangi buyurtma → admin + operatorlar; dizayner/pechatchiga — o'ziga berilgan vazifa (yangi). Har xodim Bildirishnomalarda o'zi uchun Telegram turlarini o'chira oladi. ✅ BAJARILDI: yangi buyurtma → admin + operatorlar; guruh Chat ID butunlay olib tashlandi.

@@ -23,6 +23,7 @@ import { rateText } from "../../lib/production.js";
 import { SaveBarProvider, useDirty, useSaveBar } from "./saveBar.jsx";
 import { buildStatusItems, ModulesSection, SettingsJournal, SystemStatus, SETTINGS_SECTIONS } from "./settingsParts.jsx";
 import { SETTINGS_EVENT } from "../../lib/deeplink.js";
+import { TgPrefsCard } from "../../components/TgPrefsCard.jsx";
 
 const SEC_KEY = "uvix:settingsSection";
 const ICONS = { profil: UserRound, korinish: Palette, bildirish: Bell, savdo: Tag, integratsiya: Plug, bolimlar: LayoutGrid, malumotlar: Database, jurnal: History };
@@ -163,7 +164,8 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetPin, setResetPin] = useState("");
   const [resetPinError, setResetPinError] = useState("");
-  const [rateStr, setRateStr] = useState(settings ? String(settings.usdRate) : "");
+  const [rateStr, setRateStr] = useState(settings?.usdRate ? String(settings.usdRate) : "");
+  useEffect(() => { if (settings?.usdRate) setRateStr((v) => v || String(settings.usdRate)); }, [settings?.usdRate]);
   const [rateMsg, setRateMsg] = useState("");
   const sales = useSales();
   const fx = sales.fx;
@@ -196,13 +198,14 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   }
 
   async function saveTelegram() {
-    await patchSettings({ telegramBotToken: tgToken.trim(), telegramChatId: tgChatId.trim() });
+    await patchSettings({ telegramBotToken: tgToken.trim(), telegramChatId: "" });
   }
   async function saveBackupTime() { await patchSettings({ backupTime }); }
   function disableTelegram() {
     setTgToken("");
     setTgChatId("");
     patchSettings({ telegramBotToken: "", telegramChatId: "" });
+    void setTgChatId;
     setTgMsg("Xabarnomalar o'chirildi");
   }
   async function sendBackupNow() {
@@ -245,11 +248,12 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
     }
   }
   // ---- Saqlash paneli: o'zgargan maydonlar ----
-  const rateDirty = isAdmin && rateStr !== "" && String(parseFloat(String(rateStr).replace(/\s/g, "").replace(",", "."))) !== String(settings?.usdRate ?? "");
-  useDirty("rate", { dirty: rateDirty, label: "Dollar kursi", save: saveRate, reset: () => setRateStr(settings ? String(settings.usdRate) : "") });
+  const rateNum = parseFloat(String(rateStr || "").replace(/\s/g, "").replace(",", "."));
+  const rateDirty = isAdmin && Number.isFinite(rateNum) && rateNum > 0 && rateNum !== Number(settings?.usdRate || 0);
+  useDirty("rate", { dirty: rateDirty, label: "Dollar kursi", save: saveRate, reset: () => setRateStr(settings?.usdRate ? String(settings.usdRate) : "") });
   useDirty("pin", { dirty: pin.length > 0, label: "PIN", save: changePin, reset: () => setPin("") });
-  const tgDirty = isAdmin && tgUnlocked && (tgToken.trim() !== (settings?.telegramBotToken || "") || tgChatId.trim() !== (settings?.telegramChatId || ""));
-  useDirty("telegram", { dirty: tgDirty, label: "Telegram bot", save: saveTelegram, reset: () => { setTgToken(settings?.telegramBotToken || ""); setTgChatId(settings?.telegramChatId || ""); } });
+  const tgDirty = isAdmin && tgUnlocked && tgToken.trim() !== (settings?.telegramBotToken || "");
+  useDirty("telegram", { dirty: tgDirty, label: "Telegram bot", save: saveTelegram, reset: () => setTgToken(settings?.telegramBotToken || "") });
   useDirty("backup", { dirty: isAdmin && backupTime !== (settings?.backupTime || "21:00"), label: "Zaxira vaqti", save: saveBackupTime, reset: () => setBackupTime(settings?.backupTime || "21:00") });
 
   async function confirmResetWithPin() {
@@ -292,7 +296,10 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
       <AppearancePreviewCard appearance={appearance} />
       {bgState && <BackgroundSection bgState={bgState} />}
     </>,
-    bildirish: notif?.prefs ? <NotificationsSection n={notif} /> : <Card><div style={{ fontSize: 13, color: THEME.muted }}>Bildirishnomalar yuklanmoqda…</div></Card>,
+    bildirish: <>
+      {notif?.prefs ? <NotificationsSection n={notif} /> : <Card><div style={{ fontSize: 13, color: THEME.muted }}>Bildirishnomalar yuklanmoqda…</div></Card>}
+      <TgPrefsCard Card={Card} />
+    </>,
     savdo: isAdmin && <>
       <PriceListSection categories={categories} />
         {isAdmin && (
@@ -353,29 +360,19 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
               </div>
             ) : (
               <>
-            <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 12 }}>
-              UVIX boti yangi buyurtma, to'lov, rasxod, hisobotlar va ogohlantirishlarni Telegram'ga yuboradi — har birini xodimlar guruhiga yoki faqat o'zingizga yo'naltirasiz (pastda).
-              Sozlash: 1) <b style={{ color: THEME.text }}>@BotFather</b>'da bot yarating (token oling), 2) botni xodimlar guruhiga qo'shing va guruhga bitta xabar yozing,
-              3) guruh Chat ID'sini kiriting (odatda <b style={{ color: THEME.text }}>-100…</b> bilan boshlanadi; uni guruhga <b style={{ color: THEME.text }}>@RawDataBot</b>'ni vaqtincha qo'shib bilsa bo'ladi).
+            <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 12, lineHeight: 1.5 }}>
+              UVIX boti yangi buyurtma, to'lov, hisobot, zaxira va ogohlantirishlarni <b style={{ color: THEME.text }}>har bir xodimga shaxsan</b> yuboradi — guruh kerak emas.
+              Sozlash: 1) <b style={{ color: THEME.text }}>@BotFather</b>'da bot yarating va tokenni shu yerga kiriting; 2) har bir xodim UVIX'da bir marta «Telegram'ni ulash»ni bosadi (Sozlamalar → Bildirishnomalar).
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <Field label="Bot token">
-                <input value={tgToken} onChange={(e) => setTgToken(e.target.value)} style={getInputStyle()} placeholder="123456789:AAExampleTokenHere" />
-              </Field>
-              <Field label="Xodimlar guruhi Chat ID">
-                <input value={tgChatId} onChange={(e) => setTgChatId(e.target.value)} style={getInputStyle()} placeholder="123456789" />
+                <input value={tgToken} onChange={(e) => setTgToken(e.target.value)} style={getInputStyle()} placeholder="123456789:AAExampleTokenHere" data-testid="tg-token" />
               </Field>
               {settings?.telegramBotToken && <div><Button variant="ghost" onClick={disableTelegram}>Botni o'chirish</Button></div>}
               {tgMsg && <div style={{ fontSize: 12, color: THEME.green }}>{tgMsg}</div>}
               <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6 }}>
                 Holat:
-                {settings?.telegramBotToken && settings?.telegramChatId ? (
-                  <Badge color={THEME.green} bg={THEME.greenBg}>Yoqilgan</Badge>
-                ) : settings?.telegramBotToken ? (
-                  <Badge color={THEME.amber} bg={THEME.amberBg}>Bot bor, guruh yo'q</Badge>
-                ) : (
-                  <Badge color={THEME.muted} bg={THEME.surface}>O'chirilgan</Badge>
-                )}
+                {settings?.telegramBotToken ? <Badge color={THEME.green} bg={THEME.greenBg}>Bot ulangan</Badge> : <Badge color={THEME.muted} bg={THEME.surface}>O'chirilgan</Badge>}
               </div>
             </div>
             {settings?.telegramBotToken && <TelegramRoutesSection settings={settings} onSaveSettings={onSaveSettings} />}
