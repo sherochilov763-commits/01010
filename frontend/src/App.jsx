@@ -13,6 +13,7 @@ import { useBackground, useBgSuppressed, BG_OFF_QUERY } from "./lib/background.j
 import { NotificationBell, ncenterCss } from "./components/NotificationBell.jsx";
 import { CheckInButton } from "./components/CheckInButton.jsx";
 import { AttendanceGate } from "./components/AttendanceGate.jsx";
+import { TelegramOnboard } from "./components/TelegramOnboard.jsx";
 import { resetAttendance } from "./lib/attendanceStore.js";
 import { StorageWarning } from "./components/StorageWarning.jsx";
 import { DEFAULT_CATEGORIES, DEFAULT_SETTINGS, LEAD_STAGES, NAV, isWorkerRole } from "./constants.js";
@@ -639,9 +640,11 @@ export default function App() {
   if (isWorkerRole(currentUser.role)) {
     const workerLogout = () => { authLogout(); resetAttendance(); setCurrentUser(null); };
     return (
+      <TelegramOnboard user={currentUser} onLogout={workerLogout}>
       <AttendanceGate user={currentUser} onLogout={workerLogout}>
         <Suspense fallback={<div style={{ padding: 24 }}><ViewFallback /></div>}><WorkerApp currentUser={currentUser} onLogout={workerLogout} /></Suspense>
       </AttendanceGate>
+      </TelegramOnboard>
     );
   }
 
@@ -655,6 +658,7 @@ export default function App() {
   const myOrders = isAdmin ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
 
   return (
+    <TelegramOnboard user={currentUser} onLogout={logout}>
     <AttendanceGate user={currentUser} onLogout={logout}>
     <div style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
@@ -1049,5 +1053,6 @@ export default function App() {
       )}
     </div>
     </AttendanceGate>
+    </TelegramOnboard>
   );
 }

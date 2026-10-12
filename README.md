@@ -895,3 +895,24 @@ Buyurtma endi **bitta yo'l** bilan yaratiladi: smeta (bir yoki bir nechta pozits
 - **Dizayner/pechatchiga yangi vazifa** — o'zining Telegramiga («🎨 Dizayn — yangi vazifa · Banner · UV-261012-001 · O'lcham…»). Vazifa qayerdan berilgani muhim emas: smeta, buyurtma paneli, CRM yoki dizayn tugab pechatga o'tishi (`backend/task-notify.js`, 20 soniyada bir tekshiradi, bir vazifa uchun bir marta).
 - **Har xodim o'zi tanlaydi:** Sozlamalar → Bildirishnomalar → «Telegram'imga keladigan xabarlar» (ishchi ilovasida — Sozlamalar). Ro'yxatda faqat unga haqiqatan keladigan turlar (`GET/PUT /api/me/tg-prefs`, `uvix:tgPrefs`).
 - Davomat hisobotidagi «Chat ID (ixtiyoriy)» maydoni ham olib tashlandi. Sex joylashuvi belgilanmaguncha davomat hisobot va eslatmalari yuborilmaydi.
+
+## 📲 Birinchi kirishda Telegram'ni ulash (2026-10)
+
+Xodim ilovaga kirgach (Face ID taklifidan keyin) «Telegram'ni ulang» oynasi chiqadi:
+
+1. **«Telegram'ni ulash»** → Telegram'da UVIX boti ochiladi.
+2. Xodim **«Start»**ni bosadi. Ilova o'zi tekshirib turadi, Telegram'dan qaytganda darhol yangilanadi.
+3. **«Ulandi!»** → @username ko'rsatiladi → «Davom etish».
+
+- **«Keyinroq»** — 1 kundan keyin yana so'raydi; 3 marta qoldirilsa, boshqa chiqmaydi (Sozlamalar → Bildirishnomalar'dan ulash mumkin).
+- Bot sozlanmagan bo'lsa yoki xodim allaqachon ulangan bo'lsa — oyna chiqmaydi.
+- **Admin sozlamasi** (Sozlamalar → Integratsiyalar → Telegram → «Xodimlar Telegrami»): kim ulangani / ulanmaganlar ro'yxati; «Birinchi kirishda ulashni taklif qilish» (standart: yoqilgan); «Majburiy qilish» (standart: o'chiq) — yoqilsa «Keyinroq» bo'lmaydi, faqat «Chiqish». Adminlarning o'ziga hech qachon majburiy emas.
+- Ikkala sozlama o'zgarishi Jurnalga yoziladi. Saqlash: `uvix:settings.tgOnboardOffer`, `uvix:settings.tgOnboardRequired`, `uvix:tgOnboard` (har xodim: nechta «Keyinroq», oxirgisi qachon).
+- API: `GET /api/me/telegram` → `onboard: { show, required }`; `POST /api/me/telegram/skip`.
+
+### Bot `/start`ga javob bermasa
+Bot xabarlarni long polling (getUpdates) orqali oladi. Endi muammo bo'lsa server o'zi aniqlaydi va **Sozlamalar → Tizim holati**da ko'rsatadi:
+- **Botda boshqa webhook o'rnatilgan** (bot avval boshqa xizmatda ishlatilgan) — server webhook'ni **avtomatik o'chiradi**, bir daqiqada `/start` ishlay boshlaydi.
+- **Shu token boshqa serverda ham ishlayapti** (masalan, kompyuterdagi nusxa + Railway, yoki 2 ta replika) — faqat bittasi xabar oladi. Ortiqchasini o'chiring yoki har biriga alohida bot oching.
+- **Token noto'g'ri / bekor qilingan** — @BotFather'dan yangi token olib kiriting.
+- Railway'da server uxlab qolsa (Serverless/Sleep yoqilgan) bot ham javob bermaydi — doimiy ishlaydigan rejim kerak.

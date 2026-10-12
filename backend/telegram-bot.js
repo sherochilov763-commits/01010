@@ -47,6 +47,7 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
 
   // ---- bot xabarlarini qabul qilish (long polling) ----
   let offset = 0, polling = false, stopped = false, lastToken = null;
+  let health = { ok: null, problem: "", at: 0 }; // bot xabarlarni qabul qila olyaptimi (/start ishlashi uchun)
   async function handleUpdate(u) {
     const msg = u.message;
     if (!msg?.chat?.id || msg.chat.type !== "private") return;
@@ -94,15 +95,30 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
     while (!stopped) {
       const tk = token();
       if (!tk) { await sleep(15000); continue; }
-      if (tk !== lastToken) { lastToken = tk; offset = 0; }
+      if (tk !== lastToken) { lastToken = tk; offset = 0; health = { ok: null, problem: "", at: 0 }; }
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 35000);
       try {
         const updates = await api("getUpdates", { offset, timeout: 25, allowed_updates: ["message"] }, tk, ac.signal);
         for (const u of updates) { offset = u.update_id + 1; await handleUpdate(u).catch((e) => console.error("Bot xabari:", e.message)); }
+        health = { ok: true, problem: "", at: Date.now() };
       } catch (e) {
-        // 409 — boshqa joyda webhook/polling ishlayapti; 401 — token noto'g'ri
-        await sleep(e.code === 409 || e.code === 401 ? 60000 : 10000);
+        if (stopped) break;
+        const m = String(e.message || "");
+        if (e.code === 409 && /webhook/i.test(m)) {
+          // Botda webhook o'rnatilgan (boshqa xizmat/eski sozlama) — getUpdates ishlamaydi, /start javobsiz qoladi.
+          // Webhook'ni o'chiramiz va darhol qayta urinamiz.
+          health = { ok: false, problem: "webhook", at: Date.now() };
+          try { await api("deleteWebhook", { drop_pending_updates: false }, tk); console.log("Telegram bot: eski webhook o'chirildi"); continue; } catch { /* quyida kutamiz */ }
+        } else if (e.code === 409) {
+          health = { ok: false, problem: "conflict", at: Date.now() }; // shu token boshqa serverda ham ishlayapti
+        } else if (e.code === 401 || e.code === 404) {
+          health = { ok: false, problem: "token", at: Date.now() };
+        } else if (e.name !== "AbortError") {
+          health = { ok: false, problem: "network", at: Date.now() };
+        }
+        if (health.problem) console.error("Telegram bot:", health.problem, m);
+        await sleep(e.code === 409 || e.code === 401 ? 30000 : 10000);
       } finally { clearTimeout(timer); }
     }
     polling = false;
@@ -112,7 +128,21 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
   // ---- API ----
   app.get("/api/me/telegram", requireAuth, async (req, res) => {
     const l = links()[req.user.id];
-    res.json({ linked: !!l, username: l?.username || "", botConfigured: !!token(), bot: await botUsername() });
+    const bot = await botUsername();
+    const emp = readEmployees().find((e) => e.id === req.user.id) || { id: req.user.id, role: req.user.role };
+    res.json({ linked: !!l, username: l?.username || "", botConfigured: !!token(), bot,
+      onboard: onboardState({ settings: readJson("uvix:settings", {}), bot, linked: !!l, emp, rec: readJson(ONBOARD_KEY, {})[req.user.id] }) });
+  });
+  // «Keyinroq» — 1 kundan keyin yana so'raladi (3 martagacha). Majburiy bo'lsa — rad etiladi.
+  app.post("/api/me/telegram/skip", requireAuth, async (req, res) => {
+    const emp = readEmployees().find((e) => e.id === req.user.id) || { id: req.user.id, role: req.user.role };
+    const all = readJson(ONBOARD_KEY, {});
+    const st = onboardState({ settings: readJson("uvix:settings", {}), bot: await botUsername(), linked: !!links()[req.user.id], emp, rec: all[req.user.id] });
+    if (st.required) return res.status(400).json({ error: "required", message: "Administrator Telegram ulashni majburiy qilgan" });
+    const prev = all[req.user.id] || {};
+    all[req.user.id] = { skips: (prev.skips || 0) + 1, lastSkip: Date.now() };
+    upsertStmt.run(ONBOARD_KEY, JSON.stringify(all));
+    res.json({ ok: true, skips: all[req.user.id].skips });
   });
   app.post("/api/me/telegram/link", requireAuth, async (req, res) => {
     const bot = await botUsername();
@@ -148,9 +178,28 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
       return r.ok;
     } catch { return false; }
   }
-  return { sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], stop: () => { stopped = true; } };
+  return { sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], health: () => (token() ? health : { ok: null, problem: "", at: 0 }), stop: () => { stopped = true; } };
 };
+
+// Birinchi kirishda «Telegram'ni ulang» oynasi ko'rsatilsinmi.
+// settings.tgOnboardOffer (standart: yoqilgan), settings.tgOnboardRequired (standart: o'chiq; admin uchun hech qachon majburiy emas).
+const ONBOARD_KEY = "uvix:tgOnboard";
+const ONBOARD_MAX_SKIPS = 3;
+const ONBOARD_GAP = 24 * 60 * 60 * 1000;
+function onboardState({ settings = {}, bot, linked, emp = {}, rec, now = Date.now() }) {
+  const offerOn = settings?.tgOnboardOffer !== false;
+  const required = !!settings?.tgOnboardRequired && emp.role !== "admin";
+  if (!bot || linked || !emp.id) return { show: false, required: false };
+  if (required) return { show: true, required: true };
+  if (!offerOn) return { show: false, required: false };
+  const skips = rec?.skips || 0;
+  if (skips >= ONBOARD_MAX_SKIPS) return { show: false, required: false };
+  if (rec?.lastSkip && now - rec.lastSkip < ONBOARD_GAP) return { show: false, required: false };
+  return { show: true, required: false, skips, last: skips === ONBOARD_MAX_SKIPS - 1 };
+}
 
 function sleep(ms) { return new Promise((r) => { const t = setTimeout(r, ms); t.unref?.(); }); }
 function escapeHtml(s) { return String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c])); }
 module.exports.TG_API = TG_API;
+module.exports.onboardState = onboardState;
+module.exports.ONBOARD_KEY = ONBOARD_KEY;

@@ -44,7 +44,15 @@ export const SETTINGS_INDEX = [
 export function buildStatusItems(st) {
   if (!st) return [];
   const items = [];
-  items.push(st.telegram.bot
+  const TG_PROBLEM = {
+    webhook: "Botda boshqa webhook o'rnatilgan edi — o'chirildi, bir daqiqadan so'ng /start ishlaydi",
+    conflict: "Shu bot tokeni boshqa serverda ham ishlayapti — /start javobsiz qoladi. Eski serverni o'chiring yoki yangi bot oching",
+    token: "Bot tokeni noto'g'ri yoki bekor qilingan — @BotFather'dan yangisini kiriting",
+    network: "Telegram serveriga ulanib bo'lmayapti — internetni tekshiring",
+  };
+  items.push(st.telegram.bot && st.telegram.problem
+    ? { ok: false, title: "Telegram bot", text: TG_PROBLEM[st.telegram.problem] || "Bot xabarlarni qabul qilmayapti", section: "integratsiya", act: "Ko'rish" }
+    : st.telegram.bot
     ? { ok: true, title: "Telegram bot", text: st.telegram.adminLinked ? "Ulangan · xabarlar shaxsan boradi" : "Ulangan · sizning Telegramingiz ulanmagan", section: "integratsiya" }
     : { ok: false, title: "Telegram bot", text: "Ulanmagan — xabarnoma va zaxira ketmaydi", section: "integratsiya", act: "Ulash" });
   items.push(st.backup.configured

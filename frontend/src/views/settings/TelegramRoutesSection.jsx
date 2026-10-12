@@ -69,6 +69,48 @@ export function TelegramRoutesSection({ settings, onSaveSettings }) {
         <Button variant="ghost" onClick={() => setRoutes(info.defaults)}>Tavsiya etilganga qaytarish</Button>
         {saved && <span style={{ fontSize: 12.5, color: THEME.green, display: "inline-flex", alignItems: "center", gap: 5 }}><CheckCircle2 size={14} /> {saved}</span>}
       </div>
+      <StaffTgOnboard info={info} settings={settings} onSaveSettings={onSaveSettings} onChanged={load} />
+    </div>
+  );
+}
+
+// Xodimlar Telegrami: kim ulangan + birinchi kirishda ulash taklifi (ixtiyoriy / majburiy)
+function StaffTgOnboard({ info, settings, onSaveSettings, onChanged }) {
+  const [ob, setOb] = useState(info.onboard || { offer: true, required: false });
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (info.onboard) setOb(info.onboard); }, [info.onboard?.offer, info.onboard?.required]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function set(patch) {
+    const next = { ...ob, ...patch };
+    if (patch.required) next.offer = true;
+    setOb(next);
+    setBusy(true);
+    try { await onSaveSettings({ ...settings, tgOnboardOffer: next.offer, tgOnboardRequired: next.required }); } finally { setBusy(false); onChanged?.(); }
+  }
+  const miss = info.missing || [];
+  const rows = [
+    ["offer", "Birinchi kirishda ulashni taklif qilish", "«Keyinroq» bosilsa — ertasi kuni yana so'raydi (3 martagacha)", ob.offer, !ob.required],
+    ["required", "Majburiy qilish", "Telegram ulanmaguncha ilova ochilmaydi («Keyinroq» tugmasi bo'lmaydi). Adminlarga taalluqli emas.", ob.required, true],
+  ];
+  return (
+    <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 16, paddingTop: 14 }} data-testid="tg-onboard-settings">
+      <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 4 }}>Xodimlar Telegrami</div>
+      <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 8, lineHeight: 1.5 }}>
+        Ulangan: <b style={{ color: THEME.text }}>{info.linked} / {info.total}</b>
+        {miss.length > 0 && <> · ulanmaganlar: {miss.slice(0, 6).join(", ")}{miss.length > 6 ? ` va yana ${miss.length - 6}` : ""}</>}
+      </div>
+      {rows.map(([k, title, hint, on, enabled]) => (
+        <div key={k} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: `1px solid ${THEME.border}`, opacity: enabled ? 1 : 0.55 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
+            <div style={{ fontSize: 12, color: THEME.muted, lineHeight: 1.45 }}>{hint}</div>
+          </div>
+          <button type="button" role="switch" aria-checked={!!on} aria-label={title} data-testid={`tg-ob-${k}`} disabled={busy || !enabled}
+            onClick={() => set({ [k]: !on })}
+            style={{ width: 46, height: 28, borderRadius: 14, border: 0, padding: 3, cursor: busy || !enabled ? "default" : "pointer", background: on ? THEME.blue : THEME.border2, flexShrink: 0, display: "flex", justifyContent: on ? "flex-end" : "flex-start", transition: "background .15s" }}>
+            <span style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,.25)" }} />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

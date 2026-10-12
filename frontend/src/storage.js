@@ -435,6 +435,7 @@ async function meTg(method = "GET", sub = "") {
 export const fetchMyTelegram = () => meTg();
 export const linkMyTelegram = () => meTg("POST", "/link");
 export const unlinkMyTelegram = () => meTg("DELETE");
+export const skipMyTelegram = () => meTg("POST", "/skip");
 export async function fetchStaffTelegram() {
   const res = await fetch(`${API_BASE}/staff-telegram`, { headers: authHeaders() });
   if (!res.ok) return {};

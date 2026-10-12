@@ -313,7 +313,7 @@ app.get("/api/system-status", requireAuth, requireAdmin, async (req, res) => {
   const emps = readEmployees();
   let fxInfo = null; try { fxInfo = await fx.current(); } catch { /* ixtiyoriy */ }
   res.json({
-    telegram: { bot: !!st.telegramBotToken, adminLinked: adminIds().some((id) => !!staffTg[id]) },
+    telegram: { bot: !!st.telegramBotToken, adminLinked: adminIds().some((id) => !!staffTg[id]), problem: staffBot.health().problem || "" },
     backup: { time: st.backupTime || "21:00", lastDate: lastBackup, configured: !!st.telegramBotToken },
     attendance: { enabled: att.enabled !== false, officeSet: !!att.office },
     staffTg: { missing: emps.filter((e) => !staffTg[e.id]).map((e) => e.name), total: emps.length },
@@ -391,7 +391,9 @@ app.get("/api/telegram-routes", requireAuth, requireAdmin, (req, res) => {
   const routes = Object.fromEntries(Object.keys(TG_ROUTE_DEFAULTS).map((k) => [k, tgRoute(k)]));
   const emps = readEmployees();
   res.json({ routes, defaults: TG_ROUTE_DEFAULTS, staffAllowed: [...TG_STAFF_ALLOWED], botConfigured: !!st.telegramBotToken, adminLinked: adminIds().some((id) => staffBot.isLinked(id)),
-    linked: emps.filter((e) => staffBot.isLinked(e.id)).length, total: emps.length });
+    linked: emps.filter((e) => staffBot.isLinked(e.id)).length, total: emps.length,
+    missing: emps.filter((e) => !staffBot.isLinked(e.id)).map((e) => e.name),
+    onboard: { offer: st.tgOnboardOffer !== false, required: !!st.tgOnboardRequired } });
 });
 const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins: (t) => notify("paint", t) });
 const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins: (t) => notify("debts", t) });
@@ -456,7 +458,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "telegramChatId", "gmailUser"
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi

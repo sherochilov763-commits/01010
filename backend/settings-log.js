@@ -12,7 +12,9 @@ const SETTINGS_LABELS = {
   backupTime: ["Ma'lumotlar", "Kunlik zaxira vaqti"],
   telegramBotToken: ["Integratsiya", "Telegram bot tokeni", null, true],
   telegramChatId: ["Integratsiya", "Xodimlar guruhi Chat ID"],
-  telegramRoutes: ["Integratsiya", "Telegram xabar yo'nalishlari", null, true],
+  tgRoutes: ["Integratsiya", "Telegram xabar yo'nalishlari", null, true],
+  tgOnboardOffer: ["Integratsiya", "Birinchi kirishda Telegram'ni ulash taklifi", (v) => (v === false ? "o'chirilgan" : "yoqilgan")],
+  tgOnboardRequired: ["Integratsiya", "Telegram'ni ulash majburiy", (v) => (v ? "yoqilgan" : "o'chirilgan")],
 };
 const ATT_LABELS = {
   enabled: "Davomat", grace: "Imtiyoz vaqti (daq)", dailyAt: "Kunlik hisobot vaqti", photo: "«Keldim»da selfi", photoDays: "Selfi saqlash (kun)",
@@ -35,6 +37,7 @@ function createSettingsLog({ getStmt, upsertStmt, now = () => new Date() }) {
       const a = prev?.[k], b = next?.[k];
       if (JSON.stringify(a ?? null) === JSON.stringify(b ?? null)) continue;
       const f = fmt || show;
+      if (!secret && f(a) === f(b)) continue; // masalan: yo'q → standart (yoqilgan) — o'zgarish emas
       add(who, section, secret ? `${label}: ${b ? (a ? "o'zgartirildi" : "o'rnatildi") : "o'chirildi"}` : `${label}: ${f(a)} → ${f(b)}`);
     }
   }
