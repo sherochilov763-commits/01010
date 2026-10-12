@@ -490,7 +490,6 @@ function SettingsTab({ config, onSaved }) {
         ))}
         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
           <Field label="Kunlik hisobot vaqti"><input type="time" value={c.dailyAt} onChange={(e) => set({ dailyAt: e.target.value })} style={getInputStyle()} /></Field>
-          <Field label="Chat ID (ixtiyoriy)"><input value={c.reportChatId || ""} onChange={(e) => set({ reportChatId: e.target.value })} placeholder="Bo'sh — bot chati" style={getInputStyle()} /></Field>
         </div>
         <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 12, paddingTop: 10, fontWeight: 700, fontSize: 13 }}>Xodimning o'ziga (bot orqali)</div>
         {[["pre", "Ish boshlanishidan 15 daqiqa oldin eslatma"], ["notStarted", "Imtiyozdan keyin hali «Keldim» bosmagan bo'lsa"], ["late", "Kech kelganda: «Bugun N daqiqa kechikdingiz, bu oy: …»"], ["forgotOut", "Ish tugab 30 daqiqa o'tib ham «Ketdim» bosilmasa (xabarda «Ketdim» tugmasi)"], ["confirm", "«Keldim» / «Ketdim» bosilganda tasdiq: «✅ Keldingiz: 08:57»"], ["manualNotice", "Siz davomatini qo'lda o'zgartirsangiz — nima o'zgargani"], ["weekly", "Har dushanba — shaxsiy haftalik xulosa"], ["monthly", "Har oyning 1-sanasi — shaxsiy oylik xulosa"]].map(([k, l]) => (
@@ -502,7 +501,7 @@ function SettingsTab({ config, onSaved }) {
           <input type="checkbox" checked={!!c.personal?.adminAbsent} onChange={(e) => set({ personal: { ...c.personal, adminAbsent: e.target.checked } })} /> Sizga: ish boshlanib 30 daqiqa o'tsa — kim hali kelmagani
         </label>
         <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>Xodim UVIX'da bir marta «Telegram'ni ulash»ni bosib, botda «Start» qiladi. Kim ulaganini «Xodimlar» ro'yxatida «TG ✓» belgisidan ko'rasiz.</div>
-        <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>Hisobotlar Sozlamalardagi Telegram bot orqali yuboriladi. Faqat sizga kelishi uchun o'z chat ID'ingizni yozing.</div>
+        <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>Hisobotlar UVIX boti orqali shaxsan yuboriladi — kimga borishi: Sozlamalar → Integratsiyalar → «Qaysi xabar kimga borsin».</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
           <Button variant="ghost" onClick={() => trySend("daily")}>Bugungi — sinash</Button>
           <Button variant="ghost" onClick={() => trySend("weekly")}>Haftalik — sinash</Button>

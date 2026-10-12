@@ -564,6 +564,8 @@ async function apiReq(path, method = "GET", body) {
 export const qrInfo = (id) => apiReq(`/auth/qr/${encodeURIComponent(id)}/info`);
 export const qrApprove = (id, body) => apiReq(`/auth/qr/${encodeURIComponent(id)}/approve`, "POST", body);
 export const qrReject = (id) => apiReq(`/auth/qr/${encodeURIComponent(id)}/reject`, "POST", {});
+export const fetchTgPrefs = () => apiReq("/me/tg-prefs");
+export const saveTgPrefs = (prefs) => apiReq("/me/tg-prefs", "PUT", { prefs });
 export const fetchSettingsHealth = () => apiReq("/system-status");
 export const fetchSettingsLog = () => apiReq("/settings-log").then((d) => d.log || []);
 export const setMyPin = (newPin) => apiReq("/me/pin", "POST", { newPin });

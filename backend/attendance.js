@@ -212,7 +212,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
   // Har daqiqada tekshiradi: vaqti kelgan hisobotni bir marta yuboradi (server qayta ishga tushsa ham takrorlanmaydi)
   async function tick() {
     const cfg = config();
-    if (!cfg.enabled) return;
+    if (!cfg.enabled || !cfg.office) return; // sex joylashuvi belgilanmaguncha davomat ishlatilmayapti — hisobot/eslatma yo'q
     const now = local(nowFn());
     const sent = readJson("uvix:attSent", {});
     let changed = false;

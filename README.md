@@ -887,3 +887,11 @@ Buyurtma endi **bitta yo'l** bilan yaratiladi: smeta (bir yoki bir nechta pozits
 - «Valyuta formati» va Gmail kartalari olib tashlandi.
 
 **9. Kompyuterdan kirish — yangi ekran + telefon orqali.** Kompyuterda (≥1000 px, sichqoncha) chapda fon (kun vaqtiga qarab) + soat, o'ngda «PIN bilan | Telefon bilan». PIN: ro'yxat (↑↓), 4–6 katak, klaviatura, Enter. Telefon: QR (`backend/qr-login.js`) — 60 s, bir martalik; QR ichida faqat id, token olish kaliti faqat kompyuterda. Telefonda: «Yana» menyusi → «Kompyuterga kirish» (kamera skaneri) yoki telefon kamerasi bilan to'g'ridan-to'g'ri → «Kompyuterga kirasizmi? Chrome · Windows» → Face ID (Face ID yo'q telefonda — PIN) → kompyuter ochiladi. Kirish jurnalga yoziladi. Telefon va planshetda avvalgi PIN klaviatura ekrani qoladi.
+
+## 📨 Telegram — guruhsiz, har bir xodimga shaxsan (2026-10)
+
+- **Guruh Chat ID butunlay olib tashlandi.** Botni sozlash uchun faqat **bot token** kerak; har bir xodim UVIX'da bir marta «Telegram'ni ulash»ni bosadi. Barcha xabarlar UVIX boti orqali shaxsan boradi.
+- **Yo'nalishlar** (Sozlamalar → Integratsiyalar → «Qaysi xabar kimga borsin»): «Faqat menga» (admin(lar)), «Xodimlarga» (admin + operatorlar, har biriga o'zining Telegramiga), «O'chiq». «Xodimlarga» faqat **Yangi buyurtma** va **Bo'yoq zahirasi** uchun; pul, hisobot va zaxira (baza fayli) faqat adminga boradi. Standart: Yangi buyurtma → admin + operatorlar, qolgani → faqat admin. Eski «Guruh»/«Ikkalasi» sozlamalari avtomatik standartga o'tadi.
+- **Dizayner/pechatchiga yangi vazifa** — o'zining Telegramiga («🎨 Dizayn — yangi vazifa · Banner · UV-261012-001 · O'lcham…»). Vazifa qayerdan berilgani muhim emas: smeta, buyurtma paneli, CRM yoki dizayn tugab pechatga o'tishi (`backend/task-notify.js`, 20 soniyada bir tekshiradi, bir vazifa uchun bir marta).
+- **Har xodim o'zi tanlaydi:** Sozlamalar → Bildirishnomalar → «Telegram'imga keladigan xabarlar» (ishchi ilovasida — Sozlamalar). Ro'yxatda faqat unga haqiqatan keladigan turlar (`GET/PUT /api/me/tg-prefs`, `uvix:tgPrefs`).
+- Davomat hisobotidagi «Chat ID (ixtiyoriy)» maydoni ham olib tashlandi. Sex joylashuvi belgilanmaguncha davomat hisobot va eslatmalari yuborilmaydi.

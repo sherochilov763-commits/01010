@@ -10,6 +10,7 @@ import { storageGet, storageSet } from "../../lib/kv.js";
 import { useHistoryView } from "../../lib/history.js";
 import PasskeySection from "../../auth/PasskeySection.jsx";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
+import { TgPrefsCard } from "../../components/TgPrefsCard.jsx";
 import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
 import { CheckInButton } from "../../components/CheckInButton.jsx";
 import { QrApproveHost, QrScanButton } from "../../components/PhoneToDesktop.jsx";
@@ -361,6 +362,7 @@ function WorkerSettings({ currentUser, onLogout }) {
         {msg && <div style={{ fontSize: 12.5, marginTop: 8, color: msg.err ? THEME.rose : THEME.green }}>{msg.t}</div>}
       </Card>
       <TelegramLinkCard />
+      <TgPrefsCard Card={Card} showLink={false} />
       <PasskeySection currentUser={currentUser} theme={THEME} Card={Card} />
       <Button variant="ghost" onClick={onLogout} style={{ alignSelf: "flex-start" }}><LogOut size={15} /> Tizimdan chiqish</Button>
     </div>
