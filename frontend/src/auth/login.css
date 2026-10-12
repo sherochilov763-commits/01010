@@ -230,3 +230,74 @@
 /* PIN klaviaturasidagi Face ID tugmasi */
 .ul-key.ghost.bio { color: var(--cyan); }
 .ul-key.ghost.bio.armed { box-shadow: inset 0 0 0 1.5px var(--cyan); background: var(--tint); }
+
+/* ---------- PIN tiklash variantlari ---------- */
+.ul-recover { display: grid; gap: 10px; width: 100%; }
+.ul-option { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+.ul-option:hover:not(:disabled) { border-color: var(--violet); background: var(--tint); }
+.ul-option:disabled { opacity: .6; cursor: default; }
+.ul-option b { display: block; font-size: 15px; font-weight: 600; }
+.ul-option small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.ul-option-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: #F2F2F4; color: var(--soft); flex-shrink: 0; }
+.ul-option-ic.tg { background: #E3F2FD; color: #229ED9; }
+.ul-note { font-size: 13px; color: var(--muted); line-height: 1.5; padding: 10px 12px; border-radius: 12px; background: #F2F2F4; }
+.ul-note code { font-size: 12px; }
+
+/* ================= Kompyuter: ikki qismli kirish ekrani ================= */
+.dl-root { --text: #18181B; --muted: #62626B; --line: #DCDCE0; --p: #1F5FD6; position: fixed; inset: 0; display: flex; font-family: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: #FAFAFB; -webkit-font-smoothing: antialiased; }
+.dl-root *, .dl-root *::before, .dl-root *::after { box-sizing: border-box; }
+.dl-left { position: relative; width: 43%; max-width: 640px; min-width: 380px; background: #0F1A33 center / cover no-repeat; color: #fff; padding: 56px; display: flex; flex-direction: column; }
+.dl-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(10,18,40,.25), rgba(10,18,40,.72)); }
+.dl-brand { position: relative; display: flex; align-items: center; gap: 12px; }
+.dl-brand div b { display: block; font-size: 18px; }
+.dl-brand div span { display: block; font-size: 13px; opacity: .75; }
+.dl-mark { width: 42px; height: 42px; border-radius: 11px; background: #fff; color: #18181B; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+.dl-left-bottom { position: relative; margin-top: auto; }
+.dl-clock { font-size: clamp(64px, 7.2vw, 104px); font-weight: 600; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; }
+.dl-date { font-size: 20px; opacity: .88; margin-top: 10px; }
+.dl-right { flex: 1; display: flex; align-items: center; justify-content: center; overflow-y: auto; padding: 32px; }
+.dl-panel { width: 100%; max-width: 460px; }
+.dl-title { font-size: 30px; font-weight: 700; margin: 0; letter-spacing: -.3px; }
+.dl-sub { color: var(--muted); margin: 6px 0 0; font-size: 15px; }
+.dl-tabs { display: flex; background: #EFEFF2; border-radius: 12px; padding: 4px; margin-top: 22px; }
+.dl-tabs button { flex: 1; height: 40px; border: 0; border-radius: 9px; background: none; color: var(--muted); font: 600 14px inherit; font-family: inherit; display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; }
+.dl-tabs button.on { background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.dl-people { margin-top: 18px; border: 1px solid #E7E7EA; border-radius: 14px; background: #fff; overflow: hidden auto; max-height: 300px; }
+.dl-people button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: 0; border-top: 1px solid #EFEFF2; background: none; text-align: left; cursor: pointer; font-family: inherit; color: var(--text); }
+.dl-people button:first-child { border-top: 0; }
+.dl-people button:hover { background: #F6F7F9; }
+.dl-people button.on { background: #EAF0FC; }
+.dl-av { border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; flex-shrink: 0; }
+.dl-pname { flex: 1; min-width: 0; }
+.dl-pname b { display: block; font-size: 15px; font-weight: 600; }
+.dl-pname small { display: flex; align-items: center; gap: 3px; font-size: 12.5px; color: var(--muted); }
+.dl-arrow { color: var(--p); }
+.dl-pinlabel { margin-top: 20px; font-size: 13px; color: var(--muted); }
+.dl-boxes { display: flex; gap: 12px; margin-top: 8px; }
+.dl-boxes span { width: 56px; height: 64px; border-radius: 14px; border: 1.5px solid var(--line); background: #fff; display: grid; place-items: center; font-size: 30px; line-height: 1; }
+.dl-boxes span.f { border-color: var(--p); }
+.dl-boxes span.cur { border-color: var(--p); box-shadow: 0 0 0 4px rgba(31,95,214,.14); }
+.dl-boxes.err span { border-color: #DC2626; }
+.dl-boxes.shake { animation: dlShake .35s; }
+@keyframes dlShake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+.dl-msg { min-height: 20px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.dl-boxes.err + .dl-msg { color: #DC2626; }
+.dl-primary { width: 100%; height: 50px; margin-top: 8px; border: 0; border-radius: 12px; background: var(--p); color: #fff; font: 600 15.5px inherit; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.dl-primary:disabled { opacity: .45; cursor: default; }
+.dl-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: 13.5px; }
+.dl-link { border: 0; background: none; color: var(--p); font: 500 13.5px inherit; font-family: inherit; cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 5px; }
+.dl-keys { color: var(--muted); }
+.dl-keys kbd { font-family: inherit; font-size: 11.5px; border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; background: #fff; margin-right: 3px; }
+.dl-qrcard { margin-top: 22px; border: 1px solid #E7E7EA; border-radius: 16px; background: #fff; padding: 24px; display: flex; gap: 22px; align-items: center; }
+.dl-qrbox { position: relative; width: 196px; height: 196px; flex-shrink: 0; border-radius: 14px; padding: 12px; background: #fff; box-shadow: 0 6px 20px rgba(31,95,214,.12); display: grid; place-items: center; }
+.dl-qrsvg, .dl-qrsvg svg { width: 172px; height: 172px; display: block; }
+.dl-qrlogo { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 36px; height: 36px; border-radius: 10px; background: #18181B; color: #fff; border: 3px solid #fff; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.dl-qrscanned { position: absolute; inset: 0; border-radius: 14px; background: rgba(255,255,255,.94); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 12px; font-size: 13px; color: var(--muted); }
+.dl-qrscanned b { color: var(--text); font-size: 15px; }
+.dl-qrmsg { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; font-size: 14px; color: var(--muted); }
+.dl-steps { margin: 0; padding-left: 18px; color: #3F3F46; font-size: 14.5px; line-height: 1.8; }
+.dl-wait { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+.dl-wait .dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; box-shadow: 0 0 0 4px rgba(16,185,129,.15); flex-shrink: 0; }
+.dl-note { margin: 14px 0 0; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+.dl-embed.ul-root { min-height: 0; padding: 0; background: transparent; position: static; display: block; }
+.dl-embed .ul-panel { max-width: 440px; padding-top: 0; }

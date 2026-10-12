@@ -198,16 +198,18 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
     res.json({ options });
   });
 
-  app.post("/api/auth/passkey/login/verify", async (req, res) => {
+  // Face ID imzosini tekshirish — kirishda, «Keldim»da va kompyuterga QR orqali kirishni tasdiqlashda
+  const lastVerified = new Map(); // employeeId -> ms
+  async function verifyAssertion(req, response) {
+    const fail = (status, body) => Object.assign(new Error(body.message || body.error), { status, body });
     const rp = getRp(req);
-    const { response } = req.body || {};
     const c = response?.id && readChallenge(challengeOf(response), "auth");
-    if (!rp || !c) return res.status(400).json({ error: "invalid_challenge", message: "So'rov muddati o'tgan, qaytadan urinib ko'ring" });
+    if (!rp || !c) throw fail(400, { error: "invalid_challenge", message: "So'rov muddati o'tgan, qaytadan urinib ko'ring" });
     const lockKey = `${req.ip || "unknown"}:${c.data.employeeId}`;
-    if (isLocked(lockKey)) return res.status(429).json(LOCKED);
+    if (isLocked(lockKey)) throw fail(429, LOCKED);
     const list = readPasskeys();
     const cred = list.find((p) => p.id === response.id && p.employeeId === c.data.employeeId);
-    if (!cred) { noteFailure(lockKey); return res.status(401).json({ error: "unknown_passkey", message: "Bu telefon tanilmadi — PIN bilan kiring" }); }
+    if (!cred) { noteFailure(lockKey); throw fail(401, { error: "unknown_passkey", message: "Bu telefon tanilmadi — PIN bilan kiring" }); }
     let verification;
     try {
       verification = await verifyAuthenticationResponse({
@@ -220,17 +222,38 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
       });
     } catch (e) {
       noteFailure(lockKey);
-      return res.status(401).json({ error: "verify_failed", message: "Tasdiqlab bo'lmadi" });
+      throw fail(401, { error: "verify_failed", message: "Tasdiqlab bo'lmadi" });
     }
-    if (!verification.verified) { noteFailure(lockKey); return res.status(401).json({ error: "verify_failed", message: "Tasdiqlab bo'lmadi" }); }
+    if (!verification.verified) { noteFailure(lockKey); throw fail(401, { error: "verify_failed", message: "Tasdiqlab bo'lmadi" }); }
     failures.delete(lockKey);
     consume(c.token, c.data.exp);
     const employee = readEmployees().find((e) => e.id === cred.employeeId);
-    if (!employee) return res.status(401).json({ error: "employee_not_found" });
+    if (!employee) throw fail(401, { error: "employee_not_found" });
     cred.counter = verification.authenticationInfo.newCounter;
     cred.lastUsedAt = new Date().toISOString();
     writePasskeys(list);
-    res.json(issueToken(employee));
+    lastVerified.set(employee.id, Date.now());
+    return employee;
+  }
+
+  app.post("/api/auth/passkey/login/verify", async (req, res) => {
+    try {
+      const employee = await verifyAssertion(req, req.body?.response);
+      res.json(issueToken(employee));
+    } catch (e) {
+      res.status(e.status || 500).json(e.body || { error: "server_error" });
+    }
+  });
+
+  // Kirgan xodim o'zini Face ID bilan qayta tasdiqlaydi («Keldim», QR orqali kompyuterga kirish)
+  app.post("/api/auth/passkey/confirm", requireAuth, async (req, res) => {
+    try {
+      const employee = await verifyAssertion(req, req.body?.response);
+      if (employee.id !== req.user.id) return res.status(403).json({ error: "other_user", message: "Bu boshqa xodimning Face ID'si" });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(e.status || 500).json(e.body || { error: "server_error" });
+    }
   });
 
   // ==================== BOSHQARISH ====================
@@ -253,6 +276,10 @@ module.exports = function registerPasskeyRoutes(app, { getStmt, upsertStmt, read
 
   // Login ekrani uchun: kimda Face ID yoqilgan (faqat ha/yo'q)
   return {
+    verifyAssertion,
+    // Oxirgi ms ichida Face ID bilan tasdiqlanganmi
+    recentlyVerified(employeeId, ms = 3 * 60 * 1000) { const t = lastVerified.get(employeeId); return !!t && Date.now() - t <= ms; },
+    hasPasskey(employeeId) { return readPasskeys().some((p) => p.employeeId === employeeId); },
     employeeIdsWithPasskey() {
       return new Set(readPasskeys().map((p) => p.employeeId));
     },

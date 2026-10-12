@@ -3,49 +3,96 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Calculator, Copy, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { fmt, money } from "../../lib/format.js";
-import { computeItem, dec, describeItem, formulaOf, toNum } from "../../lib/production.js";
+import { computeItem, dec, describeItem, DIM_DIV, DIM_UNITS, formulaOf, fromMeters, rateText, toNum, usdText } from "../../lib/production.js";
 
 const CUSTOM = "__custom";
 const rid = () => Math.random().toString(36).slice(2, 10);
-const emptyDraft = (prices) => ({ title: "", priceId: prices?.[0]?.id || CUSTOM, material: "", unit: prices?.[0]?.unit || "m2", w: "", h: "", qty: "1", price: prices?.[0] ? String(prices[0].price) : "", minArea: prices?.[0]?.minArea || 0, priceTouched: false });
+// Narx maydonlari: so'mda — butun son, dollarda — 2 xonali kasr ("32,8")
+const priceFields = (p) => (p ? (p.cur === "usd" ? { cur: "usd", priceUsd: dec(p.price), price: "" } : { cur: "uzs", price: String(p.price), priceUsd: "" }) : { cur: "uzs", price: "", priceUsd: "" });
+const emptyDraft = (prices) => ({ title: "", priceId: prices?.[0]?.id || CUSTOM, material: "", unit: prices?.[0]?.unit || "m2", w: "", h: "", qty: "1", ...priceFields(prices?.[0]), minArea: prices?.[0]?.minArea || 0, priceTouched: false });
+// O'lcham birligi — standart mm, tanlov shu brauzerda eslab qolinadi
+const DU_KEY = "uvix:quoteDimUnit";
+const savedDu = () => { try { const v = localStorage.getItem(DU_KEY); return DIM_DIV[v] ? v : "mm"; } catch { return "mm"; } };
+const fxHint = (fx) => {
+  if (!fx) return "";
+  if (fx.source === "cbu") { const d = fx.cbu?.date ? fx.cbu.date.slice(8, 10) + "." + fx.cbu.date.slice(5, 7) : ""; return `Markaziy bank${d ? ` · ${d}` : ""}`; }
+  return "Sozlamalardagi kurs";
+};
 
-export function QuoteBuilder({ items, onChange, prices = [], P, advancePct = 0, titleRef, compact }) {
-  const [draft, setDraft] = useState(() => emptyDraft(prices));
+export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advancePct = 0, titleRef, compact }) {
+  const fxRate = fx?.rate > 0 ? fx.rate : 0;
+  const [draft, setDraft] = useState(() => ({ ...emptyDraft(prices), rate: fxRate ? dec(fxRate) : "", rateTouched: false }));
+  const [du, setDuState] = useState(savedDu);
+  const div = DIM_DIV[du] || 1000;
+  function setDu(next) {
+    if (next === du) return;
+    const conv = (v) => { const m = toNum(v) / div; return m > 0 ? fromMeters(m, next) : v; };
+    setDraft((d) => ({ ...d, w: conv(d.w), h: conv(d.h) }));
+    setDuState(next);
+    try { localStorage.setItem(DU_KEY, next); } catch { /* shart emas */ }
+  }
   const [editingId, setEditingId] = useState(null);
   const [menu, setMenu] = useState(null);
   const [err, setErr] = useState("");
   const pricesKey = prices.map((p) => p.id).join(",");
   // Narxlar keyin yuklansa — tanlanmagan qoralamaga birinchi materialni qo'yamiz
   useEffect(() => {
-    setDraft((d) => (d.priceId === CUSTOM && !d.material && !d.price && prices.length ? { ...emptyDraft(prices), title: d.title, w: d.w, h: d.h, qty: d.qty } : d));
+    setDraft((d) => (d.priceId === CUSTOM && !d.material && !d.price && !d.priceUsd && prices.length ? { ...emptyDraft(prices), title: d.title, w: d.w, h: d.h, qty: d.qty, rate: d.rate, rateTouched: d.rateTouched } : d));
   }, [pricesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Kurs keyin yuklansa yoki yangilansa — qo'lda o'zgartirilmagan bo'lsa, yangisini qo'yamiz
+  useEffect(() => {
+    if (fxRate) setDraft((d) => (d.rateTouched ? d : { ...d, rate: dec(fxRate) }));
+  }, [fxRate]);
 
   const sel = prices.find((p) => p.id === draft.priceId) || null;
-  const calc = computeItem({ ...draft, material: sel ? sel.material : draft.material, minArea: sel ? sel.minArea : 0, unit: sel ? sel.unit : draft.unit });
+  const calc = computeItem({ ...draft, w: toNum(draft.w) / div, h: toNum(draft.h) / div, du, material: sel ? sel.material : draft.material, minArea: sel ? sel.minArea : 0, unit: sel ? sel.unit : draft.unit });
   const total = items.reduce((s, i) => s + i.total, 0);
   const totalArea = Math.round(items.reduce((s, i) => s + (i.area || 0), 0) * 100) / 100;
 
   const set = (patch) => { setErr(""); setDraft((d) => ({ ...d, ...patch })); };
   function pickPrice(id) {
-    if (id === CUSTOM) return set({ priceId: CUSTOM, price: "", priceTouched: false });
+    if (id === CUSTOM) return set({ priceId: CUSTOM, price: "", priceUsd: "", priceTouched: false });
     const p = prices.find((x) => x.id === id);
-    set({ priceId: id, unit: p.unit, price: String(p.price), minArea: p.minArea, priceTouched: false });
+    set({ priceId: id, unit: p.unit, ...priceFields(p), minArea: p.minArea, priceTouched: false });
   }
+  // So'm ⇄ $ almashtirish: kiritilgan narx kurs bo'yicha o'giriladi
+  function setCur(cur) {
+    if (cur === draft.cur) return;
+    const r = toNum(draft.rate);
+    // Qiymatga tegmasdan qaytarilsa — asl narx tiklanadi (yaxlitlash xatosi to'planmasin)
+    const back = draft.swap && draft.swap.cur === cur && draft.swap.after === (cur === "usd" ? draft.price : draft.priceUsd) ? draft.swap.before : null;
+    if (cur === "usd") {
+      const v = toNum(draft.price);
+      const priceUsd = back ?? (v > 0 && r > 0 ? dec(v / r) : "");
+      set({ cur, priceUsd, priceTouched: !!sel, swap: { cur: "uzs", before: draft.price, after: priceUsd } });
+    } else {
+      const v = toNum(draft.priceUsd);
+      const price = back ?? (v > 0 && r > 0 ? String(Math.round(v * r)) : "");
+      set({ cur, price, priceTouched: !!sel, swap: { cur: "usd", before: draft.priceUsd, after: price } });
+    }
+  }
+  const listPrice = sel ? (sel.cur === "usd" ? usdText(sel.price) : fmt(sel.price)) : "";
+  const priceDiffers = sel && draft.priceTouched && (draft.cur !== (sel.cur || "uzs") || (draft.cur === "usd" ? toNum(draft.priceUsd) !== sel.price : toNum(draft.price) !== sel.price));
   function submit() {
     const material = sel ? sel.material : draft.material.trim();
     if (!material && !draft.title.trim()) return setErr("Nima uchun yoki materialni yozing");
     if (calc.unit === "m2" && !(calc.w > 0 && calc.h > 0)) return setErr("Eni va bo'yini kiriting");
+    if (calc.cur === "usd" && !(calc.rate >= 1000)) return setErr("Dollar kursini kiriting");
     if (!(calc.price > 0)) return setErr("Narxni kiriting");
     if (!(calc.total > 0)) return setErr("Summa 0 — o'lchamlarni tekshiring");
-    const item = { id: editingId || rid(), title: draft.title.trim(), material, priceId: sel?.id || null, unit: calc.unit, w: calc.w, h: calc.h, qty: calc.qty, price: calc.price, minArea: calc.minArea, rawArea: calc.rawArea, area: calc.area, total: calc.total };
+    const item = { id: editingId || rid(), title: draft.title.trim(), material, priceId: sel?.id || null, unit: calc.unit, w: Math.round(calc.w * 1000) / 1000, h: Math.round(calc.h * 1000) / 1000, du, qty: calc.qty, price: calc.price, minArea: calc.minArea, rawArea: calc.rawArea, area: calc.area, total: calc.total, ...(calc.cur === "usd" ? { cur: "usd", priceUsd: calc.priceUsd, rate: calc.rate, totalUsd: calc.totalUsd } : {}) };
     onChange(editingId ? items.map((i) => (i.id === editingId ? item : i)) : [...items, item]);
     setEditingId(null);
-    setDraft({ ...emptyDraft(prices), priceId: draft.priceId, unit: draft.unit, price: draft.price, minArea: draft.minArea, priceTouched: draft.priceTouched });
+    setDraft({ ...emptyDraft(prices), priceId: draft.priceId, unit: draft.unit, cur: draft.cur, price: draft.price, priceUsd: draft.priceUsd, minArea: draft.minArea, priceTouched: draft.priceTouched, rate: draft.rate, rateTouched: draft.rateTouched });
   }
   function edit(it) {
     const p = prices.find((x) => x.id === it.priceId) || prices.find((x) => x.material === it.material);
     setEditingId(it.id);
-    setDraft({ title: it.title || "", priceId: p ? p.id : CUSTOM, material: p ? "" : it.material, unit: it.unit, w: it.w ? dec(it.w) : "", h: it.h ? dec(it.h) : "", qty: String(it.qty || 1), price: String(it.price), minArea: it.minArea || 0, priceTouched: p ? it.price !== p.price : false });
+    if (it.du && it.du !== du) setDuState(it.du);
+    setDraft({ title: it.title || "", priceId: p ? p.id : CUSTOM, material: p ? "" : it.material, unit: it.unit, w: fromMeters(it.w, it.du || du), h: fromMeters(it.h, it.du || du), qty: String(it.qty || 1), minArea: it.minArea || 0,
+      ...(it.cur === "usd"
+        ? { cur: "usd", priceUsd: dec(it.priceUsd), price: "", rate: dec(it.rate), rateTouched: it.rate !== fxRate, priceTouched: p ? p.cur !== "usd" || it.priceUsd !== p.price : false }
+        : { cur: "uzs", price: String(it.price), priceUsd: "", rate: draft.rate, rateTouched: draft.rateTouched, priceTouched: p ? p.cur === "usd" || it.price !== p.price : false }) });
     setMenu(null);
     setTimeout(() => titleRef?.current?.focus(), 0);
   }
@@ -67,7 +114,7 @@ export function QuoteBuilder({ items, onChange, prices = [], P, advancePct = 0, 
           <label style={{ display: "grid", gap: 3 }}>{label(prices.length ? "Material — narxlar ro'yxatidan" : "Material")}
             {prices.length > 0 && (
               <select value={draft.priceId} onChange={(e) => pickPrice(e.target.value)} style={inp} data-testid="q-material">
-                {prices.map((p) => <option key={p.id} value={p.id}>{p.material} — {fmt(p.price)} / {p.unit === "pcs" ? "dona" : "m²"}{p.minArea ? ` (min ${dec(p.minArea)} m²)` : ""}</option>)}
+                {prices.map((p) => <option key={p.id} value={p.id}>{p.material} — {p.cur === "usd" ? usdText(p.price) : fmt(p.price)} / {p.unit === "pcs" ? "dona" : "m²"}{p.minArea ? ` (min ${dec(p.minArea)} m²)` : ""}</option>)}
                 <option value={CUSTOM}>Boshqa (qo'lda)</option>
               </select>
             )}
@@ -79,27 +126,59 @@ export function QuoteBuilder({ items, onChange, prices = [], P, advancePct = 0, 
             </div>
           )}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.8fr", gap: 8, marginTop: 8 }}>
-          <label style={{ display: "grid", gap: 3 }}>{label("Eni, m")}<input value={draft.w} onChange={(e) => set({ w: e.target.value.replace(/[^\d.,]/g, "") })} inputMode="decimal" placeholder="metr" style={inp} data-testid="q-w" /></label>
-          <label style={{ display: "grid", gap: 3 }}>{label("Bo'yi, m")}<input value={draft.h} onChange={(e) => set({ h: e.target.value.replace(/[^\d.,]/g, "") })} inputMode="decimal" placeholder="metr" style={inp} data-testid="q-h" /></label>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+          <span style={{ fontSize: 11.5, color: P.muted }}>O'lcham</span>
+          <div role="group" aria-label="O'lcham birligi" style={{ display: "inline-flex", border: `1px solid ${P.border}`, borderRadius: 7, overflow: "hidden", height: 24 }}>
+            {DIM_UNITS.map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setDu(k)} aria-pressed={du === k} data-testid={`q-du-${k}`}
+                style={{ border: 0, padding: "0 9px", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", background: du === k ? P.primary : P.inputBg, color: du === k ? P.onPrimary : P.muted }}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 0.8fr", gap: 8, marginTop: 4 }}>
+          <label style={{ display: "grid", gap: 3 }}>{label(`Eni, ${du}`)}<input value={draft.w} onChange={(e) => set({ w: e.target.value.replace(du === "mm" ? /\D/g : /[^\d.,]/g, "") })} inputMode={du === "mm" ? "numeric" : "decimal"} placeholder={du === "mm" ? "2000" : du === "sm" ? "200" : "2"} style={inp} data-testid="q-w" /></label>
+          <label style={{ display: "grid", gap: 3 }}>{label(`Bo'yi, ${du}`)}<input value={draft.h} onChange={(e) => set({ h: e.target.value.replace(du === "mm" ? /\D/g : /[^\d.,]/g, "") })} inputMode={du === "mm" ? "numeric" : "decimal"} placeholder={du === "mm" ? "1600" : du === "sm" ? "160" : "1,6"} style={inp} data-testid="q-h" /></label>
           <label style={{ display: "grid", gap: 3 }}>{label("Dona")}<input value={draft.qty} onChange={(e) => set({ qty: e.target.value.replace(/\D/g, "") })} inputMode="numeric" style={inp} data-testid="q-qty" /></label>
         </div>
+        {du === "mm" && calc.w > 0 && calc.h > 0 && calc.w < 0.05 && calc.h < 0.05 && <div data-testid="q-du-hint" style={{ fontSize: 11.5, color: P.red, marginTop: 4 }}>O'lcham juda kichik ({draft.w}×{draft.h} mm). Metrda yozgan bo'lsangiz — yuqorida «m» ni tanlang.</div>}
         <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 9, background: P.hover, minWidth: 0 }}>
           <div style={{ fontSize: 12.5, color: P.muted, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{calc.total > 0 ? formulaOf(calc) : "O'lcham va narxni kiriting"}</div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
             <div data-testid="calc-total" style={{ fontSize: 19, fontWeight: 700, color: P.text, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money(calc.total)}</div>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: P.muted }}>
-              {calc.unit === "pcs" ? "1 dona" : "1 m²"}:
-              <input value={draft.price ? fmt(toNum(draft.price)) : ""} onChange={(e) => set({ price: e.target.value.replace(/\D/g, ""), priceTouched: !!sel })} inputMode="numeric" placeholder="narx" style={{ ...inp, height: 30, width: 104, fontSize: 13 }} data-testid="q-price" aria-label="Narx" />
-            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: P.muted, flex: "1 1 190px", justifyContent: "flex-end", minWidth: 0 }}>
+              <span style={{ whiteSpace: "nowrap" }}>{calc.unit === "pcs" ? "1 dona" : "1 m²"}:</span>
+              {draft.cur === "usd"
+                ? <input value={draft.priceUsd} onChange={(e) => set({ priceUsd: e.target.value.replace(/[^\d.,]/g, ""), priceTouched: !!sel })} inputMode="decimal" placeholder="$" style={{ ...inp, height: 30, flex: "0 1 104px", fontSize: 13 }} data-testid="q-price-usd" aria-label="Narx, dollar" />
+                : <input value={draft.price ? fmt(toNum(draft.price)) : ""} onChange={(e) => set({ price: e.target.value.replace(/\D/g, ""), priceTouched: !!sel })} inputMode="numeric" placeholder="narx" style={{ ...inp, height: 30, flex: "0 1 104px", fontSize: 13 }} data-testid="q-price" aria-label="Narx" />}
+              <div role="group" aria-label="Valyuta" style={{ display: "inline-flex", border: `1px solid ${P.border}`, borderRadius: 8, overflow: "hidden", height: 30, flexShrink: 0 }}>
+                {[["uzs", "so'm"], ["usd", "$"]].map(([c, l]) => (
+                  <button key={c} type="button" onClick={() => setCur(c)} aria-pressed={draft.cur === c} data-testid={`q-cur-${c}`}
+                    style={{ border: 0, padding: "0 9px", minWidth: 32, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", background: draft.cur === c ? P.primary : P.inputBg, color: draft.cur === c ? P.onPrimary : P.muted }}>{l}</button>
+                ))}
+              </div>
+            </div>
           </div>
-          {sel && draft.priceTouched && toNum(draft.price) !== sel.price && <div style={{ fontSize: 11.5, color: P.muted, marginTop: 2 }}>Ro'yxatdagi narx: {fmt(sel.price)} — <button type="button" onClick={() => set({ price: String(sel.price), priceTouched: false })} style={{ border: 0, background: "none", color: P.link || P.primary, padding: 0, cursor: "pointer", fontSize: 11.5, fontFamily: "inherit" }}>qaytarish</button></div>}
+          {draft.cur === "usd" && (
+            <div style={{ marginTop: 6, fontSize: 12, color: P.muted }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                <span style={{ whiteSpace: "nowrap" }}>Kurs: 1 $ =</span>
+                <input value={draft.rate} onChange={(e) => set({ rate: e.target.value.replace(/[^\d.,]/g, ""), rateTouched: true })} inputMode="decimal" placeholder="12 700" style={{ ...inp, height: 28, flex: "0 1 110px", fontSize: 12.5 }} data-testid="q-rate" aria-label="Dollar kursi" />
+                <span style={{ whiteSpace: "nowrap" }}>so'm</span>
+              </div>
+              <div data-testid="q-rate-src" style={{ textAlign: "right", marginTop: 3, fontSize: 11.5 }}>
+                {draft.rateTouched && fxRate && toNum(draft.rate) !== fxRate
+                  ? <>Qo'lda kiritildi — <button type="button" onClick={() => set({ rate: dec(fxRate), rateTouched: false })} style={{ border: 0, background: "none", color: P.link || P.primary, padding: 0, cursor: "pointer", fontSize: 11.5, fontFamily: "inherit" }}>{rateText(fxRate)} ga qaytarish</button></>
+                  : fxRate ? fxHint(fx) : ""}
+              </div>
+            </div>
+          )}
+          {priceDiffers && <div style={{ fontSize: 11.5, color: P.muted, marginTop: 2 }}>Ro'yxatdagi narx: {listPrice} — <button type="button" onClick={() => set({ ...priceFields(sel), priceTouched: false })} style={{ border: 0, background: "none", color: P.link || P.primary, padding: 0, cursor: "pointer", fontSize: 11.5, fontFamily: "inherit" }}>qaytarish</button></div>}
           {calc.minApplied && <div style={{ fontSize: 11.5, color: P.muted, marginTop: 2 }}>Minimal maydon qo'llandi: {dec(calc.minArea)} m²</div>}
         </div>
         {err && <div role="alert" style={{ fontSize: 12.5, color: P.red, marginTop: 8 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button type="button" onClick={submit} style={{ ...btn(true), flex: 1 }} data-testid="q-add"><Plus size={16} /> {editingId ? "Saqlash" : "Smetaga qo'shish"}</button>
-          {editingId && <button type="button" onClick={() => { setEditingId(null); setDraft(emptyDraft(prices)); }} style={{ ...btn(false), padding: "0 14px" }}>Bekor</button>}
+          {editingId && <button type="button" onClick={() => { setEditingId(null); setDraft({ ...emptyDraft(prices), rate: fxRate ? dec(fxRate) : draft.rate, rateTouched: false }); }} style={{ ...btn(false), padding: "0 14px" }}>Bekor</button>}
         </div>
       </div>
 

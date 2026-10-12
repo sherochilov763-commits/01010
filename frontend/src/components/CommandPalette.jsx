@@ -2,7 +2,8 @@
 // Bo'limlarga o'tish, yangi buyurtma/rasxod/lid, buyurtma, mijoz va lidlarni nomi yoki raqami bo'yicha topish.
 // Faqat navigatsiya: ma'lumot o'zgartirmaydi, mavjud oynalarni ochadi.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Contact, CornerDownLeft, Package, Plus, Search, TrendingDown, Users2 } from "lucide-react";
+import { ArrowRight, Contact, CornerDownLeft, Package, Plus, Search, Settings2, TrendingDown, Users2 } from "lucide-react";
+import { SETTINGS_INDEX } from "../views/settings/settingsParts.jsx";
 import { THEME } from "../theme.js";
 import { money, shortDateUz } from "../lib/format.js";
 import { orderDebt } from "../lib/finance.js";
@@ -48,7 +49,7 @@ export function SearchTrigger({ onClick, compact = false }) {
   );
 }
 
-export function CommandPalette({ open, onClose, nav, orders, leads, customers, onNavigate, onSearchOrders, onQuickAdd, onNewLead }) {
+export function CommandPalette({ open, onClose, nav, orders, leads, customers, onNavigate, onSearchOrders, onQuickAdd, onNewLead, isAdmin, onOpenSetting }) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef(null);
@@ -77,6 +78,13 @@ export function CommandPalette({ open, onClose, nav, orders, leads, customers, o
       if (s) out.unshift(g); else out.push(g); // yozilganda bo'limlar birinchi
     }
 
+    // Sozlamalar: nomi yoki kalit so'z bo'yicha (masalan «kurs» → Dollar kursi)
+    if (s.length >= 2 && onOpenSetting) {
+      const sets = SETTINGS_INDEX.filter((x) => (!x.admin || isAdmin) && hit(x.label, x.keys)).slice(0, 5)
+        .map((x) => ({ id: `s-${x.label}`, icon: Settings2, label: x.label, hint: x.view ? "Bo'lim sozlamasi" : "Sozlamalar", run: () => onOpenSetting(x) }));
+      if (sets.length) out.unshift({ title: "Sozlamalar", items: sets });
+    }
+
     if (s.length >= 2) {
       const ords = (orders || []).filter((o) => !o.deletedAt && hit(o.orderNumber, o.customer)).slice(0, 6)
         .map((o) => {
@@ -92,7 +100,7 @@ export function CommandPalette({ open, onClose, nav, orders, leads, customers, o
       if (lds.length) out.push({ title: "Lidlar", items: lds });
     }
     return out;
-  }, [open, q, nav, orders, leads, customers, onNavigate, onSearchOrders, onQuickAdd, onNewLead]);
+  }, [open, q, nav, orders, leads, customers, onNavigate, onSearchOrders, onQuickAdd, onNewLead, isAdmin, onOpenSetting]);
 
   const flat = groups.flatMap((g) => g.items);
   useEffect(() => { setActive(0); }, [q]);

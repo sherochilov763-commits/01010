@@ -8,7 +8,6 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const XLSX = require("xlsx");
-const nodemailer = require("nodemailer");
 const telegramUserbot = require("./telegram-userbot");
 const telegramLogin = require("./telegram-login");
 const { TG_API } = require("./telegram-bot");
@@ -76,7 +75,8 @@ if (!JWT_SECRET) try {
 const TOKEN_TTL = "12h";
 function issueToken(employee) {
   const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
-  return { token, employee: { id: employee.id, name: employee.name, role: employee.role } };
+  // mustChangePin — vaqtinchalik PIN bilan kirildi: ilova avval yangi PIN so'raydi
+  return { token, employee: { id: employee.id, name: employee.name, role: employee.role }, ...(employee.mustChangePin ? { mustChangePin: true } : {}) };
 }
 let passkeyApi = null; // pastda, requireAuth'dan keyin ulanadi
 
@@ -94,6 +94,7 @@ const upsertStmt = db.prepare(`
 const revStmt = db.prepare("SELECT rev FROM kv_store WHERE key = ?");
 const revOf = (key) => revStmt.get(key)?.rev || 0;
 const deleteStmt = db.prepare("DELETE FROM kv_store WHERE key = ?");
+const settingsLog = require("./settings-log").createSettingsLog({ getStmt, upsertStmt });
 const listStmt = db.prepare("SELECT key FROM kv_store WHERE key LIKE ?");
 
 function readEmployees() {
@@ -182,93 +183,9 @@ app.post("/api/auth/bootstrap", (req, res) => {
 // Admin PIN'ini tiklash endi faqat server konsolidan: `node reset-admin-pin.js`
 // (avval bu ochiq API edi — internetdagi har kim admin PIN'ini 0000 ga qaytara olardi).
 
-// ==================== Email orqali PIN tiklash ====================
-const pinResetAttempts = new Map(); // ip -> { count, resetAt }
-function checkPinResetRateLimit(ip) {
-  const now = Date.now();
-  const rec = pinResetAttempts.get(ip);
-  if (!rec || now > rec.resetAt) {
-    pinResetAttempts.set(ip, { count: 1, resetAt: now + 10 * 60 * 1000 });
-    return true;
-  }
-  rec.count += 1;
-  return rec.count <= 5;
-}
-async function sendResetEmail(toEmail, code, employeeName) {
-  const row = getStmt.get("uvix:settings");
-  if (!row) throw new Error("Email yuborish sozlanmagan");
-  const settings = JSON.parse(row.value);
-  const gmailUser = settings?.gmailUser;
-  const gmailAppPassword = settings?.gmailAppPassword;
-  if (!gmailUser || !gmailAppPassword) throw new Error("Email yuborish sozlanmagan (admin bilan bog'laning)");
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: gmailUser, pass: gmailAppPassword },
-  });
-  await transporter.sendMail({
-    from: `"UVIX Moliya" <${gmailUser}>`,
-    to: toEmail,
-    subject: "UVIX — PIN tiklash kodi",
-    html: `<p>Salom, ${employeeName}!</p><p>PIN kodingizni tiklash uchun tasdiqlash kodi:</p><h2 style="letter-spacing:4px">${code}</h2><p>Bu kod 10 daqiqa amal qiladi. Agar bu so'rovni siz yubormagan bo'lsangiz, e'tiborsiz qoldiring.</p>`,
-  });
-}
-
-// 1-qadam: email kiritiladi, tasdiqlash kodi shu email'ga yuboriladi
-app.post("/api/auth/forgot-pin", async (req, res) => {
-  const ip = req.ip || req.connection?.remoteAddress || "unknown";
-  if (!checkPinResetRateLimit(ip)) {
-    return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
-  }
-  const { email } = req.body || {};
-  if (!email) return res.status(400).json({ error: "missing_email" });
-  const employees = readEmployees();
-  const employee = employees.find((e) => (e.email || "").trim().toLowerCase() === String(email).trim().toLowerCase());
-  // Xavfsizlik uchun: email topilmasa ham xuddi shunday muvaffaqiyatli javob qaytaramiz —
-  // aks holda tashqi kishi qaysi emaillar ro'yxatda borligini "sinab ko'rish" imkoniga ega bo'lardi.
-  if (!employee) {
-    return res.json({ ok: true });
-  }
-  const code = String(crypto.randomInt(100000, 1000000));
-  const expiresAt = Date.now() + 10 * 60 * 1000;
-  upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify({ code, expiresAt, attempts: 0 }));
-  try {
-    await sendResetEmail(employee.email, code, employee.name);
-    res.json({ ok: true });
-  } catch (e) {
-    console.error("Reset email yuborishda xato:", e.message);
-    res.status(500).json({ error: "email_send_failed", message: "Email yuborilmadi — Gmail sozlamalarini tekshiring" });
-  }
-});
-
-// 2-qadam: kod va yangi PIN tasdiqlanadi
-app.post("/api/auth/reset-pin-with-code", (req, res) => {
-  const ip = req.ip || "unknown";
-  if (!checkPinResetRateLimit(ip)) {
-    return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
-  }
-  const { email, code, newPin } = req.body || {};
-  if (!email || !code || !newPin) return res.status(400).json({ error: "missing_fields" });
-  if (!/^\d{4,6}$/.test(String(newPin))) return res.status(400).json({ error: "invalid_pin" });
-  const employees = readEmployees();
-  const employee = employees.find((e) => (e.email || "").trim().toLowerCase() === String(email).trim().toLowerCase());
-  if (!employee) return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
-  const row = getStmt.get(`uvix:pinReset:${employee.id}`);
-  if (!row) return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
-  const record = JSON.parse(row.value);
-  const codeOk = typeof record.code === "string" && String(code).length === record.code.length &&
-    crypto.timingSafeEqual(Buffer.from(String(code)), Buffer.from(record.code));
-  if (!codeOk || Date.now() > record.expiresAt) {
-    // 5 ta noto'g'ri urinishdan keyin kod butunlay bekor qilinadi
-    record.attempts = (record.attempts || 0) + 1;
-    if (record.attempts >= 5 || Date.now() > record.expiresAt) deleteStmt.run(`uvix:pinReset:${employee.id}`);
-    else upsertStmt.run(`uvix:pinReset:${employee.id}`, JSON.stringify(record));
-    return res.status(401).json({ error: "invalid_code", message: "Kod noto'g'ri yoki muddati o'tgan" });
-  }
-  employee.pin = bcrypt.hashSync(String(newPin), 10);
-  writeEmployees(employees);
-  deleteStmt.run(`uvix:pinReset:${employee.id}`);
-  res.json({ ok: true });
-});
+// ==================== PIN tiklash ====================
+// Email orqali tiklash olib tashlandi (2026-10). Endi: Telegram kodi yoki admin bergan vaqtinchalik PIN —
+// pin-recovery.js (staffBot ulangandan keyin, pastda ro'yxatdan o'tadi).
 
 // Kirish — PIN tekshiriladi, muvaffaqiyatli bo'lsa token beriladi
 app.post("/api/auth/login", (req, res) => {
@@ -287,6 +204,9 @@ app.post("/api/auth/login", (req, res) => {
     : employees.find((e) => e.name.trim().toLowerCase() === String(name).trim().toLowerCase());
   if (!employee || !pinMatches(String(pin), employee.pin)) {
     return res.status(401).json({ error: "invalid_credentials", message: "Foydalanuvchi yoki PIN noto'g'ri" });
+  }
+  if (employee.mustChangePin && employee.tempPinExp && Date.now() > new Date(employee.tempPinExp).getTime()) {
+    return res.status(401).json({ error: "temp_pin_expired", message: "Vaqtinchalik PIN muddati tugagan — administratordan yangisini so'rang" });
   }
   // Agar hali hash qilinmagan (eski) PIN bo'lsa — shu yerda avtomatik hash'ga o'giramiz
   if (!isHashed(employee.pin)) {
@@ -336,6 +256,17 @@ passkeyApi = require("./passkeys")(app, {
   secret: JWT_SECRET,
   getStmt, upsertStmt, readEmployees, requireAuth, issueToken,
   rateLimit: (key) => checkRateLimit(`passkey:${key}`),
+});
+// Kompyuterga telefon (QR + Face ID) orqali kirish
+require("./qr-login").registerQrLogin(app, {
+  requireAuth, readEmployees, issueToken, pinMatches, passkeyApi,
+  onLogin: (emp, device) => {
+    try {
+      const list = JSON.parse(getStmt.get("uvix:audit")?.value || "[]");
+      list.unshift({ id: crypto.randomBytes(6).toString("hex"), who: emp.name, what: `Kompyuterga telefon orqali kirdi (${device})`, when: new Date().toISOString() });
+      upsertStmt.run("uvix:audit", JSON.stringify(list.slice(0, 500)));
+    } catch { /* jurnal ixtiyoriy */ }
+  },
 });
 
 // ==================== Davomat (keldi-ketdi) ====================
@@ -390,6 +321,27 @@ const attPhotoStore = {
   },
 };
 const staffBot = require("./telegram-bot")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin });
+require("./pin-recovery").registerPinRecovery(app, { getStmt, upsertStmt, deleteStmt, readEmployees, writeEmployees, requireAuth, requireAdmin, staffBot, settingsLog });
+// Sozlamalar → «Tizim holati»: nima sozlangan, nima e'tibor talab qiladi (faqat admin)
+app.get("/api/system-status", requireAuth, requireAdmin, async (req, res) => {
+  const st = (() => { try { return JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch { return {}; } })();
+  const att = (() => { try { return JSON.parse(getStmt.get("uvix:attConfig")?.value || "{}"); } catch { return {}; } })();
+  const lastBackup = (() => { const v = getStmt.get("uvix:lastBackupDate")?.value; try { return JSON.parse(v || "null"); } catch { return v || null; } })();
+  const staffTg = (() => { try { return JSON.parse(getStmt.get("uvix:staffTg")?.value || "{}"); } catch { return {}; } })();
+  const help = (() => { try { return JSON.parse(getStmt.get("uvix:pinHelp")?.value || "{}"); } catch { return {}; } })();
+  const emps = readEmployees();
+  let fxInfo = null; try { fxInfo = await fx.current(); } catch { /* ixtiyoriy */ }
+  res.json({
+    telegram: { bot: !!st.telegramBotToken, group: !!(st.telegramBotToken && st.telegramChatId), adminLinked: adminIds().some((id) => !!staffTg[id]) },
+    backup: { time: st.backupTime || "21:00", lastDate: lastBackup, configured: !!st.telegramBotToken },
+    attendance: { enabled: att.enabled !== false, officeSet: !!att.office },
+    staffTg: { missing: emps.filter((e) => !staffTg[e.id]).map((e) => e.name), total: emps.length },
+    pinHelp: emps.filter((e) => help[e.id]).map((e) => e.name),
+    fx: fxInfo,
+    storage: { persistent: db.STORAGE.persistent },
+  });
+});
+app.get("/api/settings-log", requireAuth, requireAdmin, (req, res) => res.json({ log: settingsLog.read().slice(0, Math.min(1000, Number(req.query.limit) || 300)) }));
 // ==================== Telegram xabarlari: qaysi biri qayerga ====================
 // group — xodimlar guruhi (Sozlamalardagi chat ID), admin — adminning shaxsiy Telegrami (UVIX botiga ulangan),
 // both — ikkalasiga, off — yuborilmaydi. Shaxsiy Telegram ulanmagan bo'lsa, "admin" xabari guruhga ketadi (yo'qolmasin).
@@ -465,15 +417,17 @@ const customerMsg = require("./customer-msg")(app, {
     },
   },
 });
-const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: (text, chatId, kind) => (chatId ? sendTelegramTo(text, chatId) : notify(kind === "daily" ? "attendanceDaily" : kind === "absent" ? "attendanceAbsent" : "attendanceReports", text)), photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee });
+const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: (text, chatId, kind) => (chatId ? sendTelegramTo(text, chatId) : notify(kind === "daily" ? "attendanceDaily" : kind === "absent" ? "attendanceAbsent" : "attendanceReports", text)), photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee, bio: passkeyApi, onConfigChanged: (who, prev, next) => { try { settingsLog.attendanceChanged(who, prev, next); } catch { /* ixtiyoriy */ } } });
 
 // ==================== Dizayner / Pechatchi vazifalari ====================
 const onOrderReady = (order) => customerMsg.sendReady(order).catch((e) => console.error("Mijozga «tayyor» xabari:", e.message));
 registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, onOrderReady });
 
 // ==================== Smeta → buyurtmalar, holatlar, umumiy to'lov ====================
+const fx = require("./fx").createFx({ getStmt, upsertStmt });
 require("./quotes")(app, {
-  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrderReady,
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrderReady, getFx: fx.current,
+  onSalesChanged: (who, prev, next) => { try { settingsLog.salesChanged(who, prev, next); } catch { /* ixtiyoriy */ } },
   onOrdersWritten: (oldValue, newValue) => {
     notifyOrdersDiff(oldValue, newValue);
     customerMsg.onOrdersChanged(oldValue, newValue).catch((e) => console.error("Mijozga kvitansiya:", e.message));
@@ -487,7 +441,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "gmailAppPassword", "telegram
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -777,7 +731,8 @@ function mergeEmployees(incoming, user) {
     const mine = incoming.find((e) => e && e.id === user.id);
     const result = existing.map((e) => {
       if (e.id === user.id && mine && validPin(mine.pin) && !pinMatches(mine.pin, e.pin)) {
-        return { ...e, pin: bcrypt.hashSync(mine.pin, 10) };
+        const { mustChangePin: _mc, tempPinExp: _te, ...keep } = e;
+        return { ...keep, pin: bcrypt.hashSync(mine.pin, 10) };
       }
       return e;
     });
@@ -797,9 +752,12 @@ function mergeEmployees(incoming, user) {
     if (validPin(e.pin) && !(old && pinMatches(e.pin, old.pin))) pin = bcrypt.hashSync(e.pin, 10);
     if (!pin) return { error: "Yangi xodim uchun 4-6 xonali PIN kerak" };
     // Yuborilmagan maydonlar (masalan email) eskisidan saqlanadi — tasodifan o'chib ketmasligi uchun
-    const { pin: _ignored, hasPasskey: _hp, ...rest } = e;
+    // mustChangePin / tempPinExp — faqat server boshqaradi (brauzer o'zgartira olmaydi)
+    const { pin: _ignored, hasPasskey: _hp, mustChangePin: _mc, tempPinExp: _te, ...rest } = e;
     const { pin: _oldPin, ...oldRest } = old || {};
-    result.push({ ...oldRest, ...rest, name, role, pin });
+    const next = { ...oldRest, ...rest, name, role, pin };
+    if (old && pin !== old.pin) { delete next.mustChangePin; delete next.tempPinExp; } // admin PIN'ni qo'lda o'zgartirdi
+    result.push(next);
   }
   if (!result.some((e) => e.role === "admin")) return { error: "Kamida bitta administrator qolishi shart" };
   return { list: result };
@@ -968,6 +926,7 @@ app.put("/api/kv/:key", (req, res) => {
     SECRET_SETTING_FIELDS.forEach((f) => {
       if (f in prev) next[f] = prev[f]; else delete next[f];
     });
+    try { settingsLog.settingsChanged(req.user.name, prev, next); } catch { /* jurnal ixtiyoriy */ }
     upsertStmt.run(key, JSON.stringify(next));
     return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeSettingsForClient(next, false)) });
   }
@@ -990,6 +949,9 @@ app.put("/api/kv/:key", (req, res) => {
       customerMsg.onOrdersChanged(oldValue, merged).catch((e) => console.error("Mijozga kvitansiya:", e.message));
       return;
     } catch { /* JSON emas — pastda oddiy saqlanadi */ }
+  }
+  if (req.params.key === "uvix:settings") {
+    try { settingsLog.settingsChanged(req.user.name, oldValue ? JSON.parse(oldValue) : {}, JSON.parse(value)); } catch { /* jurnal ixtiyoriy */ }
   }
   upsertStmt.run(req.params.key, value);
   res.json({ key: req.params.key, rev: revOf(req.params.key), value });

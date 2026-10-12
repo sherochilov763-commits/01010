@@ -8,6 +8,7 @@ import { exportRows } from "../../lib/excel.js";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
 import { setPaintCache } from "../../lib/paintStore.js";
 import { TransactionForm } from "../expenses/TransactionForm.jsx";
+import { takeOpenTab } from "../../lib/deeplink.js";
 
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 const MONTHS_CAP = MONTHS.map((m) => m[0].toUpperCase() + m.slice(1));
@@ -43,7 +44,7 @@ function Tabs({ tabs, tab, setTab }) {
 }
 
 export function PaintView({ currentUser, isAdmin, orders, categories, onAddCategory, onAddSubcategory, onSaveTx }) {
-  const [tab, setTab] = useState("stock");
+  const [tab, setTab] = useState(() => takeOpenTab("paint", ["stock","month","counts", ...(isAdmin ? ["settings"] : [])]) || "stock");
   const [state, setState] = useState(null);
   const [err, setErr] = useState("");
   const [counting, setCounting] = useState(false);

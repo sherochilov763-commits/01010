@@ -25,7 +25,10 @@ const DEFAULT_CONFIG = {
   photo: true, // "Keldim"da selfi majburiy
   photoDays: 60, // selfilar shuncha kundan keyin o'chiriladi
   // Xodimning o'ziga Telegram (UVIX boti orqali, xodim botni ulagan bo'lsa) va adminga shaxsiy xabarlar
-  personal: { pre: true, notStarted: true, late: true, forgotOut: true, weekly: true, adminAbsent: true },
+  personal: { pre: true, notStarted: true, late: true, forgotOut: true, weekly: true, adminAbsent: true, confirm: true, manualNotice: true, monthly: true },
+  autoOut: true, // «Ketdim» unutilsa — ish tugaganidan 3 soat keyin jadval bo'yicha tugash vaqti yoziladi («avto»)
+  outAnywhere: true, // «Ketdim»ni sexdan tashqarida ham bosish mumkin (adminga masofa bilan ko'rinadi)
+  faceIdIn: false, // «Keldim»dan oldin Face ID tasdig'i (Face ID yoqilgan telefonlarda)
   appUrl: "", // xabardagi havola (admin sozlamani saqlaganda o'zi yoziladi)
   since: null, // davomat boshlangan kun (sex joylashuvi birinchi marta belgilangan) — undan oldingi kunlar hisoblanmaydi
 };
@@ -45,7 +48,16 @@ const minOf = (iso) => (iso ? local(new Date(iso)).min : null);
 function addDays(date, n) { const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
 function dateRange(from, to) { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; }
 const dayLabel = (date) => { const [, m, d] = date.split("-").map(Number); return `${d}-${MONTHS[m - 1]}, ${DAY_NAMES[weekdayOf(date)]}`; };
-const fmtDur = (min) => { const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} s${m ? ` ${m} daq` : ""}` : `${m} daq`; };
+// Davomiylik: «1 kun 2 soat 15 daq». 1 kun = xodimning ish kuni (jadval bo'yicha, masalan 9 soat).
+function fmtDur(min, dayMin = 0) {
+  min = Math.max(0, Math.round(min || 0));
+  if (!min) return "0 daq";
+  const d = dayMin > 0 ? Math.floor(min / dayMin) : 0;
+  const rest = min - d * dayMin;
+  const h = Math.floor(rest / 60), m = rest % 60;
+  return [d ? `${d} kun` : "", h ? `${h} soat` : "", m ? `${m} daq` : ""].filter(Boolean).join(" ");
+}
+const dayLen = (sch) => Math.max(60, toMin(sch.end) - toMin(sch.start));
 
 function haversine(a, b) {
   const R = 6371000, rad = (x) => (x * Math.PI) / 180;
@@ -54,7 +66,7 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false }) {
+module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false, bio = null, onConfigChanged = () => {} }) {
   // Selfilar saqlash joyi tashqaridan beriladi (serverda — disk, demo'da — brauzer xotirasi):
   //   photoStore.save(empId, date, base64) -> { id } | { error }
   //   photoStore.send(res, id)              -> rasmni javob sifatida yuboradi
@@ -97,7 +109,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     const workday = sch.days.includes(weekdayOf(date));
     const start = toMin(sch.start), end = toMin(sch.end);
     const inMin = minOf(rec?.in), outMin = minOf(rec?.out);
-    const r = { date, workday, in: hmOf(rec?.in), out: hmOf(rec?.out), inDist: rec?.inDist ?? null, outDist: rec?.outDist ?? null, manual: rec?.manual || null, photo: rec?.inPhoto || null, inAt: rec?.in || null,
+    const r = { date, workday, in: hmOf(rec?.in), out: hmOf(rec?.out), inDist: rec?.inDist ?? null, outDist: rec?.outDist ?? null, outFar: !!rec?.outFar, outAuto: !!rec?.outAuto, manual: rec?.manual || null, photo: rec?.inPhoto || null, inAt: rec?.in || null,
       status: "", lateMin: 0, earlyMin: 0, overMin: 0, workedMin: 0, missingOut: false };
     if (inMin != null && outMin != null && outMin > inMin) r.workedMin = outMin - inMin;
     if (inMin == null) {
@@ -144,6 +156,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
         if (d.status === "absent") sum.absent++;
         if (d.missingOut) sum.missingOut++;
       });
+      sum.dayMin = dayLen(sch);
       return { employee: { id: emp.id, name: emp.name, role: emp.role }, schedule: sch, days, sum };
     });
     return { from, to, today, grace: cfg.grace, rows };
@@ -175,12 +188,12 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
       const s = row.sum;
       const parts = [
         `${s.present}/${s.workdays} kun keldi`,
-        s.late ? `⏰ ${s.late} marta kech (${fmtDur(s.lateMin)})` : "⏰ kechikmadi",
-        s.early ? `↩️ ${s.early} marta erta ketdi (${fmtDur(s.earlyMin)})` : null,
-        s.overMin ? `➕ ${fmtDur(s.overMin)} qo'shimcha` : null,
+        s.late ? `⏰ ${s.late} marta kech (${fmtDur(s.lateMin, s.dayMin)})` : "⏰ kechikmadi",
+        s.early ? `↩️ ${s.early} marta erta ketdi (${fmtDur(s.earlyMin, s.dayMin)})` : null,
+        s.overMin ? `➕ ${fmtDur(s.overMin, s.dayMin)} qo'shimcha` : null,
         s.absent ? `❌ ${s.absent} kun kelmadi` : null,
         s.missingOut ? `⚠️ ${s.missingOut} kun "Ketdim" belgilanmagan` : null,
-        `🕒 ${fmtDur(s.workedMin)} ishladi`,
+        `🕒 ${fmtDur(s.workedMin, s.dayMin)} ishladi`,
       ].filter(Boolean);
       lines.push(`<b>${row.employee.name}</b>`, `   ${parts.join(" · ")}`, "");
     });
@@ -239,27 +252,56 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
         mark("adminAbsent"); absentForAdmin.push(`${emp.name} (ish ${sch.start} da boshlangan)`);
       }
       if (P.forgotOut && rec.in && !rec.out && !flags.forgotOut && now.min >= end + 30) {
-        mark("forgotOut"); await notifyEmployee(emp.id, `🕕 ${first}, ish ${sch.end} da tugadi — «Ketdim» bosishni unutmang.\nAks holda bugungi ish vaqtingiz to'liq hisoblanmaydi.${link}`);
+        mark("forgotOut");
+        const btn = /^https:\/\//.test(cfg.appUrl || "") ? { reply_markup: { inline_keyboard: [[{ text: "👋 Ketdim", url: `${cfg.appUrl.replace(/\/$/, "")}/?checkout=1` }]] } } : undefined;
+        await notifyEmployee(emp.id, `🕕 ${first}, ish ${sch.end} da tugadi — «Ketdim» bosishni unutmang.${cfg.autoOut ? `\nBosilmasa, ${sch.end} ketish vaqti deb avtomatik yoziladi.` : "\nAks holda bugungi ish vaqtingiz to'liq hisoblanmaydi."}${btn ? "" : link}`, btn);
       }
     }
     if (absentForAdmin.length) await send(`⚠️ <b>Hali kelmadi (${now.hm})</b>\n${absentForAdmin.map((x) => `• ${x}`).join("\n")}`, "absent");
-    // Haftalik shaxsiy xulosa — dushanba 09:00 dan keyin, har xodimga bir marta
+    // Shaxsiy xulosa: haftalik (dushanba 09:00) va oylik (har oyning 1-kuni 09:05) — har xodimga bir marta
+    const personalSummary = async (title, from, to) => {
+      for (const row of report(from, to).rows) {
+        const s = row.sum;
+        if (!s.workdays) continue;
+        const dm = s.dayMin;
+        const lines = [`📊 <b>${title}</b> (${dayLabel(from)} — ${dayLabel(to)})`, "",
+          `✅ Keldingiz: ${s.present}/${s.workdays} kun`,
+          s.late ? `⏰ Kechikish: ${s.late} marta (${fmtDur(s.lateMin, dm)})` : "⏰ Kechikish yo'q — barakalla!",
+          s.early ? `↩️ Erta ketish: ${s.early} marta (${fmtDur(s.earlyMin, dm)})` : null,
+          s.overMin ? `➕ Qo'shimcha: ${fmtDur(s.overMin, dm)}` : null,
+          s.absent ? `❌ Kelmagan kun: ${s.absent}` : null,
+          `🕒 Ishladingiz: ${fmtDur(s.workedMin, dm)}`].filter(Boolean);
+        await notifyEmployee(row.employee.id, lines.join("\n"));
+      }
+    };
     if (P.weekly && now.weekday === 1 && now.hm >= "09:00") {
       const w = prevWeek(now.date);
-      if (sent.weeklyPersonal !== w.key) {
-        sent.weeklyPersonal = w.key; changed = true;
-        for (const row of report(w.from, w.to).rows) {
-          const s = row.sum;
-          if (!s.workdays) continue;
-          const lines = [`📊 <b>O'tgan hafta</b> (${dayLabel(w.from)} — ${dayLabel(w.to)})`, "",
-            `✅ Keldingiz: ${s.present}/${s.workdays} kun`,
-            s.late ? `⏰ Kechikish: ${s.late} marta (${fmtDur(s.lateMin)})` : "⏰ Kechikish yo'q — barakalla!",
-            s.early ? `↩️ Erta ketish: ${s.early} marta (${fmtDur(s.earlyMin)})` : null,
-            s.overMin ? `➕ Qo'shimcha: ${fmtDur(s.overMin)}` : null,
-            s.absent ? `❌ Kelmagan kun: ${s.absent}` : null,
-            `🕒 Ishladingiz: ${fmtDur(s.workedMin)}`].filter(Boolean);
-          await notifyEmployee(row.employee.id, lines.join("\n"));
+      if (sent.weeklyPersonal !== w.key) { sent.weeklyPersonal = w.key; changed = true; await personalSummary("O'tgan hafta", w.from, w.to); }
+    }
+    if (P.monthly && now.date.endsWith("-01") && now.hm >= "09:05") {
+      const pm = prevMonth(now.date);
+      if (sent.monthlyPersonal !== pm.key) { sent.monthlyPersonal = pm.key; changed = true; await personalSummary(`${pm.label[0].toUpperCase()}${pm.label.slice(1)} — oylik xulosa`, pm.from, pm.to); }
+    }
+    // Avtomatik «Ketdim»: bugun ish tugaganidan 3 soat keyin yoki o'tgan kunlar (server o'chiq bo'lgan bo'lsa)
+    if (cfg.autoOut) {
+      const emps = readEmployees();
+      for (const d of [addDays(now.date, -1), now.date]) {
+        const data = readMonth(d);
+        let dirty = false;
+        for (const emp of emps) {
+          const rec = data[emp.id]?.[d];
+          if (!rec?.in || rec.out) continue;
+          const sch = scheduleFor(emp, cfg);
+          const end = toMin(sch.end);
+          if (d === now.date && now.min < end + 180) continue;
+          const inMin = minOf(rec.in);
+          const outHm = inMin > end ? hmOf(rec.in) : sch.end;
+          rec.out = new Date(`${d}T${outHm}:00+05:00`).toISOString();
+          rec.outAuto = true;
+          dirty = true;
+          if (P.forgotOut) await notifyEmployee(emp.id, `🤖 «Ketdim» bosilmagani uchun ${d === now.date ? "bugungi" : "kechagi"} ketish vaqti <b>${outHm}</b> deb yozildi («avto»). Qo'shimcha vaqt hisoblanmadi.`);
         }
+        if (dirty) writeMonth(d, data);
       }
     }
     if (sent.cleanup !== now.date) {
@@ -272,7 +314,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
   if (timer.unref) timer.unref();
 
   // ==================== API ====================
-  const publicConfig = (cfg) => ({ enabled: cfg.enabled, officeSet: !!cfg.office, radius: cfg.office?.radius || 150, schedule: cfg.schedule, grace: cfg.grace, photo: !!cfg.photo });
+  const publicConfig = (cfg) => ({ enabled: cfg.enabled, officeSet: !!cfg.office, radius: cfg.office?.radius || 150, schedule: cfg.schedule, grace: cfg.grace, photo: !!cfg.photo, outAnywhere: cfg.outAnywhere !== false, faceIdIn: !!cfg.faceIdIn });
 
   // Mening bugungi holatim va shu oy tarixim
   app.get("/api/attendance/me", requireAuth, (req, res) => {
@@ -285,7 +327,8 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     const r = report(`${month}-01`, `${month}-${lastDay}`, { employeeId: emp.id });
     const row = r.rows[0];
     const todayRow = row?.days.find((d) => d.date === today) || evalDay(emp, today, null, cfg, nowFn());
-    res.json({ config: publicConfig(cfg), schedule: scheduleFor(emp, cfg), today: todayRow, month, days: row?.days || [], sum: row?.sum || null });
+    const sch = scheduleFor(emp, cfg);
+    res.json({ config: publicConfig(cfg), schedule: sch, dayMin: dayLen(sch), today: todayRow, month, days: row?.days || [], sum: row?.sum || null, faceIdRequired: !!cfg.faceIdIn && !!bio?.hasPasskey(emp.id) });
   });
 
   // Keldim / Ketdim
@@ -300,7 +343,8 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     if (acc > 500) return res.status(400).json({ error: "inaccurate", message: `Joylashuv aniq emas (±${Math.round(acc)} m). Ochiq joyda yoki Wi-Fi yoqilgan holda qayta urining.` });
     const dist = Math.round(haversine({ lat, lng }, cfg.office));
     const allowed = cfg.office.radius + Math.min(acc, 100);
-    if (dist > allowed) {
+    const far = dist > allowed;
+    if (far && !(type === "out" && cfg.outAnywhere !== false)) {
       const far = dist >= 1000 ? `${(dist / 1000).toFixed(1).replace(".", ",")} km` : `${dist} m`;
       return res.status(403).json({ error: "too_far", distance: dist, message: `Siz sexdan ${far} uzoqdasiz. Belgilash faqat sex hududida (${cfg.office.radius} m) mumkin.` });
     }
@@ -310,10 +354,13 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     const mine = data[req.user.id] || (data[req.user.id] = {});
     const existing = mine[date] || {};
     // Avval joylashuvni tekshirib olamiz — selfi keyin olinadi (uzoqda turib bekorga rasm tushirmasin)
-    if (dryRun) return res.json({ ok: true, dryRun: true, distance: dist, needPhoto: type === "in" && !!cfg.photo && !existing.in, already: type === "in" && !!existing.in });
+    // Face ID tasdig'i (yoqilgan bo'lsa va xodimda Face ID bor bo'lsa) — faqat «Keldim»
+    const needBio = type === "in" && !!cfg.faceIdIn && !!bio?.hasPasskey(req.user.id) && !existing.in;
+    if (dryRun) return res.json({ ok: true, dryRun: true, distance: dist, far, needPhoto: type === "in" && !!cfg.photo && !existing.in, needBio, already: type === "in" && !!existing.in });
     const rec = mine[date] || (mine[date] = {});
     if (type === "in") {
       if (rec.in) return res.json({ ok: true, already: true, record: rec });
+      if (needBio && !bio.recentlyVerified(req.user.id)) return res.status(403).json({ error: "bio_required", message: "Avval Face ID bilan tasdiqlang" });
       if (cfg.photo) {
         if (!photo) return res.status(400).json({ error: "photo_required", message: "Selfi kerak — kamerani yoqib, rasmga tushing" });
         const saved = savePhoto(photo, req.user.id, date);
@@ -323,15 +370,23 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
       rec.in = now.toISOString(); rec.inDist = dist;
     } else {
       rec.out = now.toISOString(); rec.outDist = dist; // oxirgi "Ketdim" hisobga olinadi
+      if (far) rec.outFar = true; else delete rec.outFar;
+      delete rec.outAuto;
     }
     writeMonth(date, data);
     const emp = readEmployees().find((e) => e.id === req.user.id);
     const today = evalDay(emp, date, rec, cfg, now);
     res.json({ ok: true, record: rec, today });
-    // Kechikish qayd etildi — xodimning o'ziga (shu oydagi jami bilan)
+    // Xodimning o'ziga tasdiq: kechikkan bo'lsa — kechikish (shu oydagi jami bilan), aks holda oddiy tasdiq
+    const dm = dayLen(scheduleFor(emp, cfg));
     if (type === "in" && today.status === "late" && cfg.personal.late) {
       const m = report(`${date.slice(0, 7)}-01`, date, { employeeId: emp.id }).rows[0]?.sum;
-      notifyEmployee(emp.id, `⏰ Bugun <b>${today.lateMin} daqiqa</b> kechikdingiz (${today.in}).${m ? `\nBu oy: ${m.late} marta, jami ${fmtDur(m.lateMin)}.` : ""}`).catch(() => {});
+      notifyEmployee(emp.id, `⏰ Keldingiz: ${today.in} — bugun <b>${fmtDur(today.lateMin)}</b> kechikdingiz.${m ? `\nBu oy: ${m.late} marta, jami ${fmtDur(m.lateMin, dm)}.` : ""}`).catch(() => {});
+    } else if (type === "in" && cfg.personal.confirm) {
+      notifyEmployee(emp.id, `✅ Keldingiz: <b>${today.in}</b>. Ishingizga omad!`).catch(() => {});
+    } else if (type === "out" && cfg.personal.confirm) {
+      const farTxt = far ? `\n📍 Sexdan tashqarida belgilandi (${dist >= 1000 ? `${(dist / 1000).toFixed(1).replace(".", ",")} km` : `${dist} m`}).` : "";
+      notifyEmployee(emp.id, `👋 Ketdingiz: <b>${today.out}</b>. Bugun ishladingiz: ${fmtDur(today.workedMin)}${today.overMin ? ` (+${fmtDur(today.overMin)} qo'shimcha)` : ""}.${farTxt}`).catch(() => {});
     }
   });
 
@@ -356,6 +411,9 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
       personal: b.personal ? Object.fromEntries(Object.keys(DEFAULT_CONFIG.personal).map((k) => [k, !!b.personal[k]])) : cur.personal,
       appUrl: (() => { const o = req.get("origin"); return o && /^https?:\/\//.test(o) ? o : cur.appUrl; })(),
       photoDays: b.photoDays !== undefined ? Math.min(365, Math.max(7, Number(b.photoDays) || 60)) : cur.photoDays,
+      autoOut: b.autoOut !== undefined ? !!b.autoOut : cur.autoOut,
+      outAnywhere: b.outAnywhere !== undefined ? !!b.outAnywhere : cur.outAnywhere,
+      faceIdIn: b.faceIdIn !== undefined ? !!b.faceIdIn : cur.faceIdIn,
       since: cur.since || null,
     };
     // Sex joylashuvi birinchi marta belgilangan kun — hisob shu kundan boshlanadi
@@ -370,6 +428,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
       if (Object.keys(clean).length) next.overrides[String(id).slice(0, 60)] = clean;
     });
     upsertStmt.run("uvix:attConfig", JSON.stringify(next));
+    onConfigChanged(req.user?.name, cur, next);
     res.json({ config: next });
   });
 
@@ -394,9 +453,16 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     const prev = mine[date] || {};
     const rec = { ...prev, in: inHm === "" ? undefined : iso(inHm) || prev.in, out: outHm === "" ? undefined : iso(outHm) || prev.out,
       manual: { by: req.user.name, reason: String(reason).trim().slice(0, 200), at: new Date().toISOString() } };
+    delete rec.outAuto; delete rec.outFar;
     if (!rec.in && !rec.out) delete mine[date]; else mine[date] = rec;
     writeMonth(date, data);
     res.json({ ok: true, record: rec });
+    // Shaffoflik: xodimga admin nimani o'zgartirganini yuboramiz
+    if (config().personal.manualNotice) {
+      const was = [prev.in ? `kelish ${hmOf(prev.in)}` : "kelish —", prev.out ? `ketish ${hmOf(prev.out)}` : "ketish —"].join(", ");
+      const now2 = [rec.in ? `kelish ${hmOf(rec.in)}` : "kelish —", rec.out ? `ketish ${hmOf(rec.out)}` : "ketish —"].join(", ");
+      notifyEmployee(employeeId, `✏️ <b>${req.user.name}</b> ${dayLabel(date)} davomatingizni o'zgartirdi:\n${was} → <b>${now2}</b>\nSabab: ${String(reason).trim().slice(0, 200).replace(/[<>&]/g, "")}`).catch(() => {});
+    }
   });
 
   // Selfi (faqat admin)
@@ -420,6 +486,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     res.json({ ok: !!ok, text, message: ok ? "Yuborildi" : "Yuborilmadi — Sozlamalarda bot token, guruh chat ID yoki shaxsiy Telegram'ingizni ulang" });
   });
 
-  return { report, tick, dailyText, periodText, local, cleanupPhotos };
+  return { report, tick, dailyText, periodText, local, cleanupPhotos, fmtDur };
 };
 module.exports.DEFAULT_CONFIG = DEFAULT_CONFIG;
+module.exports.fmtDur = fmtDur;

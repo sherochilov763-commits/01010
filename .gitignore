@@ -1,2 +1,16 @@
+# Kutubxonalar (npm install bilan qayta o'rnatiladi)
 node_modules/
+# Maxfiy sozlamalar
 .env
+.env.*
+# Yig'ilgan fayllar (build bilan qayta yaratiladi)
+frontend/dist/
+# Ma'lumotlar bazasi va yuklangan rasmlar — GitHub'ga chiqmasin
+*.db
+*.db-*
+*.sqlite
+backend/uploads/
+backend/data/
+# Tizim fayllari
+.DS_Store
+Thumbs.db

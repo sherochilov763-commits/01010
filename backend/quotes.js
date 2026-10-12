@@ -22,6 +22,15 @@ const num = (v) => { const n = Number(String(v ?? "").replace(/\s/g, "").replace
 const round2 = (n) => Math.round(n * 100) / 100;
 const money = (n) => `${Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} so'm`;
 const dec = (n) => String(round2(n)).replace(".", ",");
+const round3 = (n) => Math.round(n * 1000) / 1000;
+const DIM_UNITS = ["mm", "sm", "m"];
+// O'lcham pozitsiya birligida: 2000×1600 mm · 200×160 sm · 2×1,6 m (eski pozitsiyalar — m)
+function sizeText(it) {
+  if (!(it.w && it.h)) return "";
+  const du = DIM_UNITS.includes(it.du) ? it.du : "m";
+  const f = (v) => (du === "mm" ? String(Math.round(v * 1000)) : du === "sm" ? String(Math.round(v * 1000) / 10).replace(".", ",") : dec(v));
+  return `${f(it.w)}×${f(it.h)} ${du}`;
+}
 const paidOf = (o) => (o.payments || []).filter((p) => !p.deletedAt).reduce((s, p) => s + (p.amount || 0), 0);
 const dueOf = (o) => Math.max(0, (o.agreementUzs || 0) - paidOf(o));
 class Bad extends Error { constructor(msg, code = 400, extra) { super(msg); this.status = code; this.extra = extra; } }
@@ -37,7 +46,8 @@ function cleanPrices(list) {
     id: str(p?.id, 40) || rid(),
     material: str(p?.material, 60),
     unit: p?.unit === "pcs" ? "pcs" : "m2",
-    price: Math.max(0, Math.min(1e10, Math.round(num(p?.price) || 0))),
+    cur: p?.cur === "usd" ? "usd" : "uzs",
+    price: p?.cur === "usd" ? Math.max(0, Math.min(1e6, round2(num(p?.price) || 0))) : Math.max(0, Math.min(1e10, Math.round(num(p?.price) || 0))),
     minArea: Math.max(0, Math.min(100, round2(num(p?.minArea) || 0))),
     inkUsd: Math.max(0, Math.min(1000, round2(num(p?.inkUsd) || 0))),
   })).filter((p) => p.material);
@@ -57,23 +67,38 @@ function cleanItem(raw, prices) {
   const hasDims = w > 0 && h > 0;
   if (unit === "m2" && !(hasDims && w <= 100 && h <= 100)) throw new Bad(`«${label}»: eni va bo'yini kiriting`);
   if (hasDims && (w > 100 || h > 100)) throw new Bad(`«${label}»: o'lcham juda katta`);
-  const price = Math.round(num(raw.price));
+  // Narx dollarda kiritilgan bo'lsa: priceUsd × kurs (kurs pozitsiyada saqlanadi — keyin o'zgarmaydi)
+  const isUsd = raw.cur === "usd";
+  let price, priceUsd = 0, rate = 0;
+  if (isUsd) {
+    priceUsd = round2(num(raw.priceUsd));
+    rate = round2(num(raw.rate));
+    if (!(priceUsd > 0 && priceUsd <= 1e6)) throw new Bad(`«${label}»: dollar narxi noto'g'ri`);
+    if (!(rate >= 1000 && rate <= 1e6)) throw new Bad(`«${label}»: dollar kursi noto'g'ri`);
+    price = Math.round(priceUsd * rate);
+  } else {
+    price = Math.round(num(raw.price));
+  }
   if (!(price >= 0 && price <= 1e10)) throw new Bad(`«${label}»: narx noto'g'ri`);
   const ownMin = raw.minArea === undefined || raw.minArea === null || raw.minArea === "" ? NaN : num(raw.minArea);
   const minArea = Math.max(0, Math.min(100, round2(Number.isFinite(ownMin) ? ownMin : (p?.minArea || 0))));
   const rawArea = hasDims ? round2(w * h * qty) : 0;
   const area = unit === "m2" ? Math.max(rawArea, minArea) : rawArea;
-  const total = unit === "m2" ? Math.round(area * price) : price * qty;
+  const units = unit === "m2" ? area : qty;
+  const total = isUsd ? Math.round(units * priceUsd * rate) : Math.round(units * price);
   if (!(total > 0)) throw new Bad(`«${label}»: summa 0 bo'lmasligi kerak`);
-  return {
+  const out = {
     id: str(raw.id, 40) || rid(), title, material, priceId: p?.id || null, unit,
-    w: hasDims ? round2(w) : 0, h: hasDims ? round2(h) : 0, qty, price, minArea, rawArea, area, total,
+    w: hasDims ? round3(w) : 0, h: hasDims ? round3(h) : 0, du: DIM_UNITS.includes(raw.du) ? raw.du : "m", qty, price, minArea, rawArea, area, total,
     inkUsd: p?.inkUsd || 0, note: str(raw.note, 200),
   };
+  if (isUsd) Object.assign(out, { cur: "usd", priceUsd, rate, totalUsd: round2(units * priceUsd) });
+  return out;
 }
 function describeItem(it) {
-  const size = it.w && it.h ? `${dec(it.w)}×${dec(it.h)} m` : "";
-  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : ""].filter(Boolean).join(" · ");
+  const size = sizeText(it);
+  const usd = it.cur === "usd" ? `${dec(it.priceUsd)} $/${it.unit === "pcs" ? "dona" : "m²"} (kurs ${dec(it.rate).replace(/\B(?=(\d{3})+(?!\d))/, " ")})` : "";
+  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : "", usd].filter(Boolean).join(" · ");
 }
 
 // Bitta to'lov (bir nechta usulda bo'lishi mumkin) → buyurtmalar bo'yicha qatorlar
@@ -94,7 +119,7 @@ function spreadPayments(perOrder, orderIds, lines) {
   return rows;
 }
 
-module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrdersWritten = () => {}, onOrderReady = () => {}, now = () => new Date() }) {
+module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrdersWritten = () => {}, onOrderReady = () => {}, now = () => new Date(), getFx = null, onSalesChanged = () => {} }) {
   const readJson = (k, fb) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
   const raw = (k) => { const r = getStmt.get(k); return r ? r.value : null; };
   const write = (k, v) => { const s = JSON.stringify(v); upsertStmt.run(k, s); return s; };
@@ -152,14 +177,22 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
   }
 
   // ---------- Narxlar ro'yxati ----------
-  app.get("/api/sales/config", requireAuth, requireStaff, (req, res) => res.json({ config: salesConfig() }));
-  app.put("/api/sales/config", requireAuth, requireAdmin, (req, res) => {
+  // Kurs (fx) — kalkulyatorda dollar narxini so'mga o'girish uchun
+  const fxInfo = async () => {
+    if (getFx) { try { return await getFx(); } catch (e) { /* pastdagi zaxira */ } }
+    const s = readJson("uvix:settings", {}) || {};
+    const manual = Number(s.usdRate) > 0 ? Number(s.usdRate) : 12700;
+    return { rate: manual, source: "manual", auto: false, manual, cbu: null };
+  };
+  app.get("/api/sales/config", requireAuth, requireStaff, async (req, res) => res.json({ config: salesConfig(), fx: await fxInfo() }));
+  app.put("/api/sales/config", requireAuth, requireAdmin, async (req, res) => {
     const b = req.body || {};
     const cur = salesConfig();
     const pct = Math.round(num(b.advancePct));
     const next = { advancePct: pct >= 0 && pct <= 100 ? pct : cur.advancePct, prices: Array.isArray(b.prices) ? cleanPrices(b.prices) : cur.prices };
     write(KEY_CFG, next);
-    res.json({ config: next });
+    onSalesChanged(req.user?.name, cur, next);
+    res.json({ config: next, fx: await fxInfo() });
   });
 
   // ---------- Smetani saqlash ----------
@@ -267,14 +300,15 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
 
     const created = items.map((it, i) => {
       seq += 1;
+      const itemRate = it.cur === "usd" && it.rate > 0 ? it.rate : rate;
       const usdTotal = round2(it.area * (it.inkUsd || 0));
-      const kraska = Math.round(usdTotal * rate);
+      const kraska = Math.round(usdTotal * itemRate);
       const tk = tasks[i];
       const o = {
         id: rid(), orderNumber: prefix + String(seq).padStart(3, "0"), date, customer, subcategory,
         title: it.title || it.material, materialType: it.material,
         materialLines: [{ materialType: it.material, area: it.area, priceUsd: it.inkUsd || 0, totalUsd: usdTotal }],
-        manager, area: it.area, exchangeRate: rate, agreementUsd: usdTotal, agreementUzs: it.total,
+        manager, area: it.area, exchangeRate: itemRate, agreementUsd: usdTotal, agreementUzs: it.total,
         kraskaLines: kraska > 0 ? [{ amount: kraska }] : [], kraskaSum: kraska, materialSum: 0, payments: [],
         note: [describeItem(it), it.note].filter(Boolean).join(" · "),
         createdBy: req.user.name, createdAt: at, photos: [],
@@ -283,7 +317,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
       };
       const printBase = { quality: "1440 dpi", colorProfile: "CMYK", material: it.material, area: it.area, notes: it.note || "" };
       if (tk.mode === "design") {
-        o.design = { assigneeId: tk.designerId, status: "new", statusAt: at, assignedAt: at, format: it.w && it.h ? `${dec(it.w)}×${dec(it.h)} m${it.qty > 1 ? ` × ${it.qty}` : ""}` : "", fileType: "", notes: it.note || "" };
+        o.design = { assigneeId: tk.designerId, status: "new", statusAt: at, assignedAt: at, format: it.w && it.h ? `${sizeText(it)}${it.qty > 1 ? ` × ${it.qty}` : ""}` : "", fileType: "", notes: it.note || "" };
         if (tk.printerId) o.print = { ...printBase, assigneeId: tk.printerId };
         o.prodStage = "design";
       } else if (tk.mode === "print") {

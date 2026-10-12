@@ -78,7 +78,7 @@ export function QuoteModal({ lead, customers, employees, allOrders, currentUser,
               </Field>
             </div>
           )}
-          <QuoteBuilder items={items} onChange={setItems} prices={sales.prices || []} P={P} advancePct={sales.advancePct} titleRef={titleRef} />
+          <QuoteBuilder items={items} onChange={setItems} prices={sales.prices || []} fx={sales.fx} P={P} advancePct={sales.advancePct} titleRef={titleRef} />
           {!sales.loading && !(sales.prices || []).length && isAdmin && (
             <div style={{ fontSize: 12.5, color: THEME.muted }}>Maslahat: Sozlamalar → «Narxlar va smeta»da materiallar narxini kiriting — kalkulyator narxni o'zi qo'yadi.</div>
           )}

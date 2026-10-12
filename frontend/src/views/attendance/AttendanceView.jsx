@@ -10,6 +10,7 @@ import { exportRows } from "../../lib/excel.js";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
 import { fetchStaffTelegram } from "../../storage.js";
 import { getPosition } from "../../lib/geo.js";
+import { takeOpenTab } from "../../lib/deeplink.js";
 
 // ---------- yordamchilar ----------
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
@@ -23,7 +24,23 @@ const weekStart = (s) => { const d = parse(s); const wd = d.getDay() || 7; d.set
 const monthStart = (s) => `${s.slice(0, 7)}-01`;
 const monthEnd = (s) => { const d = parse(monthStart(s)); d.setMonth(d.getMonth() + 1); d.setDate(0); return ymd(d); };
 const dLabel = (s) => { const d = parse(s); return `${d.getDate()}-${MONTHS[d.getMonth()]}`; };
-const fmtDur = (min) => { if (!min) return "—"; const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} s${m ? ` ${m} daq` : ""}` : `${m} daq`; };
+// «1 kun 2 soat 15 daq» — 1 kun = xodimning ish kuni (jadval bo'yicha, dayMin daqiqa)
+export function fmtDur(min, dayMin = 0) {
+  min = Math.max(0, Math.round(min || 0));
+  if (!min) return "—";
+  const d = dayMin > 0 ? Math.floor(min / dayMin) : 0;
+  const rest = min - d * dayMin;
+  const h = Math.floor(rest / 60), m = rest % 60;
+  return [d ? `${d} kun` : "", h ? `${h} soat` : "", m ? `${m} daq` : ""].filter(Boolean).join(" ");
+}
+const farText = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1).replace(".", ",")} km` : `${m} m`);
+// «Ketdim» belgilari: avto / sexdan tashqarida
+function OutMarks({ day }) {
+  return <>
+    {day.outAuto && <span title="«Ketdim» bosilmagan — jadval bo'yicha avtomatik yozildi" style={{ fontSize: 10.5, fontWeight: 700, color: THEME.muted, border: `1px solid ${THEME.border}`, borderRadius: 20, padding: "0 6px", marginLeft: 4 }}>avto</span>}
+    {day.outFar && <span title="«Ketdim» sex hududidan tashqarida bosilgan" style={{ fontSize: 10.5, fontWeight: 700, color: "#B45309", background: "#FDF3E3", borderRadius: 20, padding: "0 6px", marginLeft: 4 }}>sexdan tashqarida{day.outDist != null ? ` · ${farText(day.outDist)}` : ""}</span>}
+  </>;
+}
 const fmtH = (min) => (min ? `${(min / 60).toFixed(1).replace(".", ",")} s` : "—");
 
 const STATUS = {
@@ -38,7 +55,7 @@ const STATUS = {
 function StatusBadge({ day }) {
   const s = STATUS[day.status] || STATUS.pending;
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: s.color, background: `${s.color}1F`, padding: "3px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>
-    <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />{s.label}{day.lateMin ? ` · ${day.lateMin} daq` : ""}
+    <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />{s.label}{day.lateMin ? ` · ${fmtDur(day.lateMin)}` : ""}
   </span>;
 }
 const Avatar34 = ({ name }) => <UiAvatar name={name} size={34} />;
@@ -85,7 +102,7 @@ function SelfieLightbox({ id, title, onClose }) {
 
 // ================================================================
 export function AttendanceView({ currentUser, isAdmin }) {
-  const [tab, setTab] = useState(isAdmin ? "today" : "mine");
+  const [tab, setTab] = useState(() => takeOpenTab("attendance", isAdmin ? ["today","week","month","mine","settings"] : ["mine"]) || (isAdmin ? "today" : "mine"));
   const [config, setConfig] = useState(null);
   const reloadConfig = useCallback(() => isAdmin && fetchAttendanceConfig().then(setConfig).catch(() => {}), [isAdmin]);
   useEffect(() => { reloadConfig(); }, [reloadConfig]);
@@ -156,7 +173,7 @@ function TodayTab() {
             <StatusBadge day={r.day} />
             <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: THEME.muted, minWidth: 190 }}>
               <span>Keldi: <b style={{ color: THEME.text }}>{r.day.in || "—"}</b>{r.day.inDist != null && <span title="Sexdan masofa"> · {r.day.inDist} m</span>}</span>
-              <span>Ketdi: <b style={{ color: THEME.text }}>{r.day.out || "—"}</b></span>
+              <span>Ketdi: <b style={{ color: THEME.text }}>{r.day.out || "—"}</b><OutMarks day={r.day} /></span>
             </div>
             {r.day.manual && <span title={`${r.day.manual.by}: ${r.day.manual.reason}`} style={{ fontSize: 11, color: THEME.muted }}>✎ qo'lda</span>}
             <button type="button" onClick={() => setEdit({ employee: r.employee, day: { ...r.day, date: today } })} aria-label={`${r.employee.name} davomatini to'g'rilash`} style={{ border: 0, background: "none", color: THEME.muted, cursor: "pointer", padding: 4 }}><Pencil size={15} /></button>
@@ -187,11 +204,16 @@ function PeriodTab({ kind }) {
 
   function exportExcel() {
     const rows = [];
-    data.rows.forEach((r) => r.days.forEach((d) => rows.push({
+    data.rows.forEach((r) => { r.days.forEach((d) => rows.push({
       "Xodim": r.employee.name, "Sana": d.date, "Holat": STATUS[d.status]?.label || d.status, "Keldi": d.in || "", "Ketdi": d.out || "",
-      "Kechikish (daq)": d.lateMin || 0, "Erta ketish (daq)": d.earlyMin || 0, "Qo'shimcha (daq)": d.overMin || 0,
-      "Ishlagan (soat)": d.workedMin ? +(d.workedMin / 60).toFixed(2) : 0, "Izoh": d.manual ? `Qo'lda (${d.manual.by}): ${d.manual.reason}` : d.missingOut ? "Ketdim belgilanmagan" : "",
-    })));
+      "Kechikish (daq)": d.lateMin || 0, "Kechikish": d.lateMin ? fmtDur(d.lateMin) : "", "Erta ketish (daq)": d.earlyMin || 0, "Qo'shimcha (daq)": d.overMin || 0,
+      "Ishlagan (soat)": d.workedMin ? +(d.workedMin / 60).toFixed(2) : 0, "Izoh": [d.manual ? `Qo'lda (${d.manual.by}): ${d.manual.reason}` : d.missingOut ? "Ketdim belgilanmagan" : "", d.outAuto ? "Ketdim — avto" : "", d.outFar ? `Ketdim sexdan tashqarida (${d.outDist} m)` : ""].filter(Boolean).join("; "),
+    }));
+      const s = r.sum;
+      rows.push({ "Xodim": r.employee.name, "Sana": "JAMI", "Holat": `${s.present}/${s.workdays} kun keldi`, "Keldi": "", "Ketdi": "",
+        "Kechikish (daq)": s.lateMin, "Kechikish": fmtDur(s.lateMin, s.dayMin), "Erta ketish (daq)": s.earlyMin, "Qo'shimcha (daq)": s.overMin,
+        "Ishlagan (soat)": +(s.workedMin / 60).toFixed(2), "Izoh": `1 kun = ${fmtDur(s.dayMin)} (ish kuni)` });
+    });
     exportRows(rows, "Davomat", `UVIX_davomat_${from}_${to}.xlsx`);
   }
 
@@ -240,9 +262,9 @@ function PeriodTab({ kind }) {
                       </div>
                     </td>
                     <td style={td}>{s.present}/{s.workdays}</td>
-                    <td style={{ ...td, color: s.late ? "#F59E0B" : THEME.muted, fontWeight: s.late ? 700 : 400 }}>{s.late ? `${s.late}× · ${fmtDur(s.lateMin)}` : "—"}</td>
-                    <td style={{ ...td, color: s.early ? "#F97316" : THEME.muted }}>{s.early ? `${s.early}× · ${fmtDur(s.earlyMin)}` : "—"}</td>
-                    <td style={{ ...td, color: s.overMin ? "#3B82F6" : THEME.muted }}>{fmtDur(s.overMin)}</td>
+                    <td style={{ ...td, color: s.late ? "#F59E0B" : THEME.muted, fontWeight: s.late ? 700 : 400 }}>{s.late ? `${s.late}× · ${fmtDur(s.lateMin, s.dayMin)}` : "—"}</td>
+                    <td style={{ ...td, color: s.early ? "#F97316" : THEME.muted }}>{s.early ? `${s.early}× · ${fmtDur(s.earlyMin, s.dayMin)}` : "—"}</td>
+                    <td style={{ ...td, color: s.overMin ? "#3B82F6" : THEME.muted }}>{fmtDur(s.overMin, s.dayMin)}</td>
                     <td style={{ ...td, color: s.absent ? "#EF4444" : THEME.muted, fontWeight: s.absent ? 700 : 400 }}>{s.absent || "—"}</td>
                     <td style={{ ...td, paddingRight: 16, fontWeight: 700 }}>{fmtH(s.workedMin)}</td>
                   </tr>,
@@ -252,7 +274,7 @@ function PeriodTab({ kind }) {
                         <div key={d.date} style={{ display: "flex", alignItems: "center", gap: 12, padding: "7px 0", borderBottom: `1px solid ${THEME.border}`, fontSize: 12.5, flexWrap: "wrap" }}>
                           <span style={{ width: 120, fontWeight: 600 }}>{dLabel(d.date)}, {WD_SHORT[parse(d.date).getDay()]}</span>
                           <StatusBadge day={d} />
-                          <span style={{ color: THEME.muted }}>{d.in || "—"} → {d.out || (d.missingOut ? "belgilanmagan" : "—")}</span>
+                          <span style={{ color: THEME.muted }}>{d.in || "—"} → {d.out || (d.missingOut ? "belgilanmagan" : "—")}<OutMarks day={d} /></span>
                           {d.earlyMin > 0 && <span style={{ color: "#F97316" }}>↩ {fmtDur(d.earlyMin)} erta</span>}
                           {d.overMin > 0 && <span style={{ color: "#3B82F6" }}>+ {fmtDur(d.overMin)}</span>}
                           {d.manual && <span title={d.manual.reason} style={{ color: THEME.muted }}>✎ {d.manual.by}: {d.manual.reason}</span>}
@@ -327,9 +349,9 @@ function MineTab() {
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {stat("Keldi", `${s.present || 0}/${s.workdays || 0}`)}
-        {stat("Kechikish", s.late ? `${s.late}× · ${fmtDur(s.lateMin)}` : "—", s.late ? "#F59E0B" : undefined)}
+        {stat("Kechikish", s.late ? `${s.late}× · ${fmtDur(s.lateMin, data.dayMin)}` : "—", s.late ? "#F59E0B" : undefined)}
         {stat("Erta ketish", s.early ? `${s.early}×` : "—", s.early ? "#F97316" : undefined)}
-        {stat("Qo'shimcha", fmtDur(s.overMin), s.overMin ? "#3B82F6" : undefined)}
+        {stat("Qo'shimcha", fmtDur(s.overMin, data.dayMin), s.overMin ? "#3B82F6" : undefined)}
         {stat("Ishlagan", fmtH(s.workedMin))}
       </div>
       <Card style={{ padding: 0 }}>
@@ -338,7 +360,7 @@ function MineTab() {
           <div key={d.date} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderTop: i ? `1px solid ${THEME.border}` : "none", fontSize: 13, flexWrap: "wrap" }}>
             <span style={{ width: 120, fontWeight: 600 }}>{dLabel(d.date)}, {WD_SHORT[parse(d.date).getDay()]}</span>
             <StatusBadge day={d} />
-            <span style={{ color: THEME.muted }}>{d.in || "—"} → {d.out || (d.missingOut ? "belgilanmagan" : "—")}</span>
+            <span style={{ color: THEME.muted }}>{d.in || "—"} → {d.out || (d.missingOut ? "belgilanmagan" : "—")}<OutMarks day={d} /></span>
             {d.workedMin > 0 && <span style={{ marginLeft: "auto", fontWeight: 700 }}>{fmtDur(d.workedMin)}</span>}
           </div>
         ))}
@@ -421,7 +443,16 @@ function SettingsTab({ config, onSaved }) {
           <input value={c.photoDays ?? 60} onChange={(e) => set({ photoDays: parseInt(e.target.value, 10) || 60 })} style={{ ...getInputStyle(), width: 70 }} inputMode="numeric" aria-label="Selfi saqlash muddati (kun)" />
           <span style={{ fontSize: 12, color: THEME.muted }}>kun</span>
         </div>
-        <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>Selfi faqat jonli kameradan olinadi (galereyadan emas), ustiga vaqt yoziladi. Faqat admin ko'radi, muddat o'tgach o'zi o'chadi.</div>
+        <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>Selfi faqat jonli kameradan olinadi (galereyadan emas), ustiga vaqt yoziladi. «Keldim» bosilgach kamera o'zi suratga oladi. Faqat admin ko'radi, muddat o'tgach o'zi o'chadi.</div>
+        <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 12, paddingTop: 10, display: "grid", gap: 6 }} data-testid="att-out-settings">
+          {[["autoOut", "«Ketdim» unutilsa — ish tugaganidan 3 soat keyin jadval bo'yicha tugash vaqti yoziladi («avto», qo'shimcha vaqt hisoblanmaydi)"],
+            ["outAnywhere", "«Ketdim»ni sexdan tashqarida ham bosish mumkin — sizga «sexdan tashqarida · masofa» bilan ko'rinadi"],
+            ["faceIdIn", "«Keldim»dan oldin Face ID / barmoq izi tasdig'i (Face ID yoqilgan telefonlarda)"]].map(([k, l]) => (
+            <label key={k} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, cursor: "pointer", lineHeight: 1.4 }}>
+              <input type="checkbox" checked={k === "faceIdIn" ? !!c[k] : c[k] !== false} onChange={(e) => set({ [k]: e.target.checked })} style={{ marginTop: 2 }} /> {l}
+            </label>
+          ))}
+        </div>
       </Card>
 
       <Card>
@@ -462,7 +493,7 @@ function SettingsTab({ config, onSaved }) {
           <Field label="Chat ID (ixtiyoriy)"><input value={c.reportChatId || ""} onChange={(e) => set({ reportChatId: e.target.value })} placeholder="Bo'sh — bot chati" style={getInputStyle()} /></Field>
         </div>
         <div style={{ borderTop: `1px dashed ${THEME.border}`, marginTop: 12, paddingTop: 10, fontWeight: 700, fontSize: 13 }}>Xodimning o'ziga (bot orqali)</div>
-        {[["pre", "Ish boshlanishidan 15 daqiqa oldin eslatma"], ["notStarted", "Imtiyozdan keyin hali «Keldim» bosmagan bo'lsa"], ["late", "Kech kelganda: «Bugun N daqiqa kechikdingiz, bu oy: …»"], ["forgotOut", "Ish tugab 30 daqiqa o'tib ham «Ketdim» bosilmasa"], ["weekly", "Har dushanba — shaxsiy haftalik xulosa"]].map(([k, l]) => (
+        {[["pre", "Ish boshlanishidan 15 daqiqa oldin eslatma"], ["notStarted", "Imtiyozdan keyin hali «Keldim» bosmagan bo'lsa"], ["late", "Kech kelganda: «Bugun N daqiqa kechikdingiz, bu oy: …»"], ["forgotOut", "Ish tugab 30 daqiqa o'tib ham «Ketdim» bosilmasa (xabarda «Ketdim» tugmasi)"], ["confirm", "«Keldim» / «Ketdim» bosilganda tasdiq: «✅ Keldingiz: 08:57»"], ["manualNotice", "Siz davomatini qo'lda o'zgartirsangiz — nima o'zgargani"], ["weekly", "Har dushanba — shaxsiy haftalik xulosa"], ["monthly", "Har oyning 1-sanasi — shaxsiy oylik xulosa"]].map(([k, l]) => (
           <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
             <input type="checkbox" checked={!!c.personal?.[k]} onChange={(e) => set({ personal: { ...c.personal, [k]: e.target.checked } })} /> {l}
           </label>

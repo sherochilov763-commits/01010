@@ -33,11 +33,11 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
   }
 
   // Xodimga shaxsan yozish. Xodim botni bloklagan bo'lsa — bog'lanish olib tashlanadi.
-  async function sendToEmployee(empId, text) {
+  async function sendToEmployee(empId, text, extra) {
     const l = links()[empId];
     if (!l?.chatId) return false;
     try {
-      await api("sendMessage", { chat_id: l.chatId, text, parse_mode: "HTML", disable_web_page_preview: true });
+      await api("sendMessage", { chat_id: l.chatId, text, parse_mode: "HTML", disable_web_page_preview: true, ...(extra && typeof extra === "object" ? extra : {}) });
       return true;
     } catch (e) {
       if (e.code === 403) { const all = links(); delete all[empId]; saveLinks(all); }
@@ -65,6 +65,17 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
       const emp = readEmployees().find((e) => e.id === t.empId);
       if (!emp) return;
       const all = links();
+      // Akkaunt almashtirilsa — eski Telegram'ga va adminlarga xabar (PIN tiklash kodi endi yangi chatga boradi)
+      const prev = all[emp.id];
+      if (prev?.chatId && prev.chatId !== chatId) {
+        const who = msg.from?.username ? `@${msg.from.username}` : [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ") || "boshqa akkaunt";
+        await api("sendMessage", { chat_id: prev.chatId, parse_mode: "HTML", text: `⚠️ UVIX: <b>${escapeHtml(emp.name)}</b> hisobi boshqa Telegram'ga (${escapeHtml(who)}) ulandi.
+Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {});
+        for (const a of readEmployees().filter((e) => e.role === "admin" && e.id !== emp.id)) {
+          const al = all[a.id];
+          if (al?.chatId && al.chatId !== chatId) await api("sendMessage", { chat_id: al.chatId, parse_mode: "HTML", text: `⚠️ <b>${escapeHtml(emp.name)}</b>ning Telegram akkaunti o'zgartirildi: endi ${escapeHtml(who)}.` }).catch(() => {});
+        }
+      }
       // bitta Telegram — bitta xodim
       Object.keys(all).forEach((k) => { if (all[k].chatId === chatId && k !== emp.id) delete all[k]; });
       all[emp.id] = { chatId, username: msg.from?.username || "", name: [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" "), linkedAt: new Date().toISOString() };
