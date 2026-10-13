@@ -2,9 +2,9 @@
 // Admin uchun tepada «Tizim holati»; matnli o'zgarishlar pastdagi bitta «Saqlash» paneli orqali saqlanadi.
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Bell, ChevronLeft, ChevronRight, Database, History, LayoutGrid, Lock, LogOut, Palette, Plug, Search, ShieldCheck, Tag, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Eye, EyeOff, Loader2, ChevronLeft, ChevronRight, Database, History, LayoutGrid, Lock, LogOut, Palette, Plug, Search, ShieldCheck, Tag, Trash2, UserRound } from "lucide-react";
 import PasskeySection from "../../auth/PasskeySection.jsx";
-import { authLogin, fetchSettingsHealth } from "../../storage.js";
+import { authLogin, checkBotToken, fetchMyTelegram, fetchSettingsHealth } from "../../storage.js";
 import { Badge, Button, Card, Field, Modal, getInputStyle } from "../../components/ui.jsx";
 import { money } from "../../lib/format.js";
 import { roleLabel } from "../../constants.js";
@@ -67,7 +67,8 @@ function SettingsLayout(props) {
       setStatus({ ...st, items, warnings: items.filter((x) => !x.ok).map((x) => ({ section: x.section || "bolimlar" })) });
     }).catch(() => {});
   };
-  useEffect(reloadStatus, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+  // sozlamalar saqlanganda (masalan bot ulandi) «Tizim holati» ham yangilanadi
+  useEffect(() => { const t = setTimeout(reloadStatus, 300); return () => clearTimeout(t); }, [isAdmin, props.settings]); // eslint-disable-line react-hooks/exhaustive-deps
   const { S, modal } = useSettingsBody(props);
   const meta = sections.find((s) => s.id === current);
   const warnFor = (id) => (status ? (status.warnings || []).filter((w) => w.section === id).length : 0);
@@ -173,6 +174,14 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   const [tgToken, setTgToken] = useState(settings?.telegramBotToken || "");
   const [tgChatId, setTgChatId] = useState(settings?.telegramChatId || "");
   const [tgMsg, setTgMsg] = useState("");
+  const [tgShow, setTgShow] = useState(false);
+  const [tgChecking, setTgChecking] = useState(false);
+  const [tgCheck, setTgCheck] = useState(null);
+  const [tgBotName, setTgBotName] = useState("");
+  useEffect(() => {
+    if (!isAdmin || !settings?.telegramBotToken) { setTgBotName(""); return; }
+    fetchMyTelegram().then((d) => setTgBotName(d?.bot || "")).catch(() => {});
+  }, [isAdmin, settings?.telegramBotToken]);
   const [backupTime, setBackupTime] = useState(settings?.backupTime || "21:00");
   const [backupMsg, setBackupMsg] = useState("");
   const [sendingNow, setSendingNow] = useState(false);
@@ -198,7 +207,26 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   }
 
   async function saveTelegram() {
-    await patchSettings({ telegramBotToken: tgToken.trim(), telegramChatId: "" });
+    // Saqlash paneli orqali ham — avval Telegram'da tekshiriladi
+    const ok = await connectBot();
+    if (!ok) throw new Error("Bot tokeni tekshiruvdan o'tmadi");
+  }
+  // Tokenni Telegram'da tekshirib (getMe), to'g'ri bo'lsa saqlaymiz
+  async function connectBot() {
+    const tk = tgToken.trim();
+    if (!tk) return false;
+    setTgChecking(true); setTgCheck(null); setTgMsg("");
+    try {
+      const r = await checkBotToken(tk);
+      await patchSettings({ telegramBotToken: tk, telegramChatId: "" });
+      setTgBotName(r.username || "");
+      setTgShow(false);
+      setTgMsg(`@${r.username} boti ulandi. Endi har bir xodim «Telegram'ni ulash»ni bossin (birinchi kirishda o'zi taklif qilinadi).`);
+      return true;
+    } catch (e) {
+      setTgCheck({ error: e.message });
+      return false;
+    } finally { setTgChecking(false); }
   }
   async function saveBackupTime() { await patchSettings({ backupTime }); }
   function disableTelegram() {
@@ -252,7 +280,8 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   const rateDirty = isAdmin && Number.isFinite(rateNum) && rateNum > 0 && rateNum !== Number(settings?.usdRate || 0);
   useDirty("rate", { dirty: rateDirty, label: "Dollar kursi", save: saveRate, reset: () => setRateStr(settings?.usdRate ? String(settings.usdRate) : "") });
   useDirty("pin", { dirty: pin.length > 0, label: "PIN", save: changePin, reset: () => setPin("") });
-  const tgDirty = isAdmin && tgUnlocked && tgToken.trim() !== (settings?.telegramBotToken || "");
+  const tgDirtyToken = tgToken.trim() !== (settings?.telegramBotToken || "");
+  const tgDirty = isAdmin && tgUnlocked && tgDirtyToken;
   useDirty("telegram", { dirty: tgDirty, label: "Telegram bot", save: saveTelegram, reset: () => setTgToken(settings?.telegramBotToken || "") });
   useDirty("backup", { dirty: isAdmin && backupTime !== (settings?.backupTime || "21:00"), label: "Zaxira vaqti", save: saveBackupTime, reset: () => setBackupTime(settings?.backupTime || "21:00") });
 
@@ -366,13 +395,32 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <Field label="Bot token">
-                <input value={tgToken} onChange={(e) => setTgToken(e.target.value)} style={getInputStyle()} placeholder="123456789:AAExampleTokenHere" data-testid="tg-token" />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ position: "relative", flex: "1 1 260px", minWidth: 0 }}>
+                    <input value={tgToken} onChange={(e) => { setTgToken(e.target.value); setTgCheck(null); }} onKeyDown={(e) => e.key === "Enter" && connectBot()}
+                      type={tgShow ? "text" : "password"} autoComplete="off" spellCheck={false}
+                      style={{ ...getInputStyle(), paddingRight: 40 }} placeholder="123456789:AAExampleTokenHere" data-testid="tg-token" />
+                    <button type="button" onClick={() => setTgShow((v) => !v)} aria-label={tgShow ? "Yashirish" : "Ko'rsatish"}
+                      style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", border: 0, background: "none", color: THEME.muted, cursor: "pointer", padding: 6, display: "inline-flex" }}>
+                      {tgShow ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {tgDirtyToken && (
+                    <Button onClick={connectBot} disabled={tgChecking || !tgToken.trim()} data-testid="tg-connect" style={{ flexShrink: 0 }}>
+                      {tgChecking ? <><Loader2 size={15} className="uvix-spin" /> Tekshirilmoqda…</> : settings?.telegramBotToken ? "Tekshirish va saqlash" : "Ulash"}
+                    </Button>
+                  )}
+                </div>
               </Field>
+              {tgCheck?.error && <div data-testid="tg-token-error" style={{ fontSize: 12.5, color: THEME.rose, display: "flex", gap: 6, lineHeight: 1.45 }}><AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />{tgCheck.error}</div>}
               {settings?.telegramBotToken && <div><Button variant="ghost" onClick={disableTelegram}>Botni o'chirish</Button></div>}
               {tgMsg && <div style={{ fontSize: 12, color: THEME.green }}>{tgMsg}</div>}
-              <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: 11.5, color: THEME.muted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 Holat:
-                {settings?.telegramBotToken ? <Badge color={THEME.green} bg={THEME.greenBg}>Bot ulangan</Badge> : <Badge color={THEME.muted} bg={THEME.surface}>O'chirilgan</Badge>}
+                {settings?.telegramBotToken
+                  ? <Badge color={THEME.green} bg={THEME.greenBg}><CheckCircle2 size={12} style={{ verticalAlign: -2 }} /> Bot ulangan{tgBotName ? ` · @${tgBotName}` : ""}</Badge>
+                  : <Badge color={THEME.muted} bg={THEME.surface}>O'chirilgan</Badge>}
+                {settings?.telegramBotToken && tgBotName && <a href={`https://t.me/${tgBotName}`} target="_blank" rel="noreferrer" style={{ color: THEME.blue, fontWeight: 600 }}>Botni ochish</a>}
               </div>
             </div>
             {settings?.telegramBotToken && <TelegramRoutesSection settings={settings} onSaveSettings={onSaveSettings} />}

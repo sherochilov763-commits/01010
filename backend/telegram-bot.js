@@ -159,6 +159,18 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
     const all = links(); delete all[req.user.id]; saveLinks(all);
     res.json({ ok: true });
   });
+  // Admin token kiritganda — saqlashdan oldin Telegram'da tekshiramiz (getMe)
+  app.post("/api/telegram/check-token", requireAuth, requireAdmin, async (req, res) => {
+    const tk = String(req.body?.token || "").trim();
+    if (!/^\d{5,}:[\w-]{20,}$/.test(tk)) return res.status(400).json({ error: "format", message: "Token ko'rinishi noto'g'ri. @BotFather bergan to'liq tokenni nusxalang (masalan 123456789:AAE…)" });
+    try {
+      const me = await api("getMe", {}, tk);
+      res.json({ ok: true, username: me.username, name: me.first_name || "" });
+    } catch (e) {
+      if (e.code === 401 || e.code === 404) return res.status(400).json({ error: "token", message: "Telegram bu tokenni tanimadi — u noto'g'ri yoki bekor qilingan. @BotFather → /mybots → API Token'dan qayta nusxalang" });
+      res.status(502).json({ error: "network", message: "Telegram serveriga ulanib bo'lmadi — server internetini tekshirib, qayta urinib ko'ring" });
+    }
+  });
   app.get("/api/staff-telegram", requireAuth, requireAdmin, (req, res) => {
     const all = links();
     res.json({ linked: Object.fromEntries(Object.entries(all).map(([k, v]) => [k, { username: v.username, linkedAt: v.linkedAt }])) });

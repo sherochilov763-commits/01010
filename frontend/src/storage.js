@@ -436,6 +436,12 @@ export const fetchMyTelegram = () => meTg();
 export const linkMyTelegram = () => meTg("POST", "/link");
 export const unlinkMyTelegram = () => meTg("DELETE");
 export const skipMyTelegram = () => meTg("POST", "/skip");
+export async function checkBotToken(token) {
+  const res = await fetch(`${API_BASE}/telegram/check-token`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ token }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || `Xato: ${res.status}`);
+  return data;
+}
 export async function fetchStaffTelegram() {
   const res = await fetch(`${API_BASE}/staff-telegram`, { headers: authHeaders() });
   if (!res.ok) return {};
