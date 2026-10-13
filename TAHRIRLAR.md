@@ -17,3 +17,4 @@
 
 ## Yangi ro'yxat (2026-10-13 dan) — yig'ilmoqda
 13. **Smeta → Kalkulyator: yig'ish/ochish tugmasi.** Kalkulyator kartasi sarlavhasida «Yashirish ⌃ / Ochish ⌄» tugmasi. Yopiq holatda faqat bitta qator: «Kalkulyator · 3 ta pozitsiya». Holat eslab qolinadi (keyingi safar ham yopiq/ochiq). (Taklif — tasdiq kutilmoqda)
+14. **Smeta: umumiy narxni erkin kiritish.** Kalkulyatorda «m² bo'yicha | Umumiy narx» tanlovi: «Umumiy narx»da o'lcham shart emas — nomi + summa (so'm yoki $) yoziladi (masalan «Montaj — 300 000», «Dizayn xizmati — 150 000»). Hisoblangan pozitsiya summasini ham qo'lda o'zgartirish mumkin (yonida «qo'lda» belgisi). (Taklif — tasdiq kutilmoqda)
