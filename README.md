@@ -921,3 +921,10 @@ Bot xabarlarni long polling (getUpdates) orqali oladi. Endi muammo bo'lsa server
 - Uzun xodimlar ro'yxati o'rniga bitta ixcham qator: oxirgi kirgan xodim tanlangan turadi → faqat PIN.
 - «Almashtirish» bosilsa ro'yxat ustiga ochiladi (5 tadan ko'p bo'lsa — qidiruv); tanlansa yoki tashqariga bosilsa yopiladi. Klaviatura: ↑ ↓, Enter, Esc.
 - Yangi kompyuterda hech kim tanlanmagan («Xodimni tanlang»), PIN maydoni xira — tanlagach faollashadi.
+
+## 🧮 Smeta: dona, umumiy narx, yig'iladigan kalkulyator; 💬 Telegram papkalari (2026-10)
+- **Kalkulyator turlari:** «m² | Dona | Umumiy». *Dona* — nomi + soni + 1 dona narxi (narxlar ro'yxatidagi «dona» mahsulotlar). *Umumiy* — o'lchamsiz erkin summa (Montaj, dizayn xizmati…), so'm yoki $.
+- **Summani qo'lda o'zgartirish:** hisoblangan summa yonida «✎ o'zgartirish» (yaxlitlash/chegirma); qatorda «summa qo'lda», hisoblangan summa ham saqlanadi (`manualTotal`, `calcTotal`).
+- **Yig'ish:** kalkulyator sarlavhasida «Yashirish ⌃» → bitta qator «Kalkulyator · Ochish». Holat brauzerda eslab qolinadi; tahrirlashda o'zi ochiladi.
+- **Mijozga yuborish:** tugma smeta sarlavhasiga ko'chdi («↗ Yuborish»); bosilganda avval ko'rib chiqish oynasi — kimga, matn (tahrirlash mumkin), «Bekor qilish» / «Tahrirlash uchun» / «Yuborish».
+- **Telegram papkalari:** ulangan Telegram akkauntidagi papkalar (`messages.getDialogFilters`) — nomi, belgisi, tartibi, ichidagi chatlar (aniq qo'shilganlar, kontakt/kontakt emas, ovozsiz/o'qilgan/arxiv filtrlari), o'qilmaganlar soni. Kompyuterda chap ustun, telefonda tepada yorliqlar. Daqiqasiga bir marta yangilanadi. API: `GET /api/telegram-user/folders`. UVIX faqat shaxsiy chatlarni ko'rsatadi — guruh/kanal papkalari bo'sh ko'rinishi mumkin.

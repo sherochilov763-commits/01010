@@ -166,6 +166,14 @@ export async function fetchTelegramChats() {
   return data.chats || [];
 }
 
+// Telegram papkalari (Все чаты, Личные, …) — Telegram'dagidek tartibda, har biri ichidagi chatlar bilan
+export async function fetchTelegramFolders() {
+  const res = await fetch(`${API_BASE}/telegram-user/folders`, { headers: authHeaders() });
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  return Array.isArray(data.folders) ? data.folders : [];
+}
+
 export async function markTelegramChatRead(chatId) {
   const res = await fetch(`${API_BASE}/telegram-user/mark-read`, {
     method: "POST",

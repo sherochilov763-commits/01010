@@ -59,9 +59,10 @@ function cleanItem(raw, prices) {
   const title = str(raw.title, 80);
   const material = str(raw.material, 60);
   const p = prices.find((x) => x.id === raw.priceId) || prices.find((x) => x.material === material) || null;
-  const unit = raw.unit === "pcs" ? "pcs" : raw.unit === "m2" ? "m2" : p?.unit || "m2";
-  const w = num(raw.w), h = num(raw.h);
-  const qty = Math.round(num(raw.qty) || 1);
+  // Birlik: m2 — o'lcham bo'yicha, pcs — dona × narx, lump — umumiy (erkin) summa
+  const unit = raw.unit === "lump" ? "lump" : raw.unit === "pcs" ? "pcs" : raw.unit === "m2" ? "m2" : p?.unit || "m2";
+  const w = unit === "lump" ? 0 : num(raw.w), h = unit === "lump" ? 0 : num(raw.h);
+  const qty = unit === "lump" ? 1 : Math.round(num(raw.qty) || 1);
   const label = title || material || "Pozitsiya";
   if (!(qty >= 1 && qty <= 100000)) throw new Bad(`«${label}»: dona soni noto'g'ri`);
   const hasDims = w > 0 && h > 0;
@@ -84,21 +85,28 @@ function cleanItem(raw, prices) {
   const minArea = Math.max(0, Math.min(100, round2(Number.isFinite(ownMin) ? ownMin : (p?.minArea || 0))));
   const rawArea = hasDims ? round2(w * h * qty) : 0;
   const area = unit === "m2" ? Math.max(rawArea, minArea) : rawArea;
-  const units = unit === "m2" ? area : qty;
-  const total = isUsd ? Math.round(units * priceUsd * rate) : Math.round(units * price);
+  const units = unit === "m2" ? area : unit === "lump" ? 1 : qty;
+  const calcTotal = isUsd ? Math.round(units * priceUsd * rate) : Math.round(units * price);
+  // Summani qo'lda o'zgartirish (yaxlitlash, chegirma) — hisoblangan summa ham saqlanadi
+  const manual = !!raw.manualTotal && unit !== "lump" && num(raw.total) > 0;
+  const total = manual ? Math.round(num(raw.total)) : calcTotal;
+  if (manual && !(total <= 1e10)) throw new Bad(`«${label}»: summa noto'g'ri`);
   if (!(total > 0)) throw new Bad(`«${label}»: summa 0 bo'lmasligi kerak`);
   const out = {
     id: str(raw.id, 40) || rid(), title, material, priceId: p?.id || null, unit,
     w: hasDims ? round3(w) : 0, h: hasDims ? round3(h) : 0, du: DIM_UNITS.includes(raw.du) ? raw.du : "m", qty, price, minArea, rawArea, area, total,
     inkUsd: p?.inkUsd || 0, note: str(raw.note, 200),
   };
-  if (isUsd) Object.assign(out, { cur: "usd", priceUsd, rate, totalUsd: round2(units * priceUsd) });
+  if (isUsd) Object.assign(out, { cur: "usd", priceUsd, rate, totalUsd: manual ? round2(total / rate) : round2(units * priceUsd) });
+  if (manual) Object.assign(out, { manualTotal: true, calcTotal });
   return out;
 }
 function describeItem(it) {
   const size = sizeText(it);
-  const usd = it.cur === "usd" ? `${dec(it.priceUsd)} $/${it.unit === "pcs" ? "dona" : "m²"} (kurs ${dec(it.rate).replace(/\B(?=(\d{3})+(?!\d))/, " ")})` : "";
-  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : "", usd].filter(Boolean).join(" · ");
+  const kurs = it.cur === "usd" ? `kurs ${dec(it.rate).replace(/\B(?=(\d{3})+(?!\d))/, " ")}` : "";
+  if (it.unit === "lump") return [it.material, it.cur === "usd" ? `${dec(it.priceUsd)} $ (${kurs})` : ""].filter(Boolean).join(" · ");
+  const usd = it.cur === "usd" ? `${dec(it.priceUsd)} $/${it.unit === "pcs" ? "dona" : "m²"} (${kurs})` : "";
+  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : "", usd, it.manualTotal ? "summa qo'lda" : ""].filter(Boolean).join(" · ");
 }
 
 // Bitta to'lov (bir nechta usulda bo'lishi mumkin) → buyurtmalar bo'yicha qatorlar

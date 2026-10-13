@@ -1343,6 +1343,9 @@ async function getPrivateDialogs() {
   return dialogsCache.list;
 }
 
+// Telegram papkalari (chap panel) — Telegram'dagidek; daqiqasiga bir marta yangilanadi
+require("./tg-folders").registerTgFolders(app, { requireAuth, requireStaff, userbot: telegramUserbot, getDialogs: getPrivateDialogs });
+
 app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) => {
   let dialogs = [];
   try {

@@ -315,9 +315,32 @@ async function listPrivateDialogs(limit = 300) {
     const info = describeEntity(e, chatId);
     const m = d.message;
     const date = m?.date ? new Date(m.date * 1000).toISOString() : null;
-    out.push({ chatId, name: info.name, username: info.username, phone: info.phone, lastText: dialogPreview(m), lastOut: !!m?.out, lastDate: date, unreadCount: d.unreadCount || 0 });
+    const muteUntil = d.dialog?.notifySettings?.muteUntil || 0;
+    out.push({ chatId, name: info.name, username: info.username, phone: info.phone, lastText: dialogPreview(m), lastOut: !!m?.out, lastDate: date, unreadCount: d.unreadCount || 0,
+      contact: !!e.contact, muted: muteUntil > Date.now() / 1000, archived: !!d.archived || d.folderId === 1, unreadMark: !!d.dialog?.unreadMark });
   }
   return out;
+}
+
+// Telegram papkalari (Все чаты, Личные, o'zingiz yaratganlar) — aynan Telegram'dagi tartibda.
+// Faqat ta'riflar qaytadi; qaysi chat qaysi papkaga tushishini tg-folders.js hisoblaydi.
+function peerUserId(p) { return p && (p.userId !== undefined && p.userId !== null) ? String(p.userId) : null; }
+const titleText = (t) => (typeof t === "string" ? t : t?.text || "");
+async function getFolderDefs() {
+  requireConnected();
+  const r = await client.invoke(new Api.messages.GetDialogFilters());
+  const list = Array.isArray(r) ? r : r?.filters || [];
+  return list.map((f, i) => {
+    if (f.className === "DialogFilterDefault") return { id: 0, kind: "all", title: "", emoticon: "", order: i };
+    const ids = (arr) => (arr || []).map(peerUserId).filter(Boolean);
+    return {
+      id: f.id, kind: f.className === "DialogFilterChatlist" ? "chatlist" : "filter", order: i,
+      title: titleText(f.title), emoticon: f.emoticon || "",
+      pinned: ids(f.pinnedPeers), include: ids(f.includePeers), exclude: ids(f.excludePeers),
+      contacts: !!f.contacts, nonContacts: !!f.nonContacts,
+      excludeMuted: !!f.excludeMuted, excludeRead: !!f.excludeRead, excludeArchived: !!f.excludeArchived,
+    };
+  });
 }
 
 // Bitta suhbat egasi haqida: ism, username, telefon (CRM'ga qo'lda qo'shish uchun)
@@ -524,7 +547,7 @@ const guarded = (fn) => async (...args) => {
 function clearExpired() { expired = null; lastError = null; }
 
 module.exports = {
-  listPrivateDialogs: guarded(listPrivateDialogs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
+  listPrivateDialogs: guarded(listPrivateDialogs), getFolderDefs: guarded(getFolderDefs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
   isBotChat: guarded(isBotChat), sendMessage: guarded(sendMessage), sendPhoto: guarded(sendPhoto), sendVideo: guarded(sendVideo),
   sendDocument: guarded(sendDocument), sendVoice: guarded(sendVoice), sendLocation: guarded(sendLocation), sendReaction: guarded(sendReaction),
   getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames),

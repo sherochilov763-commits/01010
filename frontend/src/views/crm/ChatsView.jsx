@@ -11,6 +11,7 @@ import { uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { AssigneePicker, CustomerBox, RowMenu, avatarColor, useChatCustomer, useChatTools, waitLabel, waitingMinutes } from "./chatExtras.jsx";
 import { ChatQuote } from "../quotes/ChatQuote.jsx";
+import { FolderRail, FolderTabs, useTgFolders } from "./TgFolders.jsx";
 import { ConvertModal } from "../quotes/ConvertPanel.jsx";
 import { useSales } from "../quotes/useSales.js";
 import { PROD_LABEL, prodColors } from "../../lib/production.js";
@@ -99,6 +100,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialChatId]);
   const isMobile = useIsMobile();
+  const tgf = useTgFolders(true);
   const [infoOpen, setInfoOpen] = useState(false);
   function closeChat() { setSelectedChatId(null); setInfoOpen(false); }
   // Telefonda: "orqaga" avval mijoz ma'lumotini, keyin suhbatni yopadi — bo'limdan chiqmaydi
@@ -273,6 +275,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     let list = chats.filter((c) => {
       const meta = ct.meta[c.chatId] || {};
       if (filter === "archive" ? !meta.archived : meta.archived) return false;
+      if (!tgf.inFolder(c.chatId)) return false;
       if (filter === "unread" && !c.unread) return false;
       if (filter === "waiting" && !waitingMinutes(c, sla, nowMs)) return false;
       if (filter === "mine" && meta.assignee !== me) return false;
@@ -285,7 +288,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     const pinned = list.filter((c) => ct.meta[c.chatId]?.pinned).sort((a, b) => String(ct.meta[a.chatId].pinned).localeCompare(String(ct.meta[b.chatId].pinned)));
     const rest = list.filter((c) => !ct.meta[c.chatId]?.pinned);
     return filter === "archive" ? list : [...pinned.map((c) => ({ ...c, pinned: true })), ...rest];
-  }, [chats, search, leads, msgHits, ct.meta, filter, sla, nowMs, me]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chats, search, leads, msgHits, ct.meta, filter, sla, nowMs, me, tgf.active, tgf.folders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ochiq suhbatning ichki izohlari
   const noteCount = selectedChatId ? ct.noteCount?.[selectedChatId] || 0 : 0;
@@ -427,6 +430,8 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
         ? { display: "flex", position: "fixed", inset: 0, zIndex: 250, background: TG_DARK_BG }
         : { display: "flex", height: "calc(100vh - 140px)", minHeight: 520, borderRadius: THEME.radius + 2, overflow: "hidden", border: `1px solid ${THEME.border}` }}>
       <style>{layoutCss() + addCss()}</style>
+      {/* Telegram papkalari — kompyuterda chap ustun */}
+      {showList && !isMobile && tgf.folders.length > 0 && <FolderRail folders={tgf.folders} active={tgf.active} onPick={tgf.setActive} chats={chats} />}
       {/* Chap panel — suhbatlar royxati */}
       {showList && (<>
       <div style={{ width: isMobile ? "100%" : layout.listW, minHeight: isMobile ? "60vh" : undefined, flexShrink: 0, display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR, minWidth: 0 }}>
@@ -445,9 +450,10 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             )}
           </div>
         )}
+        {isMobile && tgf.folders.length > 0 && <FolderTabs folders={tgf.folders} active={tgf.active} onPick={tgf.setActive} chats={chats} />}
         <div style={{ padding: "16px 16px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: TG_DARK_TEXT }}>Chatlar</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: TG_DARK_TEXT }}>{tgf.active ? (tgf.folders.find((f) => f.id === tgf.active)?.title || "Chatlar") : "Chatlar"}</div>
             {unreadTotal > 0 && (
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: TG_BLUE, padding: "2px 7px", borderRadius: 10 }}>{unreadTotal}</span>
             )}
@@ -685,6 +691,8 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             <ChatQuote ref={quoteRef} chatId={selectedChatId} lead={selectedLead} ensureLead={ensureLead}
               onLeadSaved={(l) => onServerChange?.({ lead: l })}
               onConvert={(l, items) => setConvertFor({ lead: l, items })}
+              customerName={selectedName || "Mijoz"}
+              onSendDirect={handleSendText}
               onSendText={(text) => { setInsert({ text, n: Date.now() }); setInfoOpen(false); }} />
             {okMsg && <div role="status" data-testid="convert-ok" style={{ display: "flex", alignItems: "center", gap: 6, color: C.green, fontSize: 12.5, marginTop: 10 }}><Check size={15} /> {okMsg}</div>}
           </div>

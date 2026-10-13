@@ -1,15 +1,22 @@
 // QuoteBuilder.jsx — kalkulyator + smeta (bir nechta pozitsiya). Chat panelida ham, «Yangi buyurtma» oynasida ham ishlaydi.
 // Rang palitrasi tashqaridan beriladi (chatda — chat ranglari, oynada — ilova mavzusi).
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Calculator, Copy, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { Calculator, ChevronDown, ChevronUp, Copy, MoreHorizontal, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { fmt, money } from "../../lib/format.js";
-import { computeItem, dec, describeItem, DIM_DIV, DIM_UNITS, formulaOf, fromMeters, rateText, toNum, usdText } from "../../lib/production.js";
+import { computeItem, dec, describeItem, DIM_DIV, DIM_UNITS, formulaOf, fromMeters, ITEM_KINDS, rateText, toNum, usdText } from "../../lib/production.js";
 
 const CUSTOM = "__custom";
 const rid = () => Math.random().toString(36).slice(2, 10);
 // Narx maydonlari: so'mda — butun son, dollarda — 2 xonali kasr ("32,8")
 const priceFields = (p) => (p ? (p.cur === "usd" ? { cur: "usd", priceUsd: dec(p.price), price: "" } : { cur: "uzs", price: String(p.price), priceUsd: "" }) : { cur: "uzs", price: "", priceUsd: "" });
-const emptyDraft = (prices) => ({ title: "", priceId: prices?.[0]?.id || CUSTOM, material: "", unit: prices?.[0]?.unit || "m2", w: "", h: "", qty: "1", ...priceFields(prices?.[0]), minArea: prices?.[0]?.minArea || 0, priceTouched: false });
+// Pozitsiya turi (m2 | pcs | lump): narxlar ro'yxati shu turdagi materiallar bilan cheklanadi
+const pricesOf = (prices, kind) => (kind === "lump" ? [] : (prices || []).filter((p) => (p.unit === "pcs" ? "pcs" : "m2") === kind));
+const KIND_KEY = "uvix:quoteKind";
+const savedKind = () => { try { const v = localStorage.getItem(KIND_KEY); return ["m2", "pcs", "lump"].includes(v) ? v : "m2"; } catch { return "m2"; } };
+const emptyDraft = (prices, kind = "m2") => { const first = pricesOf(prices, kind)[0]; return { title: "", priceId: first?.id || CUSTOM, material: "", unit: kind, w: "", h: "", qty: "1", ...priceFields(first), minArea: first?.minArea || 0, priceTouched: false, manualTotal: false, manualValue: "" }; };
+// Kalkulyator yig'ilgan/ochiq holati — shu brauzerda eslab qolinadi
+const OPEN_KEY = "uvix:quoteCalcOpen";
+const savedOpen = () => { try { return localStorage.getItem(OPEN_KEY) !== "0"; } catch { return true; } };
 // O'lcham birligi — standart mm, tanlov shu brauzerda eslab qolinadi
 const DU_KEY = "uvix:quoteDimUnit";
 const savedDu = () => { try { const v = localStorage.getItem(DU_KEY); return DIM_DIV[v] ? v : "mm"; } catch { return "mm"; } };
@@ -21,7 +28,11 @@ const fxHint = (fx) => {
 
 export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advancePct = 0, titleRef, compact }) {
   const fxRate = fx?.rate > 0 ? fx.rate : 0;
-  const [draft, setDraft] = useState(() => ({ ...emptyDraft(prices), rate: fxRate ? dec(fxRate) : "", rateTouched: false }));
+  const [draft, setDraft] = useState(() => ({ ...emptyDraft(prices, savedKind()), rate: fxRate ? dec(fxRate) : "", rateTouched: false }));
+  const [open, setOpenState] = useState(savedOpen);
+  const setOpen = (v) => { setOpenState(v); try { localStorage.setItem(OPEN_KEY, v ? "1" : "0"); } catch { /* shart emas */ } };
+  const kind = draft.unit === "lump" ? "lump" : draft.unit === "pcs" ? "pcs" : "m2";
+  const kindPrices = pricesOf(prices, kind);
   const [du, setDuState] = useState(savedDu);
   const div = DIM_DIV[du] || 1000;
   function setDu(next) {
@@ -37,15 +48,22 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
   const pricesKey = prices.map((p) => p.id).join(",");
   // Narxlar keyin yuklansa — tanlanmagan qoralamaga birinchi materialni qo'yamiz
   useEffect(() => {
-    setDraft((d) => (d.priceId === CUSTOM && !d.material && !d.price && !d.priceUsd && prices.length ? { ...emptyDraft(prices), title: d.title, w: d.w, h: d.h, qty: d.qty, rate: d.rate, rateTouched: d.rateTouched } : d));
+    setDraft((d) => (d.priceId === CUSTOM && !d.material && !d.price && !d.priceUsd && pricesOf(prices, d.unit).length ? { ...emptyDraft(prices, d.unit), title: d.title, w: d.w, h: d.h, qty: d.qty, rate: d.rate, rateTouched: d.rateTouched } : d));
   }, [pricesKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // Kurs keyin yuklansa yoki yangilansa — qo'lda o'zgartirilmagan bo'lsa, yangisini qo'yamiz
   useEffect(() => {
     if (fxRate) setDraft((d) => (d.rateTouched ? d : { ...d, rate: dec(fxRate) }));
   }, [fxRate]);
 
-  const sel = prices.find((p) => p.id === draft.priceId) || null;
-  const calc = computeItem({ ...draft, w: toNum(draft.w) / div, h: toNum(draft.h) / div, du, material: sel ? sel.material : draft.material, minArea: sel ? sel.minArea : 0, unit: sel ? sel.unit : draft.unit });
+  const sel = kind === "lump" ? null : kindPrices.find((p) => p.id === draft.priceId) || null;
+  const calc = computeItem({ ...draft, w: kind === "m2" ? toNum(draft.w) / div : 0, h: kind === "m2" ? toNum(draft.h) / div : 0, du, material: sel ? sel.material : draft.material, minArea: sel && kind === "m2" ? sel.minArea : 0, unit: kind });
+  // Turni almashtirish: shu turdagi birinchi material tanlanadi, nom va kurs saqlanadi
+  function setKind(k) {
+    if (k === kind) return;
+    try { localStorage.setItem(KIND_KEY, k); } catch { /* shart emas */ }
+    setErr("");
+    setDraft((d) => ({ ...emptyDraft(prices, k), title: d.title, qty: d.qty, rate: d.rate, rateTouched: d.rateTouched, ...(k === "lump" ? { cur: d.cur, price: "", priceUsd: "" } : {}) }));
+  }
   const total = items.reduce((s, i) => s + i.total, 0);
   const totalArea = Math.round(items.reduce((s, i) => s + (i.area || 0), 0) * 100) / 100;
 
@@ -53,7 +71,7 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
   function pickPrice(id) {
     if (id === CUSTOM) return set({ priceId: CUSTOM, price: "", priceUsd: "", priceTouched: false });
     const p = prices.find((x) => x.id === id);
-    set({ priceId: id, unit: p.unit, ...priceFields(p), minArea: p.minArea, priceTouched: false });
+    set({ priceId: id, ...priceFields(p), minArea: p.minArea, priceTouched: false, manualTotal: false, manualValue: "" });
   }
   // So'm ⇄ $ almashtirish: kiritilgan narx kurs bo'yicha o'giriladi
   function setCur(cur) {
@@ -75,21 +93,28 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
   const priceDiffers = sel && draft.priceTouched && (draft.cur !== (sel.cur || "uzs") || (draft.cur === "usd" ? toNum(draft.priceUsd) !== sel.price : toNum(draft.price) !== sel.price));
   function submit() {
     const material = sel ? sel.material : draft.material.trim();
-    if (!material && !draft.title.trim()) return setErr("Nima uchun yoki materialni yozing");
-    if (calc.unit === "m2" && !(calc.w > 0 && calc.h > 0)) return setErr("Eni va bo'yini kiriting");
+    if (kind === "lump" && !draft.title.trim()) return setErr("Nomini yozing (masalan: Montaj)");
+    if (kind !== "lump" && !material && !draft.title.trim()) return setErr("Nima uchun yoki materialni yozing");
+    if (kind === "m2" && !(calc.w > 0 && calc.h > 0)) return setErr("Eni va bo'yini kiriting");
     if (calc.cur === "usd" && !(calc.rate >= 1000)) return setErr("Dollar kursini kiriting");
-    if (!(calc.price > 0)) return setErr("Narxni kiriting");
+    if (!(calc.price > 0)) return setErr(kind === "lump" ? "Summani kiriting" : "Narxni kiriting");
     if (!(calc.total > 0)) return setErr("Summa 0 — o'lchamlarni tekshiring");
-    const item = { id: editingId || rid(), title: draft.title.trim(), material, priceId: sel?.id || null, unit: calc.unit, w: Math.round(calc.w * 1000) / 1000, h: Math.round(calc.h * 1000) / 1000, du, qty: calc.qty, price: calc.price, minArea: calc.minArea, rawArea: calc.rawArea, area: calc.area, total: calc.total, ...(calc.cur === "usd" ? { cur: "usd", priceUsd: calc.priceUsd, rate: calc.rate, totalUsd: calc.totalUsd } : {}) };
+    const item = { id: editingId || rid(), title: draft.title.trim(), material: kind === "lump" ? draft.material.trim() : material, priceId: sel?.id || null, unit: kind,
+      w: Math.round(calc.w * 1000) / 1000, h: Math.round(calc.h * 1000) / 1000, du, qty: calc.qty, price: calc.price, minArea: calc.minArea, rawArea: calc.rawArea, area: calc.area, total: calc.total,
+      ...(calc.manualTotal ? { manualTotal: true, calcTotal: calc.calcTotal } : {}),
+      ...(calc.cur === "usd" ? { cur: "usd", priceUsd: calc.priceUsd, rate: calc.rate, totalUsd: calc.totalUsd } : {}) };
     onChange(editingId ? items.map((i) => (i.id === editingId ? item : i)) : [...items, item]);
     setEditingId(null);
-    setDraft({ ...emptyDraft(prices), priceId: draft.priceId, unit: draft.unit, cur: draft.cur, price: draft.price, priceUsd: draft.priceUsd, minArea: draft.minArea, priceTouched: draft.priceTouched, rate: draft.rate, rateTouched: draft.rateTouched });
+    setDraft({ ...emptyDraft(prices, kind), priceId: draft.priceId, cur: draft.cur, price: kind === "lump" ? "" : draft.price, priceUsd: kind === "lump" ? "" : draft.priceUsd, minArea: draft.minArea, priceTouched: draft.priceTouched, rate: draft.rate, rateTouched: draft.rateTouched });
   }
   function edit(it) {
-    const p = prices.find((x) => x.id === it.priceId) || prices.find((x) => x.material === it.material);
+    const ik = it.unit === "lump" ? "lump" : it.unit === "pcs" ? "pcs" : "m2";
+    const p = ik === "lump" ? null : pricesOf(prices, ik).find((x) => x.id === it.priceId) || pricesOf(prices, ik).find((x) => x.material === it.material);
     setEditingId(it.id);
+    setOpen(true);
     if (it.du && it.du !== du) setDuState(it.du);
-    setDraft({ title: it.title || "", priceId: p ? p.id : CUSTOM, material: p ? "" : it.material, unit: it.unit, w: fromMeters(it.w, it.du || du), h: fromMeters(it.h, it.du || du), qty: String(it.qty || 1), minArea: it.minArea || 0,
+    setDraft({ title: it.title || "", priceId: p ? p.id : CUSTOM, material: p ? "" : it.material, unit: ik, w: fromMeters(it.w, it.du || du), h: fromMeters(it.h, it.du || du), qty: String(it.qty || 1), minArea: it.minArea || 0,
+      manualTotal: !!it.manualTotal, manualValue: it.manualTotal ? String(it.total) : "",
       ...(it.cur === "usd"
         ? { cur: "usd", priceUsd: dec(it.priceUsd), price: "", rate: dec(it.rate), rateTouched: it.rate !== fxRate, priceTouched: p ? p.cur !== "usd" || it.priceUsd !== p.price : false }
         : { cur: "uzs", price: String(it.price), priceUsd: "", rate: draft.rate, rateTouched: draft.rateTouched, priceTouched: p ? p.cur === "usd" || it.price !== p.price : false }) });
@@ -104,28 +129,43 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
 
   return (
     <div data-testid="quote-builder" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ border: `1px solid ${P.border}`, borderRadius: 10, padding: 12 }}>
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)} data-testid="calc-open"
+          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: `1px solid ${P.border}`, borderRadius: 10, padding: "10px 12px", background: P.panel, color: P.text, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+          <Calculator size={15} />
+          <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap" }}>Kalkulyator</span>
+          <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12.5, fontWeight: 600, color: P.link || P.primary }}>Ochish <ChevronDown size={15} /></span>
+        </button>
+      ) : (
+      <div data-testid="calc-card" style={{ border: `1px solid ${P.border}`, borderRadius: 10, padding: 12 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, fontWeight: 600, color: P.text }}><Calculator size={15} /> {editingId ? "Pozitsiyani tahrirlash" : "Kalkulyator"}</span>
-          <span style={{ fontSize: 11.5, color: P.muted }}>mijozga ko'rinmaydi</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, fontWeight: 600, color: P.text, minWidth: 0 }} title="Kalkulyator mijozga ko'rinmaydi"><Calculator size={15} /> {editingId ? "Tahrirlash" : "Kalkulyator"}</span>
+          {!editingId && <button type="button" onClick={() => setOpen(false)} data-testid="calc-close" title="Kalkulyatorni yig'ish"
+            style={{ display: "inline-flex", alignItems: "center", gap: 3, border: 0, background: "none", color: P.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: "2px 0", flexShrink: 0 }}>Yashirish <ChevronUp size={15} /></button>}
+        </div>
+        <div role="tablist" aria-label="Pozitsiya turi" style={{ display: "flex", background: P.hover, borderRadius: 9, padding: 3, marginBottom: 10 }}>
+          {ITEM_KINDS.map(([k, l, hint]) => (
+            <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)} data-testid={`q-kind-${k}`} title={hint}
+              style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", height: 30, border: 0, borderRadius: 7, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", background: kind === k ? P.panel : "transparent", color: kind === k ? P.text : P.muted, boxShadow: kind === k ? "0 1px 2px rgba(0,0,0,.08)" : "none" }}>{l}</button>
+          ))}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-          <label style={{ display: "grid", gap: 3 }}>{label("Nima uchun")}<input ref={titleRef} value={draft.title} onChange={(e) => set({ title: e.target.value })} placeholder="Masalan: oshxona fartugi" style={inp} data-testid="q-title" /></label>
-          <label style={{ display: "grid", gap: 3 }}>{label(prices.length ? "Material — narxlar ro'yxatidan" : "Material")}
-            {prices.length > 0 && (
-              <select value={draft.priceId} onChange={(e) => pickPrice(e.target.value)} style={inp} data-testid="q-material">
-                {prices.map((p) => <option key={p.id} value={p.id}>{p.material} — {p.cur === "usd" ? usdText(p.price) : fmt(p.price)} / {p.unit === "pcs" ? "dona" : "m²"}{p.minArea ? ` (min ${dec(p.minArea)} m²)` : ""}</option>)}
-                <option value={CUSTOM}>Boshqa (qo'lda)</option>
-              </select>
-            )}
-          </label>
-          {(!prices.length || draft.priceId === CUSTOM) && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
-              <input value={draft.material} onChange={(e) => set({ material: e.target.value })} placeholder="Material nomi" style={inp} data-testid="q-material-custom" aria-label="Material nomi" />
-              <select value={draft.unit} onChange={(e) => set({ unit: e.target.value })} style={{ ...inp, width: 96 }} aria-label="Narx birligi"><option value="m2">m² narxi</option><option value="pcs">dona narxi</option></select>
-            </div>
+          <label style={{ display: "grid", gap: 3 }}>{label(kind === "lump" ? "Nomi" : kind === "pcs" ? "Mahsulot / nima uchun" : "Nima uchun")}<input ref={titleRef} value={draft.title} onChange={(e) => set({ title: e.target.value })} placeholder={kind === "lump" ? "Masalan: Montaj, dizayn xizmati" : kind === "pcs" ? "Masalan: vizitka, stend" : "Masalan: oshxona fartugi"} style={inp} data-testid="q-title" /></label>
+          {kind !== "lump" && (
+            <label style={{ display: "grid", gap: 3 }}>{label(kindPrices.length ? "Material — narxlar ro'yxatidan" : "Material")}
+              {kindPrices.length > 0 && (
+                <select value={draft.priceId} onChange={(e) => pickPrice(e.target.value)} style={inp} data-testid="q-material">
+                  {kindPrices.map((p) => <option key={p.id} value={p.id}>{p.material} — {p.cur === "usd" ? usdText(p.price) : fmt(p.price)} / {p.unit === "pcs" ? "dona" : "m²"}{p.minArea && p.unit !== "pcs" ? ` (min ${dec(p.minArea)} m²)` : ""}</option>)}
+                  <option value={CUSTOM}>Boshqa (qo'lda)</option>
+                </select>
+              )}
+            </label>
+          )}
+          {kind !== "lump" && (!kindPrices.length || draft.priceId === CUSTOM) && (
+            <input value={draft.material} onChange={(e) => set({ material: e.target.value })} placeholder="Material nomi (ixtiyoriy)" style={inp} data-testid="q-material-custom" aria-label="Material nomi" />
           )}
         </div>
+        {kind === "m2" && <>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
           <span style={{ fontSize: 11.5, color: P.muted }}>O'lcham</span>
           <div role="group" aria-label="O'lcham birligi" style={{ display: "inline-flex", border: `1px solid ${P.border}`, borderRadius: 7, overflow: "hidden", height: 24 }}>
@@ -141,15 +181,30 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
           <label style={{ display: "grid", gap: 3 }}>{label("Dona")}<input value={draft.qty} onChange={(e) => set({ qty: e.target.value.replace(/\D/g, "") })} inputMode="numeric" style={inp} data-testid="q-qty" /></label>
         </div>
         {du === "mm" && calc.w > 0 && calc.h > 0 && calc.w < 0.05 && calc.h < 0.05 && <div data-testid="q-du-hint" style={{ fontSize: 11.5, color: P.red, marginTop: 4 }}>O'lcham juda kichik ({draft.w}×{draft.h} mm). Metrda yozgan bo'lsangiz — yuqorida «m» ni tanlang.</div>}
+        </>}
+        {kind === "pcs" && (
+          <label style={{ display: "grid", gap: 3, marginTop: 8 }}>{label("Soni, dona")}<input value={draft.qty} onChange={(e) => set({ qty: e.target.value.replace(/\D/g, "") })} inputMode="numeric" placeholder="1" style={inp} data-testid="q-qty" /></label>
+        )}
         <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 9, background: P.hover, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, color: P.muted, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{calc.total > 0 ? formulaOf(calc) : "O'lcham va narxni kiriting"}</div>
+          <div style={{ fontSize: 12.5, color: P.muted, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{calc.total > 0 ? (calc.manualTotal ? `Hisoblangan: ${money(calc.calcTotal)} → qo'lda` : formulaOf(calc)) : kind === "lump" ? "Summani kiriting" : kind === "pcs" ? "Soni va narxni kiriting" : "O'lcham va narxni kiriting"}</div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-            <div data-testid="calc-total" style={{ fontSize: 19, fontWeight: 700, color: P.text, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money(calc.total)}</div>
+            {draft.manualTotal && kind !== "lump" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input value={draft.manualValue ? fmt(toNum(draft.manualValue)) : ""} onChange={(e) => set({ manualValue: e.target.value.replace(/\D/g, "") })} inputMode="numeric" autoFocus placeholder="summa" style={{ ...inp, height: 34, width: 150, fontSize: 16, fontWeight: 700 }} data-testid="q-manual-total" aria-label="Summa (qo'lda)" />
+                <span style={{ fontSize: 13, color: P.muted }}>so'm</span>
+                <button type="button" onClick={() => set({ manualTotal: false, manualValue: "" })} title="Hisoblangan summaga qaytarish" data-testid="q-manual-reset" style={{ border: 0, background: "none", color: P.link || P.primary, cursor: "pointer", display: "inline-flex", padding: 2 }}><RotateCcw size={15} /></button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                <div data-testid="calc-total" style={{ fontSize: 19, fontWeight: 700, color: P.text, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{money(calc.total)}</div>
+                {kind !== "lump" && calc.calcTotal > 0 && <button type="button" onClick={() => set({ manualTotal: true, manualValue: String(calc.calcTotal) })} title="Summani qo'lda o'zgartirish (yaxlitlash, chegirma)" data-testid="q-manual" style={{ border: 0, background: "none", color: P.muted, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, fontFamily: "inherit", padding: 0 }}><Pencil size={12} /> o'zgartirish</button>}
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: P.muted, flex: "1 1 190px", justifyContent: "flex-end", minWidth: 0 }}>
-              <span style={{ whiteSpace: "nowrap" }}>{calc.unit === "pcs" ? "1 dona" : "1 m²"}:</span>
+              <span style={{ whiteSpace: "nowrap" }}>{kind === "lump" ? "Summa" : kind === "pcs" ? "1 dona" : "1 m²"}:</span>
               {draft.cur === "usd"
                 ? <input value={draft.priceUsd} onChange={(e) => set({ priceUsd: e.target.value.replace(/[^\d.,]/g, ""), priceTouched: !!sel })} inputMode="decimal" placeholder="$" style={{ ...inp, height: 30, flex: "0 1 104px", fontSize: 13 }} data-testid="q-price-usd" aria-label="Narx, dollar" />
-                : <input value={draft.price ? fmt(toNum(draft.price)) : ""} onChange={(e) => set({ price: e.target.value.replace(/\D/g, ""), priceTouched: !!sel })} inputMode="numeric" placeholder="narx" style={{ ...inp, height: 30, flex: "0 1 104px", fontSize: 13 }} data-testid="q-price" aria-label="Narx" />}
+                : <input value={draft.price ? fmt(toNum(draft.price)) : ""} onChange={(e) => set({ price: e.target.value.replace(/\D/g, ""), priceTouched: !!sel })} inputMode="numeric" placeholder={kind === "lump" ? "summa" : "narx"} style={{ ...inp, height: 30, flex: "0 1 104px", fontSize: 13 }} data-testid="q-price" aria-label="Narx" />}
               <div role="group" aria-label="Valyuta" style={{ display: "inline-flex", border: `1px solid ${P.border}`, borderRadius: 8, overflow: "hidden", height: 30, flexShrink: 0 }}>
                 {[["uzs", "so'm"], ["usd", "$"]].map(([c, l]) => (
                   <button key={c} type="button" onClick={() => setCur(c)} aria-pressed={draft.cur === c} data-testid={`q-cur-${c}`}
@@ -178,9 +233,10 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
         {err && <div role="alert" style={{ fontSize: 12.5, color: P.red, marginTop: 8 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button type="button" onClick={submit} style={{ ...btn(true), flex: 1 }} data-testid="q-add"><Plus size={16} /> {editingId ? "Saqlash" : "Smetaga qo'shish"}</button>
-          {editingId && <button type="button" onClick={() => { setEditingId(null); setDraft({ ...emptyDraft(prices), rate: fxRate ? dec(fxRate) : draft.rate, rateTouched: false }); }} style={{ ...btn(false), padding: "0 14px" }}>Bekor</button>}
+          {editingId && <button type="button" onClick={() => { setEditingId(null); setDraft({ ...emptyDraft(prices, kind), rate: fxRate ? dec(fxRate) : draft.rate, rateTouched: false }); }} style={{ ...btn(false), padding: "0 14px" }}>Bekor</button>}
         </div>
       </div>
+      )}
 
       {items.length > 0 && (
         <div data-testid="quote-items" style={{ border: `1px solid ${P.border}`, borderRadius: 10, padding: compact ? 10 : 12 }}>
