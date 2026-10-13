@@ -6,11 +6,11 @@ import { Check, ChevronDown, Loader2, Lock, QrCode, RefreshCw, Search, ShieldChe
 import { authLogin, qrPoll, qrStart } from "../storage.js";
 import { roleLabel } from "../constants.js";
 import { ForgotStep, NewPinStep, avatarColor, initials } from "./LoginScreen.jsx";
+import loginBg from "./login-bg.webp";
 
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 const DAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
 const LAST = "uvix:lastDesktopUser";
-const wallpaperFor = (h) => (h >= 5 && h < 10 ? "tong" : h >= 10 && h < 17 ? "kun" : h >= 17 && h < 21 ? "oqshom" : "tun");
 
 function Clock() {
   const [now, setNow] = useState(() => new Date());
@@ -38,7 +38,6 @@ export default function DesktopLogin({ employees, onAuthenticated }) {
   const [selId, setSelId] = useState(() => employees.find((e) => e.id === lastId)?.id || (employees.length === 1 ? employees[0].id : null));
   useEffect(() => { if (!selId && employees.length === 1) setSelId(employees[0].id); }, [employees, selId]);
   const sel = employees.find((e) => e.id === selId) || null;
-  const bg = useMemo(() => wallpaperFor(new Date().getHours()), []);
 
   const done = useCallback((user) => {
     try { localStorage.setItem(LAST, user.id); } catch { /* shart emas */ }
@@ -48,10 +47,11 @@ export default function DesktopLogin({ employees, onAuthenticated }) {
 
   return (
     <div className="dl-root" data-testid="desktop-login">
-      <aside className="dl-left" style={{ backgroundImage: `url(/wallpapers/${bg}.svg)` }}>
+      <aside className="dl-left" style={{ backgroundImage: `url(${loginBg})` }}>
         <div className="dl-shade" />
         <div className="dl-brand"><span className="dl-mark">UV</span><div><b>UVIX</b><span>Moliya va ishlab chiqarish</span></div></div>
-        <div className="dl-left-bottom"><Clock /></div>
+        {/* soat — osmonda (pastda shahar ko'rinib tursin) */}
+        <div className="dl-left-top"><Clock /></div>
       </aside>
       <main className="dl-right">
         <div className="dl-panel">
@@ -116,7 +116,7 @@ function PinPane({ employees, sel, setSelId, onDone, onForgot }) {
       <PersonSelect employees={employees} sel={sel} open={open} setOpen={setOpen} onPick={(e) => { choose(e); setOpen(false); }} />
       <div className={`dl-pinwrap${sel ? "" : " off"}`}>
         <div className="dl-pinlabel">PIN kod</div>
-        <div className={`dl-boxes${shake ? " shake" : ""}${err && sel ? " err" : ""}`} data-testid="dl-pin-boxes" onClick={() => document.activeElement?.blur?.()}>
+        <div className={`dl-boxes${shake ? " shake" : ""}${err && sel ? " err" : ""}`} data-testid="dl-pin-boxes" style={{ "--n": slots }} onClick={() => document.activeElement?.blur?.()}>
           {Array.from({ length: slots }).map((_, i) => <span key={i} className={i < pin.length ? "f" : sel && i === pin.length ? "cur" : ""}>{i < pin.length ? "•" : ""}</span>)}
         </div>
       </div>
