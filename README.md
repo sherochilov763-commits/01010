@@ -916,3 +916,8 @@ Bot xabarlarni long polling (getUpdates) orqali oladi. Endi muammo bo'lsa server
 - **Shu token boshqa serverda ham ishlayapti** (masalan, kompyuterdagi nusxa + Railway, yoki 2 ta replika) — faqat bittasi xabar oladi. Ortiqchasini o'chiring yoki har biriga alohida bot oching.
 - **Token noto'g'ri / bekor qilingan** — @BotFather'dan yangi token olib kiriting.
 - Railway'da server uxlab qolsa (Serverless/Sleep yoqilgan) bot ham javob bermaydi — doimiy ishlaydigan rejim kerak.
+
+## 🖥 Kompyuterdan kirish — yig'iladigan xodim tanlash (2026-10)
+- Uzun xodimlar ro'yxati o'rniga bitta ixcham qator: oxirgi kirgan xodim tanlangan turadi → faqat PIN.
+- «Almashtirish» bosilsa ro'yxat ustiga ochiladi (5 tadan ko'p bo'lsa — qidiruv); tanlansa yoki tashqariga bosilsa yopiladi. Klaviatura: ↑ ↓, Enter, Esc.
+- Yangi kompyuterda hech kim tanlanmagan («Xodimni tanlang»), PIN maydoni xira — tanlagach faollashadi.
