@@ -301,6 +301,8 @@ const attPhotoStore = {
     return removed;
   },
 };
+// Optional automation bridge: enabled only when UVIX_AI_BRIDGE_SECRET is configured.
+require("./ai-bridge")(app, { getStmt, readEmployees });
 const staffBot = require("./telegram-bot")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin });
 require("./pin-recovery").registerPinRecovery(app, { getStmt, upsertStmt, deleteStmt, readEmployees, writeEmployees, requireAuth, requireAdmin, staffBot, settingsLog });
 // Sozlamalar → «Tizim holati»: nima sozlangan, nima e'tibor talab qiladi (faqat admin)
