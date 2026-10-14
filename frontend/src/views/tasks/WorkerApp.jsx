@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, FileImage, LayoutGrid, List, Loader2, LogOut, Play, Printer, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { roleLabel } from "../../constants.js";
-import { SC, THEME } from "../../theme.js";
+import { SC, THEME, readableOn } from "../../theme.js";
 import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
 import { useHistoryView } from "../../lib/history.js";
@@ -123,7 +123,7 @@ export function WorkerApp({ currentUser, onLogout }) {
             <div style={{ fontSize: 12, color: THEME.muted }}>{roleLabel(currentUser.role)}</div>
           </div>
           <button type="button" onClick={() => (screen === "settings" ? goBack() : goScreen("settings"))} aria-label="Sozlamalar"
-            style={{ width: 44, height: 44, borderRadius: "50%", border: 0, cursor: "pointer", fontWeight: 700, fontSize: 14, color: avatarColor(currentUser.id), background: `${avatarColor(currentUser.id)}26` }}>
+            style={{ width: 44, height: 44, borderRadius: "50%", border: 0, cursor: "pointer", fontWeight: 700, fontSize: 14, color: readableOn(avatarColor(currentUser.id)), background: `${avatarColor(currentUser.id)}26` }}>
             {initials(currentUser.name)}
           </button>
         </div>
@@ -346,7 +346,7 @@ function WorkerSettings({ currentUser, onLogout }) {
     <div style={{ maxWidth: 560, display: "flex", flexDirection: "column", gap: 14 }}>
       <Card>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-          <span style={{ width: 48, height: 48, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 700, color: avatarColor(currentUser.id), background: `${avatarColor(currentUser.id)}26` }}>{initials(currentUser.name)}</span>
+          <span style={{ width: 48, height: 48, borderRadius: "50%", display: "grid", placeItems: "center", fontWeight: 700, color: readableOn(avatarColor(currentUser.id)), background: `${avatarColor(currentUser.id)}26` }}>{initials(currentUser.name)}</span>
           <div>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{currentUser.name}</div>
             <div style={{ fontSize: 13, color: THEME.muted }}>{roleLabel(currentUser.role)}</div>

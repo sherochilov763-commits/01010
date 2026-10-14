@@ -244,6 +244,10 @@ export const SC = {
   get green() { return THEME.green; }, get amber() { return THEME.amber; }, get red() { return THEME.rose; },
   get blue() { return THEME.blue; }, get gray() { return THEME.dim; }, get slate() { return THEME.muted; },
 };
+// Qorong'i mavzularda to'q rangli matnni (avatar bosh harflari va h.k.) o'qiladigan qilish
+export function readableOn(c) {
+  return THEME.isDark && c && c[0] === "#" ? mixColors(c, "#FFFFFF", 0.5) : c;
+}
 // Holat rangi uchun yumshoq fon ustidagi matn rangi (yorliq/chip)
 export function tintText(c) {
   const T = THEME;

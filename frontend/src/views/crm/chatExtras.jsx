@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, ArchiveRestore, Check, FileText, Package, Palette, Pin, PinOff, UserRound, Wallet } from "lucide-react";
 import { C } from "./chatPalette.js";
+import { readableOn } from "../../theme.js";
 import { fetchChatTools, saveChatMeta } from "../../storage.js";
 import { buildCustomers, custKey, phoneKey } from "../../lib/customers.js";
 import { orderDebt } from "../../lib/finance.js";
@@ -70,7 +71,7 @@ export function AssigneePicker({ value, employees, onChange, typingNames = [], c
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <button type="button" onClick={() => setOpen((v) => !v)} data-testid="assignee-btn" aria-expanded={open} title="Mas'ul menejer"
         style={{ height: 30, display: "inline-flex", alignItems: "center", gap: 6, padding: "0 10px 0 4px", borderRadius: 15, border: `1px solid ${C.border}`, background: C.panel, color: C.text, fontSize: 12.5, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-        <span style={{ width: 22, height: 22, borderRadius: "50%", background: cur ? `${avatarColor(cur.name)}22` : C.hover, color: cur ? avatarColor(cur.name) : C.muted, display: "grid", placeItems: "center", fontSize: 9.5, fontWeight: 700 }}>
+        <span style={{ width: 22, height: 22, borderRadius: "50%", background: cur ? `${avatarColor(cur.name)}22` : C.hover, color: cur ? readableOn(avatarColor(cur.name)) : C.muted, display: "grid", placeItems: "center", fontSize: 9.5, fontWeight: 700 }}>
           {cur ? initials(cur.name) : <UserRound size={12} />}
         </span>
         {compact ? null : cur ? `Mas'ul: ${cur.name.split(" ")[0]}` : "Mas'ul tanlang"} ▾
@@ -81,7 +82,7 @@ export function AssigneePicker({ value, employees, onChange, typingNames = [], c
           {people.map((e) => (
             <button key={e.id} type="button" role="menuitemradio" aria-checked={value === e.id} onClick={() => { onChange(e.id); setOpen(false); }}
               style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "8px", border: 0, borderRadius: 7, background: value === e.id ? C.hover : "transparent", color: C.text, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-              <span style={{ width: 24, height: 24, borderRadius: "50%", background: `${avatarColor(e.name)}22`, color: avatarColor(e.name), display: "grid", placeItems: "center", fontSize: 10, fontWeight: 700 }}>{initials(e.name)}</span>
+              <span style={{ width: 24, height: 24, borderRadius: "50%", background: `${avatarColor(e.name)}22`, color: readableOn(avatarColor(e.name)), display: "grid", placeItems: "center", fontSize: 10, fontWeight: 700 }}>{initials(e.name)}</span>
               <span style={{ flex: 1 }}>{e.name}</span>
               {value === e.id && <Check size={15} color={C.link} />}
             </button>
