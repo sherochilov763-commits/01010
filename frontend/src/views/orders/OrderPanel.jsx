@@ -1,12 +1,14 @@
 // OrderPanel.jsx — buyurtma tafsiloti o'ng panelda (jadvaldan chiqmasdan ko'rish).
 // Faqat ko'rinish: barcha amallar avvalgi oynalar orqali (To'lovlar, Hisob-faktura, Tahrirlash).
-import { useEffect, useState } from "react";
-import { FileText, Pencil, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, CreditCard, FileText, MoreHorizontal, Pencil, Phone, Send, Trash2, X } from "lucide-react";
 import { Avatar, Button } from "../../components/ui.jsx";
 import { orderAddedValue, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
-import { PROD_LABEL, PROD_STAGES, prodColors } from "../../lib/production.js";
+import { PROD_LABEL, PROD_STAGES, prodColors, stageHint } from "../../lib/production.js";
+import { useBackToClose } from "../../lib/history.js";
+import { useSheetDrag } from "../../lib/sheetDrag.js";
 
 const TASK_STATUS = { new: "navbatda", in_progress: "jarayonda", done: "tugadi", unassigned: "tayinlanmagan" };
 
@@ -16,12 +18,20 @@ const fmtTime = (iso) => {
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
 };
 
-export function OrderPanel({ order, transactions, phone, canDelete, onClose, onPayments, onInvoice, onEdit, onDelete, stage, employees, siblings, onStage, onAssign, onSelectOrder }) {
+// variant="sheet" — telefonda pastki varaq: tutqichdan pastga tortib, fonni bosib yoki «orqaga» bilan yopiladi
+export function OrderPanel({ order, transactions, phone, canDelete, onClose, onPayments, onInvoice, onEdit, onDelete, stage, employees, siblings, onStage, onAssign, onSelectOrder, variant = "panel", onTelegram, phoneHref }) {
+  const sheet = variant === "sheet";
+  const sheetRef = useRef(null);
+  const drag = useSheetDrag(onClose, sheetRef);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef(false);
+  menuRef.current = menu;
+  useBackToClose(sheet, onClose);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const run = async (fn) => { setBusy(true); setErr(""); try { await fn(); } catch (e) { setErr(e.message); } finally { setBusy(false); } };
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".uvix-modal-backdrop")) onClose(); };
+    const onKey = (e) => { if (e.key === "Escape" && !document.querySelector(".uvix-modal-backdrop")) { if (menuRef.current) setMenu(false); else onClose(); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -42,10 +52,14 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
     </div>
   ) : null;
 
-  return (
-    <aside className="uvix-order-panel" aria-label={`Buyurtma ${order.orderNumber}`} data-testid="order-panel"
-      style={{ background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: THEME.radius + 2, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-      <div style={{ padding: "16px 18px 14px", borderBottom: `1px solid ${THEME.border}` }}>
+  const aside = (
+    <aside ref={sheetRef} className={sheet ? "uvix-order-sheet" : "uvix-order-panel"} aria-label={`Buyurtma ${order.orderNumber}`} data-testid={sheet ? "order-sheet" : "order-panel"}
+      role={sheet ? "dialog" : undefined} aria-modal={sheet ? "true" : undefined}
+      style={sheet
+        ? { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 210, maxHeight: "calc(100dvh - 48px)", background: THEME.card, borderTop: `1px solid ${THEME.border}`, borderRadius: "22px 22px 0 0", boxShadow: "0 -12px 40px rgba(0,0,0,0.22)", display: "flex", flexDirection: "column", overflow: "hidden", animation: "uvixSheetUp .26s cubic-bezier(.16,1,.3,1)", color: THEME.text }
+        : { background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: THEME.radius + 2, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+      <div {...(sheet ? drag : {})} style={{ padding: sheet ? "8px 18px 14px" : "16px 18px 14px", borderBottom: `1px solid ${THEME.border}`, ...(sheet ? { touchAction: "none" } : {}) }}>
+        {sheet && <div aria-hidden="true" data-testid="sheet-handle" style={{ width: 40, height: 5, borderRadius: 3, background: THEME.border2, margin: "0 auto 10px" }} />}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12.5, color: THEME.dim, fontVariantNumeric: "tabular-nums" }}>{order.orderNumber} · {shortDateUz(order.date)}</span>
           <div style={{ flex: 1 }} />
@@ -95,6 +109,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
                 {PROD_STAGES.map((s) => <option key={s} value={s}>{PROD_LABEL[s]}</option>)}
               </select>
             </div>
+            {sheet && stage && <ProdSteps order={order} stage={stage} employees={employees} />}
             {order.title && <div style={{ fontSize: 13, marginTop: 6 }}>{order.title}</div>}
             {[["design", "Dizayner", "designer"], ["print", "Pechatchi", "printer"]].map(([kind, label, role]) => {
               const t = order[kind];
@@ -169,13 +184,90 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
         </ol>
       </div>
 
+      {sheet ? (
+        <div style={{ position: "relative", padding: "12px 16px calc(12px + env(safe-area-inset-bottom, 0px))", borderTop: `1px solid ${THEME.border}`, display: "flex", gap: 10, background: THEME.card }}>
+          <button type="button" onClick={onPayments} data-testid="sheet-pay"
+            style={{ flex: 1, height: 50, borderRadius: 14, border: 0, background: THEME.primarySolid, color: "#fff", fontSize: 15.5, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer" }}>
+            <CreditCard size={19} /> To'lov qabul qilish
+          </button>
+          {onTelegram && (
+            <button type="button" onClick={onTelegram} aria-label="Telegram'da yozish" title="Telegram'da yozish" data-testid="sheet-tg" style={sqBtn()}><Send size={19} color="#176FA3" /></button>
+          )}
+          <button type="button" onClick={() => setMenu((v) => !v)} aria-label="Boshqa amallar" aria-expanded={menu} data-testid="sheet-more" style={sqBtn()}><MoreHorizontal size={20} /></button>
+          {menu && (
+            <>
+              <div onClick={() => setMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 1 }} />
+              <div role="menu" data-testid="sheet-menu" style={{ position: "absolute", right: 16, bottom: "calc(100% + 8px)", zIndex: 2, minWidth: 220, padding: 6, borderRadius: 14, background: THEME.card, border: `1px solid ${THEME.border}`, boxShadow: THEME.shadowLg }}>
+                {[
+                  { k: "invoice", l: "Hisob-faktura", icon: FileText, on: onInvoice },
+                  { k: "edit", l: "Tahrirlash", icon: Pencil, on: onEdit },
+                  phoneHref ? { k: "call", l: `Qo'ng'iroq${phone ? ` · ${phone}` : ""}`, icon: Phone, href: phoneHref } : null,
+                  canDelete ? { k: "delete", l: "O'chirish", icon: Trash2, on: onDelete, danger: true } : null,
+                ].filter(Boolean).map((a) => {
+                  const I = a.icon;
+                  const st = { display: "flex", alignItems: "center", gap: 12, width: "100%", minHeight: 46, padding: "0 12px", border: 0, borderRadius: 10, background: "none", color: a.danger ? THEME.rose : THEME.text, fontSize: 15, fontFamily: "inherit", cursor: "pointer", textDecoration: "none", textAlign: "left" };
+                  return a.href
+                    ? <a key={a.k} role="menuitem" href={a.href} onClick={() => setMenu(false)} data-testid={`sheet-${a.k}`} style={st}><I size={18} /> {a.l}</a>
+                    : <button key={a.k} type="button" role="menuitem" onClick={() => { setMenu(false); a.on?.(); }} data-testid={`sheet-${a.k}`} style={st}><I size={18} /> {a.l}</button>;
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
       <div style={{ padding: "12px 18px", borderTop: `1px solid ${THEME.border}`, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Button onClick={onPayments} style={{ flex: 1 }}>To'lov qabul qilish</Button>
         <Button variant="ghost" onClick={onInvoice} title="Hisob-faktura"><FileText size={14} /> Faktura</Button>
         <Button variant="ghost" onClick={onEdit} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={14} /></Button>
         {canDelete && <Button variant="ghost" onClick={onDelete} title="O'chirish" aria-label="O'chirish"><Trash2 size={14} color={THEME.rose} /></Button>}
       </div>
+      )}
     </aside>
+  );
+  if (!sheet) return aside;
+  return (
+    <>
+      <div className="uvix-order-sheet-backdrop" onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 205, background: "rgba(9,9,11,0.38)", animation: "uvixFadeIn .18s ease" }} />
+      {aside}
+    </>
+  );
+}
+const sqBtn = () => ({ width: 50, height: 50, flexShrink: 0, borderRadius: 14, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" });
+
+// Ishlab chiqarish bosqichlari (telefondagi varaqda): Dizayn → Pechat → Tayyor → Topshirildi
+function ProdSteps({ order, stage, employees }) {
+  const empById = new Map((employees || []).map((e) => [e.id, e]));
+  const cur = PROD_STAGES.indexOf(stage);
+  const first = (t) => (t?.assigneeId && empById.get(t.assigneeId)?.name?.split(" ")[0]) || "";
+  const steps = [
+    { k: "design", l: "Dizayn", sub: first(order.design) },
+    { k: "printing", l: "Pechat", sub: first(order.print) },
+    { k: "ready", l: "Tayyor", sub: "" },
+    { k: "delivered", l: "Topshirildi", sub: "" },
+  ];
+  const hint = stageHint(order, empById);
+  return (
+    <div data-testid="prod-steps" style={{ display: "flex", alignItems: "flex-start", marginTop: 12 }}>
+      {steps.map((s, i) => {
+        const idx = PROD_STAGES.indexOf(s.k);
+        const done = cur > idx, now = cur === idx;
+        const c = prodColors(s.k);
+        const lineDone = cur > idx;
+        return (
+          <div key={s.k} data-step={s.k} data-state={done ? "done" : now ? "now" : "todo"} style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <span style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                background: done ? THEME.greenSolid : now ? c.bg : "transparent", border: done ? 0 : `2px solid ${now ? c.color : THEME.border2}`, color: done ? "#fff" : c.color }}>
+                {done ? <Check size={14} strokeWidth={3} /> : now ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color }} /> : null}
+              </span>
+              {i < steps.length - 1 && <span style={{ flex: 1, height: 2, margin: "0 4px", borderRadius: 1, background: lineDone ? THEME.green : THEME.border2 }} />}
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: now ? 700 : 600, marginTop: 6, color: done || now ? THEME.text : THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 4 }}>{s.l}</div>
+            <div style={{ fontSize: 11.5, lineHeight: 1.3, color: THEME.dim, overflowWrap: "anywhere", paddingRight: 4 }}>{now && hint ? hint : s.sub || (done ? "✓" : "—")}</div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

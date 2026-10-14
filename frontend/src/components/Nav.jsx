@@ -13,20 +13,31 @@ export const NAV_SHORT = {
 };
 const ALL_KEYS = NAV.map((n) => n.key);
 const DEFAULT_BAR = ["dashboard", "orders", "expense", "crm"];
+// Telefon pastki paneli — xodim o'zi tanlamagan bo'lsa, rolga mos standart
+export const ROLE_BAR = {
+  operator: ["dashboard", "chats", "orders", "crm"],
+  admin: ["dashboard", "orders", "operations", "crm"],
+};
+export const roleBar = (role) => ROLE_BAR[role] || DEFAULT_BAR;
+// Eski standart (["dashboard","orders","expense","crm"]) qo'lda tanlanmagan deb hisoblanadi — rol standarti qo'llanadi
+const barIsCustom = (src, bar) => src?.barSet === true || (bar.length > 0 && bar.join(",") !== DEFAULT_BAR.join(","));
 export const LAYOUTS = [
   { key: "side", label: "Chap", title: "Chap panel", icon: PanelLeft },
   { key: "rail", label: "Ixcham", title: "Ixcham panel (faqat ikonlar)", icon: Columns2 },
   { key: "top", label: "Tepa", title: "Tepa panel (gorizontal)", icon: PanelTop },
 ];
 
-export function normalizeNav(p) {
+export function normalizeNav(p, role) {
   const src = p && typeof p === "object" ? p : {};
   const order = [...(src.order || []).filter((k) => ALL_KEYS.includes(k)), ...ALL_KEYS.filter((k) => !(src.order || []).includes(k))];
   const hidden = (src.hidden || []).filter((k) => ALL_KEYS.includes(k) && k !== "settings");
   let mobileBar = (src.mobileBar || []).filter((k) => ALL_KEYS.includes(k)).slice(0, 4);
-  if (!mobileBar.length) mobileBar = DEFAULT_BAR;
-  return { layout: ["side", "rail", "top"].includes(src.layout) ? src.layout : "side", order: [...new Set(order)], hidden, mobileBar };
+  const barSet = barIsCustom(src, mobileBar);
+  if (!barSet) mobileBar = roleBar(role);
+  return { layout: ["side", "rail", "top"].includes(src.layout) ? src.layout : "side", order: [...new Set(order)], hidden, mobileBar, barSet };
 }
+// Saqlashda: pastki panel qo'lda tanlanmagan bo'lsa — bo'sh (keyin ham rol standarti ishlaydi)
+const forSave = (n) => ({ ...n, mobileBar: n.barSet ? n.mobileBar : [] });
 
 // ---------------- Holat ----------------
 export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) {
@@ -46,8 +57,14 @@ export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) 
   }, [currentUser?.id]);
   useEffect(() => { setGlobalDraft(null); }, [settings?.navDefaults]);
 
-  const globalPrefs = useMemo(() => globalDraft || normalizeNav(settings?.navDefaults), [globalDraft, settings?.navDefaults]);
-  const minePrefs = useMemo(() => (mine ? normalizeNav(mine) : null), [mine]);
+  const role = currentUser?.role;
+  const globalPrefs = useMemo(() => globalDraft || normalizeNav(settings?.navDefaults, role), [globalDraft, settings?.navDefaults, role]);
+  // Shaxsiy menyu pastki panelni tanlamagan bo'lsa — admin «Hamma uchun» tanlagani, u ham bo'lmasa rol standarti
+  const minePrefs = useMemo(() => {
+    if (!mine) return null;
+    const n = normalizeNav(mine, role);
+    return n.barSet || !globalPrefs.barSet ? n : { ...n, mobileBar: globalPrefs.mobileBar };
+  }, [mine, role, globalPrefs]);
   const editingGlobal = editing && isAdmin && scope === "global";
   const prefs = editingGlobal ? globalPrefs : (minePrefs || globalPrefs);
 
@@ -58,20 +75,24 @@ export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) 
   const mobileBar = prefs.mobileBar.filter((k) => allowed(byKey[k]));
 
   function update(fn) {
-    const next = normalizeNav(fn(prefs));
+    const next = normalizeNav(fn(prefs), role);
     clearTimeout(timer.current);
     if (editingGlobal) {
       setGlobalDraft(next);
-      timer.current = setTimeout(() => onSaveSettings({ ...settingsRef.current, navDefaults: next }), 350);
+      timer.current = setTimeout(() => onSaveSettings({ ...settingsRef.current, navDefaults: forSave(next) }), 350);
     } else {
-      setMine(next);
-      timer.current = setTimeout(() => saveMyNav(next).catch(() => {}), 400);
+      setMine(forSave(next));
+      timer.current = setTimeout(() => saveMyNav(forSave(next)).catch(() => {}), 400);
     }
+  }
+  // Telefon pastki paneliga bo'lim qo'shish/olib tashlash (ko'pi bilan 4 ta)
+  function toggleBar(key) {
+    update((p) => ({ ...p, barSet: true, mobileBar: p.mobileBar.includes(key) ? p.mobileBar.filter((k) => k !== key) : [...p.mobileBar, key].slice(-4) }));
   }
   function reset() {
     clearTimeout(timer.current);
     if (editingGlobal) {
-      setGlobalDraft(normalizeNav({}));
+      setGlobalDraft(normalizeNav({}, role));
       onSaveSettings({ ...settingsRef.current, navDefaults: null });
     } else {
       setMine(null);
@@ -80,8 +101,8 @@ export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) 
   }
 
   return {
-    layout: prefs.layout, items, editorItems, hidden: prefs.hidden, mobileBar,
-    editing, setEditing, scope, setScope, isAdmin, hasMine: !!mine, update, reset,
+    layout: prefs.layout, items, editorItems, hidden: prefs.hidden, mobileBar, barSet: !!prefs.barSet,
+    editing, setEditing, scope, setScope, isAdmin, hasMine: !!mine, update, reset, toggleBar,
   };
 }
 
@@ -114,10 +135,7 @@ export function NavEditor({ nav, showLayout = true }) {
     return { ...p, order };
   }));
   const toggleHidden = (key) => nav.update((p) => ({ ...p, hidden: p.hidden.includes(key) ? p.hidden.filter((k) => k !== key) : [...p.hidden, key] }));
-  const toggleBar = (key) => nav.update((p) => {
-    const bar = p.mobileBar.includes(key) ? p.mobileBar.filter((k) => k !== key) : [...p.mobileBar, key].slice(-4);
-    return { ...p, mobileBar: bar };
-  });
+  const toggleBar = nav.toggleBar;
   const move = (key, dir) => nav.update((p) => {
     const order = [...p.order];
     const i = order.indexOf(key);

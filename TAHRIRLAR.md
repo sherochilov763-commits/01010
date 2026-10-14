@@ -25,3 +25,4 @@
 ## Yangi ro'yxat (2026-10-14 dan)
 18. **Ranglar va kontrast tekshiruvi.** Chatdagi «Bosqich» tanlovida oq matn och fonda; Shisha rejimida matnlar ko'rinmaydi; holat yorliqlari (Jarayonda, Kechikdi, Yetarli, Kam qoldi) xira; Grafitda «Naqd» yorlig'i; papka hisoblagichi; xira kulrang matn 3.3:1. ✅ BAJARILDI
 19. **Yangi mavzular.** Qog'oz, Tun ko'k, Iliq tun, OLED qora, Yuqori kontrast, CMYK + galereya; avtomatik tungi mavzu (qurilmaga mos / jadval); tanlov har xodimga alohida; admin uchun kompaniya standarti va rol bo'yicha mavzu. ✅ BAJARILDI
+20. **Telefon: 1-bosqich.** Buyurtmalar ixcham qator + surish (To'lov / Topshirildi / Telegram / Qo'ng'iroq), buyurtma tafsiloti pastki varaqda (bosqichlar, «To'lov qabul qilish» doim pastda), rolga mos pastki menyu va «Yana» plitkalari (qidiruv, ushlab turib pastki menyuga qo'shish). Kompyuter ko'rinishi o'zgarmadi. ✅ BAJARILDI

@@ -5,6 +5,7 @@ import { QrApproveHost, QrScanButton } from "./components/PhoneToDesktop.jsx";
 import { authBootstrap, authListEmployees, authLogout, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
+import { MORE_SHEET_CSS } from "./components/MoreSheet.jsx";
 import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
 import { CommandPalette, SearchTrigger, useCommandHotkey } from "./components/CommandPalette.jsx";
 import { buildCustomers } from "./lib/customers.js";
@@ -608,6 +609,22 @@ export default function App() {
     return { customers: set.size };
   }, [orders, currentUser]);
 
+  // Telefon pastki menyusi: «Chatlar» ustidagi raqam — oxirgi marta Chatlar ochilgandan keyin kelgan Telegram xabarlari
+  const [chatsSeen, setChatsSeen] = useState(0);
+  useEffect(() => {
+    try { setChatsSeen(Number(localStorage.getItem(`uvix_chats_seen:${currentUser?.id}`)) || 0); } catch { setChatsSeen(0); }
+  }, [currentUser?.id]);
+  useEffect(() => {
+    if (view !== "chats" || !currentUser?.id) return;
+    const mark = () => { const t = Date.now(); setChatsSeen(t); try { localStorage.setItem(`uvix_chats_seen:${currentUser.id}`, String(t)); } catch { /* */ } };
+    mark();
+    return mark;
+  }, [view, currentUser?.id]);
+  const mobileBadges = useMemo(() => {
+    const chats = view === "chats" ? 0 : (notif.items || []).filter((n) => n.cat === "chats" && !n.read && Date.parse(n.at) > chatsSeen).length;
+    return { ...navBadges, chats };
+  }, [navBadges, notif.items, chatsSeen, view]);
+
   // Ctrl+K oynasi uchun mijozlar ro'yxati — faqat oyna ochiqligida hisoblanadi
   const cmdkCustomers = useMemo(() => {
     if (!cmdkOpen || !currentUser) return [];
@@ -774,6 +791,8 @@ export default function App() {
         }
         @media (max-width: 900px) { .uvix-hero-grid { grid-template-columns: 1fr !important; gap: 18px !important; } }
         @media (max-width: 720px) {
+          /* «clip» — gorizontal siljishni to'sadi, lekin aylantirish konteyneri yaratmaydi: telefonda yopishqoq filtrlar ishlaydi */
+          @supports (overflow: clip) { .uvix-shell { overflow-x: clip !important; } }
           .uvix-hide-mobile { display: none !important; }
           .uvix-hero { padding: 16px !important; }
           .uvix-topbar { padding: 14px 16px 0 !important; }
@@ -830,6 +849,7 @@ export default function App() {
         ${navCss()}
         ${ncenterCss()}
         ${BOTTOM_NAV_CSS}
+        ${MORE_SHEET_CSS}
       `}</style>
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
@@ -867,6 +887,7 @@ export default function App() {
                 pendingLead={pendingLeadForOrder}
                 leads={leads}
                 customerProfiles={customers}
+                onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onPendingLeadHandled={() => setPendingLeadForOrder(null)}
                 onServerChange={onServerChange}
                 showToast={showToast}
@@ -1055,6 +1076,11 @@ export default function App() {
         onNavigate={(v) => { setNavFilter(null); setView(v); }}
         onMore={() => setSidebarOpen(true)}
         onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
+        badges={mobileBadges}
+        more={{
+          items: visibleNav, badges: mobileBadges, user: currentUser, onToggleBar: navCfg.toggleBar, onLogout: logout,
+          onEditMenu: () => { navCfg.setScope("mine"); navCfg.setEditing(true); setSidebarOpen(true); },
+        }}
       />
       {toast && (
         <div key={toast.id} className="uvix-toast" role="status" aria-live="polite" style={{ position: "fixed", bottom: 20, right: 20, background: THEME.isDark ? "#2A2A2E" : "#18181B", color: "#FAFAFA", padding: toast.undo ? "8px 8px 8px 14px" : "10px 16px", borderRadius: 8, fontSize: 13, fontWeight: 500, boxShadow: THEME.shadowLg, zIndex: 400, display: "flex", alignItems: "center", gap: 10, maxWidth: "calc(100vw - 32px)" }}>

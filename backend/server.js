@@ -765,6 +765,7 @@ function sanitizeNavPrefs(p) {
     order: keys(p.order, 40),
     hidden: keys(p.hidden, 40).filter((k) => k !== "settings"), // Sozlamalarni yashirib bo'lmaydi — aks holda qaytib bo'lmaydi
     mobileBar: keys(p.mobileBar, 4),
+    ...(p.barSet === true ? { barSet: true } : {}), // pastki panel qo'lda tanlangan (rol standarti qo'llanmaydi)
   };
 }
 app.get("/api/me/nav", requireAuth, (req, res) => {

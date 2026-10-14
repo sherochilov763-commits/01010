@@ -1,13 +1,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Wallet, Download, FileBarChart2, FileText, Landmark, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
-import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile, MobileRow } from "../../components/ui.jsx";
+import { Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile } from "../../components/ui.jsx";
 import { exportWorkbook, loadXLSX } from "../../lib/excel.js";
 import { generateOrderNumber, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { fmt, money, todayStr, uid, usd, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { OrderForm } from "./OrderForm.jsx";
 import { PaymentsModal } from "./PaymentsModal.jsx";
-import { buildCustomers, custKey } from "../../lib/customers.js";
+import { buildCustomers, custKey, telLink, tgLink } from "../../lib/customers.js";
+import { MobileOrderRow } from "./MobileOrderRow.jsx";
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
 import { OrderPanel } from "./OrderPanel.jsx";
 import { Avatar } from "../../components/ui.jsx";
@@ -43,7 +44,7 @@ function StageBar({ counts }) {
 }
 
 /* ---------------- ORDERS VIEW ---------------- */
-export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles }) {
+export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
   const isMobile = useIsMobile();
   const [modal, setModal] = useState(null); // {edit} — faqat tahrirlash (yangi buyurtma smeta orqali)
   const [quote, setQuote] = useState(null); // {lead?} — «Yangi buyurtma» (smeta → to'lov → buyurtmalar)
@@ -88,6 +89,9 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const [onlyPaid, setOnlyPaid] = useState(false);
   const [line, setLine] = useState("all"); // UVIXPRINT / UVONYX bo'yicha ko'rinish filtri
   const [selectedId, setSelectedId] = useState(null); // o'ng paneldagi buyurtma (kompyuterda)
+  const [sheetId, setSheetId] = useState(null); // telefonda pastki varaqdagi buyurtma
+  const [swiped, setSwiped] = useState(null); // telefonda surib ochilgan qator: { id, side }
+  const blockTap = useRef(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [importErrors, setImportErrors] = useState(null);
   const fileInputRef = useRef(null);
@@ -132,6 +136,14 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   async function changeStage(o, st) { const r = await setOrderStage(o.id, st); await onServerChange?.({ orders: [r.order], lead: r.lead || undefined }); }
   async function assign(o, kind, id) { const r = await assignOrderTask(o.id, { kind, assigneeId: id }); await onServerChange?.({ orders: [r.order], lead: r.lead || undefined }); }
   const selected = !isMobile && selectedId ? orders.find((o) => o.id === selectedId) || null : null;
+  const sheetOrder = isMobile && sheetId ? orders.find((o) => o.id === sheetId) || null : null;
+  // Mijoz bilan bog'lanish: ilovadagi Telegram chat, Telegram foydalanuvchi nomi yoki telefon
+  const contactOf = (o) => {
+    const c = o ? custByKey.get(custKey(o.customer)) : null;
+    const tg = c?.chatLead && onOpenChat ? () => onOpenChat(c.chatLead) : c?.telegram ? () => window.open(tgLink(c.telegram), "_blank", "noopener") : null;
+    return { phone: c?.phone || "", phoneHref: c?.phone ? telLink(c.phone) : null, onTelegram: tg };
+  };
+  const openSheet = (o) => { setSwiped(null); setSheetId(o.id); };
   const listSum = useMemo(() => list.reduce((sum, o) => sum + (o.agreementUzs || 0), 0), [list]);
   const selectedPhone = useMemo(() => {
     if (!selected) return "";
@@ -295,7 +307,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     const row = (o, nested) => {
       const st = stageOf(o); const debt = orderDebt(o); const isSel = selected?.id === o.id;
       return (
-        <div key={o.id} role="button" tabIndex={0} data-order-row={o.orderNumber} onClick={() => (isMobile ? setPaymentsFor(o) : setSelectedId(isSel ? null : o.id))} onKeyDown={(e) => e.key === "Enter" && (isMobile ? setPaymentsFor(o) : setSelectedId(o.id))}
+        <div key={o.id} role="button" tabIndex={0} data-order-row={o.orderNumber} onClick={() => (isMobile ? openSheet(o) : setSelectedId(isSel ? null : o.id))} onKeyDown={(e) => e.key === "Enter" && (isMobile ? openSheet(o) : setSelectedId(o.id))}
           className="uvix-row" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr auto" : "minmax(0,1.6fr) minmax(0,1.2fr) 110px 110px", gap: 10, alignItems: "center", padding: isMobile ? "9px 14px 9px 30px" : "8px 16px 8px 60px", borderTop: `1px dashed ${THEME.border}`, cursor: "pointer", background: isSel ? THEME.navActiveBg : undefined }}>
           <span style={{ minWidth: 0 }}>
             <b style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{o.orderNumber}</b>
@@ -383,7 +395,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   return (
     <div>
       {isMobile ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+        <>
           <div style={{ display: "flex", gap: 8 }}>
             <label style={{ flex: 1, position: "relative", display: "block" }}>
               <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Qidirish</span>
@@ -396,11 +408,13 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
               <SlidersHorizontal size={19} />
             </button>
           </div>
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "0 -16px", padding: "0 16px" }} role="group" aria-label="Holat bo'yicha filtr" className="uvix-noscrollbar">
+          {/* Filtrlar aylantirganda tepada yopishib turadi (ota — butun bo'lim, shuning uchun alohida) */}
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", margin: "4px -16px", padding: "6px 16px", position: "sticky", top: 0, zIndex: 20, background: THEME.surface }} role="group" aria-label="Holat bo'yicha filtr" className="uvix-noscrollbar uvix-m-filters" data-testid="m-filters">
             {statusChips.map((c) => chip(c.on, c.set, <>{c.l} <b style={{ fontWeight: 600, opacity: 0.75 }}>{c.n}</b></>, c.k))}
             {stageChips.map(stageChip)}
             {lineChips.map((c) => chip(line === c.v, () => setLine(line === c.v ? "all" : c.v), c.l, c.v))}
           </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {viewToggle}
             <div style={{ flex: 1 }} />
@@ -422,7 +436,8 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           )}
           {fileInput}
           {importErrorsBox}
-        </div>
+          </div>
+        </>
       ) : (
       <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
@@ -461,54 +476,18 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             {pageItems.map((o) => {
               const paid = orderTotalPaid(o);
               const debt = orderDebt(o);
-              const brakSum = orderBrakSum(o, transactions);
-              const total = Math.max(0, (o.agreementUzs || 0) - brakSum);
-              const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-              const meta = [shortDateUz(o.date), o.title && o.title !== o.materialType ? o.title : null, o.materialType].filter(Boolean).join("  ·  ");
+              const total = Math.max(0, (o.agreementUzs || 0) - orderBrakSum(o, transactions));
               const st = stageOf(o);
+              const ct = contactOf(o);
               return (
-                <MobileRow key={o.id} onClick={() => setPaymentsFor(o)}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "Mijoz ko'rsatilmagan"}</div>
-                      <div style={{ fontSize: 12, color: THEME.muted, marginTop: 2 }}>
-                        <span style={{ color: THEME.mutedDark, fontWeight: 600, whiteSpace: "nowrap" }}>{o.orderNumber}</span>
-                        {meta && <span style={{ whiteSpace: "nowrap" }}>{`  ·  ${meta}`}</span>}
-                      </div>
-                    </div>
-                    <span style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
-                      {debt > 0
-                        ? <Badge color={THEME.rose} bg={THEME.roseBg}>Qarz {money(debt)}</Badge>
-                        : <Badge color={THEME.green} bg={THEME.greenBg}>To'langan</Badge>}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 12, fontSize: 12.5 }}>
-                    <span style={{ color: THEME.muted }}>
-                      <b style={{ color: THEME.green, fontWeight: 700 }}>{money(paid)}</b> / {money(total)}
-                    </span>
-                    {o.agreementUsd ? <span style={{ color: THEME.dim, fontWeight: 600 }}>{usd(o.agreementUsd)}</span> : null}
-                  </div>
-                  <div style={{ height: 5, borderRadius: 3, background: THEME.border, marginTop: 6, overflow: "hidden" }}>
-                    <div style={{ width: `${pct}%`, height: "100%", background: debt > 0 ? THEME.violet : THEME.green, borderRadius: 3 }} />
-                  </div>
-                  {brakSum > 0 && <div style={{ fontSize: 11.5, color: THEME.rose, fontWeight: 600, marginTop: 6 }}>Brak: −{money(brakSum)}</div>}
-                  {(st || o.groupId) && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                      {st && <StageChip stage={st} />}
-                      {st && <span style={{ fontSize: 11.5, color: THEME.dim }}>{stageHint(o, empById)}</span>}
-                      {o.groupId && o.groupSize > 1 && <span style={{ fontSize: 11, fontWeight: 600, color: THEME.violet, background: THEME.violetSoft, padding: "1px 7px", borderRadius: 8 }}>{o.groupId} · {o.groupIdx}/{o.groupSize}</span>}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 8, marginTop: 12 }} onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => setPaymentsFor(o)} className="uvix-iconbtn" style={{ ...getIconBtn(), width: "auto", padding: "0 12px", gap: 6, fontSize: 12.5, fontWeight: 600, color: THEME.text }}><Landmark size={14} /> To'lovlar</button>
-                    {st === "ready" && <button onClick={() => changeStage(o, "delivered").catch((e) => showToast?.(e.message))} className="uvix-iconbtn" data-testid="m-deliver" style={{ ...getIconBtn(), width: "auto", padding: "0 10px", fontSize: 12.5, fontWeight: 600, color: THEME.green }}>Topshirildi</button>}
-                    <button onClick={() => setInvoiceFor(o)} aria-label="Hisob-faktura" title="Hisob-faktura" className="uvix-iconbtn" style={getIconBtn()} data-invoice={o.id}><FileText size={14} /></button>
-                    <button onClick={() => setModal({ edit: o })} aria-label="Tahrirlash" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>
-                    {(isAdmin || o.createdBy === currentUser.name) && (
-                      <button onClick={() => setConfirmDel(o)} aria-label="O'chirish" className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
-                    )}
-                  </div>
-                </MobileRow>
+                <MobileOrderRow key={o.id} order={o} stage={st} paid={paid} debt={debt} total={total}
+                  open={swiped?.id === o.id ? swiped.side : null}
+                  onOpenChange={(side) => setSwiped(side ? { id: o.id, side } : null)}
+                  onTouch={() => { blockTap.current = !!swiped && swiped.id !== o.id; if (blockTap.current) setSwiped(null); }}
+                  onTap={() => { if (blockTap.current) { blockTap.current = false; return; } openSheet(o); }}
+                  onPay={() => setPaymentsFor(o)}
+                  onDeliver={() => changeStage(o, "delivered").then(() => showToast?.(`${o.orderNumber} — mijozga topshirildi`)).catch((e) => showToast?.(e.message))}
+                  onTelegram={ct.onTelegram} phoneHref={ct.phoneHref} />
               );
             })}
           </div>
@@ -611,6 +590,31 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
         </>
       )}
       </div>
+      {sheetOrder && (() => {
+        const ct = contactOf(sheetOrder);
+        return (
+          <OrderPanel
+            variant="sheet"
+            order={sheetOrder}
+            transactions={transactions}
+            phone={ct.phone}
+            phoneHref={ct.phoneHref}
+            onTelegram={ct.onTelegram}
+            canDelete={isAdmin || sheetOrder.createdBy === currentUser.name}
+            onClose={() => setSheetId(null)}
+            onPayments={() => setPaymentsFor(sheetOrder)}
+            onInvoice={() => setInvoiceFor(sheetOrder)}
+            onEdit={() => setModal({ edit: sheetOrder })}
+            onDelete={() => setConfirmDel(sheetOrder)}
+            stage={stageOf(sheetOrder)}
+            employees={employees}
+            siblings={sheetOrder.groupId ? (allOrders || orders).filter((o) => o.groupId === sheetOrder.groupId && !o.deletedAt).sort((a, b) => (a.groupIdx || 0) - (b.groupIdx || 0)) : null}
+            onStage={(st) => changeStage(sheetOrder, st)}
+            onAssign={(kind, id) => assign(sheetOrder, kind, id)}
+            onSelectOrder={(id) => setSheetId(id)}
+          />
+        );
+      })()}
       {modal && (
         <OrderForm
           initial={modal.edit}
@@ -664,7 +668,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
         <ConfirmDialog
           message={`${confirmDel.orderNumber} buyurtmasini (${money(confirmDel.agreementUzs)}) o'chirmoqchimisiz? Unga tegishli barcha to'lovlar tarixi ham o'chadi.`}
           onCancel={() => setConfirmDel(null)}
-          onConfirm={() => { onDeleteOrder(confirmDel); if (selectedId === confirmDel.id) setSelectedId(null); setConfirmDel(null); }}
+          onConfirm={() => { onDeleteOrder(confirmDel); if (selectedId === confirmDel.id) setSelectedId(null); if (sheetId === confirmDel.id) setSheetId(null); setConfirmDel(null); }}
         />
       )}
     </div>

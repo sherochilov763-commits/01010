@@ -5,6 +5,7 @@ import { NAV } from "../constants.js";
 import { NAV_SHORT } from "./Nav.jsx";
 import { THEME } from "../theme.js";
 import { useBackToClose } from "../lib/history.js";
+import { MoreSheet } from "./MoreSheet.jsx";
 
 // Pastki panel: xodim tanlagan 4 ta bo'lim (o'rtada "+" tugmasi) va "Yana"
 function buildTabs(keys) {
@@ -15,12 +16,16 @@ function buildTabs(keys) {
   return [...tabs.slice(0, mid), { key: "__add" }, ...tabs.slice(mid), { key: "__more", label: "Yana", icon: MoreHorizontal }];
 }
 
-export function BottomNav({ view, tabs: tabKeys, onNavigate, onMore, onQuickAdd }) {
+// more: { items, badges, user, onToggleBar, onEditMenu, onLogout } — berilsa «Yana» plitkalar varag'ini ochadi, aks holda onMore()
+export function BottomNav({ view, tabs: tabKeys, onNavigate, onMore, onQuickAdd, badges, more }) {
   const [sheet, setSheet] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   useBackToClose(sheet, () => setSheet(false));
   const TABS = buildTabs(tabKeys);
   const mainKeys = TABS.map((t) => t.key).filter((k) => !k.startsWith("__"));
   const moreActive = !mainKeys.includes(view);
+  // Pastki menyuda faqat yangi chat xabarlari soni; «Chatlar» panelda bo'lmasa — «Yana» ustida
+  const tabBadge = (k) => (k === "chats" || (k === "__more" && !mainKeys.includes("chats")) ? badges?.chats || 0 : 0);
 
   useEffect(() => {
     if (!sheet) return;
@@ -52,15 +57,23 @@ export function BottomNav({ view, tabs: tabKeys, onNavigate, onMore, onQuickAdd 
           const Icon = t.icon;
           return (
             <button key={t.key} type="button" className="uvix-tab" aria-current={active ? "page" : undefined}
-              onClick={() => { setSheet(false); t.key === "__more" ? onMore() : onNavigate(t.key); }}
+              onClick={() => { setSheet(false); if (t.key !== "__more") onNavigate(t.key); else if (more) setMoreOpen(true); else onMore(); }}
+              data-tab={t.key} aria-label={tabBadge(t.key) ? `${t.label}, ${tabBadge(t.key)} ta yangi xabar` : undefined}
               style={{ color: active ? THEME.text : THEME.muted, fontWeight: active ? 600 : 500 }}>
-              <Icon size={22} strokeWidth={active ? 2.1 : 1.7} color={active ? THEME.violet : "currentColor"} />
+              <span style={{ position: "relative", display: "flex" }}>
+                <Icon size={22} strokeWidth={active ? 2.1 : 1.7} color={active ? THEME.violet : "currentColor"} />
+                {tabBadge(t.key) ? <span className="uvix-tab-badge" data-testid={`tab-badge-${t.key}`} style={{ background: THEME.roseSolid, border: `2px solid ${THEME.card}` }}>{tabBadge(t.key) > 99 ? "99+" : tabBadge(t.key)}</span> : null}
+              </span>
               <span>{t.label}</span>
             </button>
           );
         })}
       </nav>
 
+      {moreOpen && more && (
+        <MoreSheet {...more} barKeys={mainKeys} view={view} onNavigate={onNavigate} onClose={() => setMoreOpen(false)}
+          onEditMenu={more.onEditMenu ? () => { setMoreOpen(false); setTimeout(() => more.onEditMenu(), 220); } : null} />
+      )}
       {sheet && (
         <>
           <div className="uvix-sheet-backdrop" onClick={() => setSheet(false)} />
@@ -100,7 +113,8 @@ export const BOTTOM_NAV_CSS = `
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     font-size: 10px; letter-spacing: -0.1px; padding: 0 1px; -webkit-tap-highlight-color: transparent; font-family: inherit;
   }
-  .uvix-tab span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .uvix-tab > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .uvix-tab-badge { position: absolute; top: -6px; left: 13px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; color: #fff; font-size: 10px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; letter-spacing: 0; }
   .uvix-fab {
     width: 52px; height: 52px; margin: -18px 2px 0; flex-shrink: 0; border: 0; border-radius: 16px; cursor: pointer;
     display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent;
