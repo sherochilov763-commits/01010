@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Download, Info, Plus, RefreshCw, Send, Trash2, TrendingDown } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
-import { THEME } from "../../theme.js";
+import { SC, THEME, tintText } from "../../theme.js";
 import { deletePaintCount, fetchPaint, fetchPaintCounts, fetchPaintMonth, savePaintConfig, savePaintCount, sendPaintTest } from "../../storage.js";
 import { exportRows } from "../../lib/excel.js";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
@@ -22,10 +22,10 @@ const shiftYm = (ym, n) => { const [y, m] = ym.split("-").map(Number); const d =
 const parseNum = (s) => { const n = Number(String(s ?? "").replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) ? n : NaN; };
 
 const STATUS = {
-  ok: { label: "Yetarli", color: "#10B981" },
-  low: { label: "Kam qoldi", color: "#F59E0B" },
-  empty: { label: "Tugagan", color: "#EF4444" },
-  unknown: { label: "Sanalmagan", color: "#94A3B8" },
+  ok: { label: "Yetarli", get color() { return SC.green; } },
+  low: { label: "Kam qoldi", get color() { return SC.amber; } },
+  empty: { label: "Tugagan", get color() { return SC.red; } },
+  unknown: { label: "Sanalmagan", get color() { return SC.gray; } },
 };
 
 function Swatch({ color, size = 14 }) {
@@ -136,7 +136,7 @@ function PaintCard({ it, lead }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Swatch color={it.color} />
         <div style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: s.color, background: `${s.color}1F`, padding: "3px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>{s.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: tintText(s.color), background: `${s.color}1F`, padding: "3px 8px", borderRadius: 20, whiteSpace: "nowrap" }}>{s.label}</span>
       </div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <div style={{ fontSize: 28, fontWeight: 700, fontFamily: THEME.fontNum, letterSpacing: -0.5, color: it.stock <= 0 ? THEME.rose : THEME.text }}>{nfmt(Math.max(0, it.stock))}</div>

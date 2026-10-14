@@ -9,7 +9,7 @@ import { Badge, Button, Card, Field, Modal, getInputStyle } from "../../componen
 import { money } from "../../lib/format.js";
 import { roleLabel } from "../../constants.js";
 import { THEME } from "../../theme.js";
-import { AppearancePreviewCard, AppearanceSection } from "./AppearanceSection.jsx";
+import { AppearancePreviewCard, AppearanceSection, CompanyAppearanceCard } from "./AppearanceSection.jsx";
 import { TrashSection } from "./TrashSection.jsx";
 import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
 import { TelegramAccountSection } from "./TelegramAccountSection.jsx";
@@ -154,7 +154,7 @@ function SettingsSearchButton() {
   );
 }
 
-function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings: rawSaveSettings, appearance, onApplyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
+function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, employees, onSave, onLogout, isAdmin, settings, onSaveSettings: rawSaveSettings, appearance, onApplyAppearance, companyAppearance, onApplyCompanyAppearance, orders, transactions, onRestoreOrder, onPermanentDeleteOrder, onRestoreTransaction, onPermanentDeleteTransaction, onRestorePayment, onPermanentDeletePayment, onResetAll, onSendBackupNow, onConnectTelegramUser, onDisconnectTelegramUser, onFetchTelegramUserStatus }) {
   // Bir nechta bo'lim ketma-ket saqlansa ham bir-birini bosib ketmasin — eng so'nggi holatga qo'shib boramiz
   const latest = useRef(settings || {});
   useEffect(() => { latest.current = settings || {}; }, [settings]);
@@ -322,6 +322,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
     </>,
     korinish: <>
       <AppearanceSection appearance={appearance} onApply={onApplyAppearance} />
+      {isAdmin && companyAppearance && <CompanyAppearanceCard appearance={appearance} company={companyAppearance} onApply={onApplyCompanyAppearance} />}
       <AppearancePreviewCard appearance={appearance} />
       {bgState && <BackgroundSection bgState={bgState} />}
     </>,

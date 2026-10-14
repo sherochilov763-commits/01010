@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { FileImage, Printer } from "lucide-react";
 import { Button, Field, Modal, getInputStyle } from "../../components/ui.jsx";
-import { THEME } from "../../theme.js";
+import { SC, THEME } from "../../theme.js";
 
 const FILE_TYPES = ["CDR", "AI", "PSD", "PDF", "TIFF"];
 const QUALITIES = ["720 dpi", "1080 dpi", "1440 dpi"];
@@ -147,7 +147,7 @@ export function TaskAssignModal({ lead, kind, employees, onSave, onCancel, attac
 }
 
 // CRM kartochkalarida vazifa holatini ko'rsatish
-const STATUS = { new: ["Yangi", "#3B82F6"], in_progress: ["Jarayonda", "#F59E0B"], done: ["Tugallandi", "#10B981"], unassigned: ["Tayinlanmagan", "#EF4444"] };
+const STATUS = { get new() { return ["Yangi", SC.blue]; }, get in_progress() { return ["Jarayonda", SC.amber]; }, get done() { return ["Tugallandi", SC.green]; }, get unassigned() { return ["Tayinlanmagan", SC.red]; } };
 
 export function TaskChips({ lead, employees, onOpen, compact }) {
   const rows = [];

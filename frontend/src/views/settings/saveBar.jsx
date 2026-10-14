@@ -52,7 +52,7 @@ export function SaveBarProvider({ children }) {
             <>
               <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Saqlanmagan o'zgarish{labels.length ? <>: <b>{labels.join(", ")}</b></> : ""}</span>
               <button type="button" onClick={resetAll} disabled={busy} style={{ height: 34, padding: "0 12px", borderRadius: 9, border: "1px solid #52525B", background: "none", color: "#fff", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Bekor</button>
-              <button type="button" onClick={saveAll} disabled={busy} data-testid="save-bar-save" style={{ height: 34, padding: "0 14px", borderRadius: 9, border: 0, background: THEME.violet, color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>{busy && <Loader2 size={14} className="uvix-spin" />}Saqlash</button>
+              <button type="button" onClick={saveAll} disabled={busy} data-testid="save-bar-save" style={{ height: 34, padding: "0 14px", borderRadius: 9, border: 0, background: THEME.violet, color: THEME.onPrimary, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, flexShrink: 0 }}>{busy && <Loader2 size={14} className="uvix-spin" />}Saqlash</button>
             </>
           ) : <span style={{ color: msg.ok ? "#6EE7B7" : "#FCA5A5", fontWeight: 600, padding: "6px 4px" }}>{msg.text}</span>}
         </div>

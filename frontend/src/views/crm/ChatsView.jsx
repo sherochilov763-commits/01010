@@ -23,7 +23,7 @@ export const TG_BLUE = "#0088CC"; // Telegram brendi (tugmalar/belgilar uchun)
 // Quyidagilar joriy mavzuga qarab yangilanadi (applyPalette)
 export let TG_DARK_BG, TG_DARK_SIDEBAR, TG_DARK_HOVER, TG_DARK_SELECTED, TG_DARK_BORDER, TG_DARK_TEXT, TG_DARK_MUTED, TG_OUT_BUBBLE, TG_IN_BUBBLE;
 function applyPalette() {
-  applyChatPalette(THEME.isDark);
+  applyChatPalette(THEME);
   TG_DARK_BG = C.bg; TG_DARK_SIDEBAR = C.panel; TG_DARK_HOVER = C.hover; TG_DARK_SELECTED = C.selected; TG_DARK_BORDER = C.border;
   TG_DARK_TEXT = C.text; TG_DARK_MUTED = C.muted; TG_OUT_BUBBLE = C.outBubble; TG_IN_BUBBLE = C.inBubble;
 }
@@ -442,7 +442,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             </div>
             <div>{tgStatus.status === "expired" ? tgStatus.message : "Yangi xabarlar kelmaydi va yuborib bo'lmaydi."} Saqlangan yozishmalar ko'rinib turadi.</div>
             {isAdmin && onOpenSettings ? (
-              <button type="button" onClick={onOpenSettings} style={{ marginTop: 8, height: 32, padding: "0 14px", borderRadius: 9, border: "none", background: TG_BLUE, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+              <button type="button" onClick={onOpenSettings} style={{ marginTop: 8, height: 32, padding: "0 14px", borderRadius: 9, border: "none", background: C.tgSolid, color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
                 Qayta ulash
               </button>
             ) : (
@@ -455,7 +455,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: TG_DARK_TEXT }}>{tgf.active ? (tgf.folders.find((f) => f.id === tgf.active)?.title || "Chatlar") : "Chatlar"}</div>
             {unreadTotal > 0 && (
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: TG_BLUE, padding: "2px 7px", borderRadius: 10 }}>{unreadTotal}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.tgSolid, padding: "2px 7px", borderRadius: 10 }}>{unreadTotal}</span>
             )}
           </div>
           <div style={{ position: "relative", marginTop: 10 }}>
@@ -479,7 +479,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                 <button key={k} type="button" onClick={() => setFilter(k)} aria-pressed={on} data-filter={k}
                   style={{ height: isMobile ? 32 : 26, padding: "0 10px", borderRadius: 16, flexShrink: 0, cursor: "pointer", fontFamily: "inherit", fontSize: isMobile ? 13 : 12, fontWeight: 500, whiteSpace: "nowrap",
                     border: `1px solid ${on ? C.text : warn ? "rgba(220,38,38,0.35)" : C.border}`, background: on ? C.text : warn ? "rgba(220,38,38,0.08)" : "transparent", color: on ? C.panel : warn ? C.red : C.muted }}>
-                  {l}{n ? <b style={{ fontWeight: 600, marginLeft: 5, opacity: 0.8 }}>{n}</b> : null}
+                  {l}{n ? <b style={{ fontWeight: 700, marginLeft: 5 }}>{n}</b> : null}
                 </button>
               );
             })}
@@ -713,7 +713,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               <select
                 value={selectedLead.stage}
                 onChange={(e) => onMoveLead(selectedLead, e.target.value)}
-                style={{ width: "100%", boxSizing: "border-box", minHeight: isMobile ? 44 : undefined, background: TG_DARK_HOVER, border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: "#fff", outline: "none" }}
+                style={{ width: "100%", boxSizing: "border-box", minHeight: isMobile ? 44 : undefined, background: TG_DARK_HOVER, border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, color: TG_DARK_TEXT, outline: "none" }}
               >
                 {LEAD_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </select>

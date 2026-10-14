@@ -73,7 +73,7 @@ export function NotificationBell({ n, onNavigate, onOpenSettings }) {
         style={{ width: 40, height: 40, borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text, display: "grid", placeItems: "center", cursor: "pointer", position: "relative" }}>
         <Bell size={17} />
         {n.unread > 0 && (
-          <span data-testid="bell-badge" style={{ position: "absolute", top: -5, right: -5, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: THEME.rose, color: "#fff", fontSize: 10.5, fontWeight: 700, display: "grid", placeItems: "center", border: `2px solid ${THEME.surface}`, lineHeight: 1 }}>
+          <span data-testid="bell-badge" style={{ position: "absolute", top: -5, right: -5, minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: THEME.roseSolid, color: "#fff", fontSize: 10.5, fontWeight: 700, display: "grid", placeItems: "center", border: `2px solid ${THEME.surface}`, lineHeight: 1 }}>
             {n.unread > 99 ? "99+" : n.unread}
           </span>
         )}

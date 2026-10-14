@@ -272,7 +272,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
       <button key={k} type="button" onClick={() => setStageF(on ? null : k)} aria-pressed={on} data-stage-filter={k} className="uvix-fchip"
         style={{ height: 32, padding: "0 12px", borderRadius: 16, whiteSpace: "nowrap", cursor: "pointer", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6,
           border: `1px solid ${on ? c.color : "transparent"}`, background: c.bg, color: c.color }}>
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />{PROD_LABEL[k]} <b style={{ fontWeight: 600, opacity: 0.8 }}>{stageCounts[k] || 0}</b>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />{PROD_LABEL[k]} <b style={{ fontWeight: 700 }}>{stageCounts[k] || 0}</b>
       </button>
     );
   };
@@ -323,7 +323,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           const payBtn = g.debt > 0 && (
             <button type="button" onClick={(e) => { e.stopPropagation(); setBatchFor({ name: g.name, orders: g.payable }); }} data-testid="batch-open"
               className="uvix-batch-btn"
-              style={{ height: 30, display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", borderRadius: 8, border: `1px solid ${open ? THEME.green : THEME.border2}`, background: open ? THEME.green : THEME.card, color: open ? "#fff" : THEME.green, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              style={{ height: 30, display: "inline-flex", alignItems: "center", gap: 6, padding: "0 11px", borderRadius: 8, border: `1px solid ${open ? THEME.green : THEME.border2}`, background: open ? THEME.greenSolid : THEME.card, color: open ? "#fff" : THEME.green, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
               <Wallet size={14} /> Umumiy to'lov
             </button>
           );

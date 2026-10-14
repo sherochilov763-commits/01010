@@ -38,7 +38,7 @@ function Icon({ f, size }) {
   if (f.emoticon) return <span style={{ fontSize: size - 1, lineHeight: 1 }}>{f.emoticon}</span>;
   return <Folder size={size} fill="currentColor" strokeWidth={1.4} />;
 }
-const Badge = ({ n }) => (n > 0 ? <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: "#2AABEE", color: "#fff", fontSize: 10.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{n > 99 ? "99+" : n}</span> : null);
+const Badge = ({ n }) => (n > 0 ? <span style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 9, background: C.tgSolid, color: "#fff", fontSize: 10.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{n > 99 ? "99+" : n}</span> : null);
 
 // Kompyuter: chap tomonda tik ustun (Telegram Desktop kabi)
 export function FolderRail({ folders, active, onPick, chats }) {
@@ -49,8 +49,8 @@ export function FolderRail({ folders, active, onPick, chats }) {
         const on = f.id === active, n = folderUnread(f, chats);
         return (
           <button key={f.id} type="button" onClick={() => onPick(f.id)} aria-pressed={on} data-folder={f.id} title={f.title}
-            style={{ position: "relative", width: "100%", border: 0, background: on ? C.hover : "transparent", color: on ? "#2AABEE" : C.muted, cursor: "pointer", fontFamily: "inherit", padding: "10px 4px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-            {on && <span style={{ position: "absolute", left: 0, top: 10, bottom: 10, width: 3, borderRadius: "0 3px 3px 0", background: "#2AABEE" }} />}
+            style={{ position: "relative", width: "100%", border: 0, background: on ? C.hover : "transparent", color: on ? C.tg : C.muted, cursor: "pointer", fontFamily: "inherit", padding: "10px 4px 8px", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+            {on && <span style={{ position: "absolute", left: 0, top: 10, bottom: 10, width: 3, borderRadius: "0 3px 3px 0", background: C.tg }} />}
             <span style={{ position: "relative", display: "inline-flex" }}>
               <Icon f={f} size={24} />
               {n > 0 && <span style={{ position: "absolute", top: -7, right: -12 }}><Badge n={n} /></span>}
@@ -73,7 +73,7 @@ export function FolderTabs({ folders, active, onPick, chats }) {
         return (
           <button key={f.id} type="button" role="tab" aria-selected={on} onClick={() => onPick(f.id)} data-folder={f.id}
             style={{ flexShrink: 0, border: 0, background: "none", cursor: "pointer", fontFamily: "inherit", padding: "10px 10px 8px", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 14, fontWeight: 600,
-              color: on ? "#2AABEE" : C.muted, borderBottom: `2.5px solid ${on ? "#2AABEE" : "transparent"}` }}>
+              color: on ? C.tg : C.muted, borderBottom: `2.5px solid ${on ? C.tg : "transparent"}` }}>
             {f.title}<Badge n={n} />
           </button>
         );

@@ -40,7 +40,7 @@ export function AttendanceGate({ user, onLogout, children }) {
         </div>
         <button type="button" data-testid="gate-checkin" onClick={() => run("in")} disabled={busy}
           style={{ marginTop: 10, width: 200, height: 200, borderRadius: "50%", border: 0, cursor: busy ? "default" : "pointer", fontFamily: "inherit",
-            background: isLate ? THEME.rose : THEME.green, color: "#fff",
+            background: isLate ? THEME.roseSolid : THEME.greenSolid, color: "#fff",
             boxShadow: `0 0 0 10px ${isLate ? THEME.roseBg : THEME.greenBg}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10,
             animation: busy ? "none" : "uvixGatePulse 2s ease-in-out infinite" }}>
           {data.config.photo ? <Camera size={46} strokeWidth={1.8} /> : <MapPin size={46} strokeWidth={1.8} />}

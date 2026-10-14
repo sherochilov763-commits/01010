@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, FileImage, LayoutGrid, List, Loader2, LogOut, Play, Printer, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { roleLabel } from "../../constants.js";
-import { THEME } from "../../theme.js";
+import { SC, THEME } from "../../theme.js";
 import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
 import { useHistoryView } from "../../lib/history.js";
@@ -16,9 +16,9 @@ import { CheckInButton } from "../../components/CheckInButton.jsx";
 import { QrApproveHost, QrScanButton } from "../../components/PhoneToDesktop.jsx";
 
 const COLUMNS = [
-  { key: "new", label: "Yangi", color: "#3B82F6" },
-  { key: "in_progress", label: "Jarayonda", color: "#F59E0B" },
-  { key: "done", label: "Tugallangan", color: "#10B981" },
+  { key: "new", label: "Yangi", get color() { return SC.blue; } },
+  { key: "in_progress", label: "Jarayonda", get color() { return SC.amber; } },
+  { key: "done", label: "Tugallangan", get color() { return SC.green; } },
 ];
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 function dayLabel(iso) {
@@ -246,9 +246,9 @@ function TaskCard({ task: t, busy, onStart, onDone, onBack }) {
   const overdue = isOverdue(t);
   const Icon = t.kind === "design" ? FileImage : Printer;
   const statusStyle = {
-    new: { l: "Yangi", c: "#3B82F6" },
-    in_progress: { l: "Jarayonda", c: "#F59E0B" },
-    done: { l: "Tugallandi", c: "#10B981" },
+    new: { l: "Yangi", c: SC.blue },
+    in_progress: { l: "Jarayonda", c: SC.amber },
+    done: { l: "Tugallandi", c: SC.green },
   }[t.status] || { l: t.status, c: THEME.muted };
   const row = (label, value, strong) => (
     <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5 }}>
@@ -301,7 +301,7 @@ function TaskCard({ task: t, busy, onStart, onDone, onBack }) {
           <Button onClick={() => onStart(t)} disabled={busy} style={{ minHeight: 40 }}>{busy ? <Loader2 size={15} className="uvix-spin" /> : <Play size={15} />} Boshlash</Button>
         )}
         {t.status === "in_progress" && (
-          <Button onClick={() => onDone(t)} disabled={busy} style={{ minHeight: 40, background: "#10B981", borderColor: "#10B981" }}>{busy ? <Loader2 size={15} className="uvix-spin" /> : <Check size={15} />} Tugallandi</Button>
+          <Button onClick={() => onDone(t)} disabled={busy} style={{ minHeight: 40, background: THEME.greenSolid, borderColor: THEME.greenSolid, color: "#fff" }}>{busy ? <Loader2 size={15} className="uvix-spin" /> : <Check size={15} />} Tugallandi</Button>
         )}
       </div>
     </Card>
@@ -310,7 +310,7 @@ function TaskCard({ task: t, busy, onStart, onDone, onBack }) {
 
 function TaskList({ tasks, busyId, onStart, onDone }) {
   if (tasks.length === 0) return <Card style={{ textAlign: "center", color: THEME.muted, fontSize: 13.5, padding: 28 }}>Vazifa topilmadi</Card>;
-  const dot = { new: "#3B82F6", in_progress: "#F59E0B", done: "#10B981" };
+  const dot = { new: SC.blue, in_progress: SC.amber, done: SC.green };
   return (
     <Card style={{ padding: 0, overflow: "hidden" }}>
       {tasks.map((t, i) => (
@@ -323,7 +323,7 @@ function TaskList({ tasks, busyId, onStart, onDone }) {
             </div>
           </div>
           {t.status === "new" && <Button onClick={() => onStart(t)} disabled={busyId === t.id} style={{ minHeight: 38 }}><Play size={14} /> Boshlash</Button>}
-          {t.status === "in_progress" && <Button onClick={() => onDone(t)} disabled={busyId === t.id} style={{ minHeight: 38, background: "#10B981", borderColor: "#10B981" }}><Check size={14} /> Tugallandi</Button>}
+          {t.status === "in_progress" && <Button onClick={() => onDone(t)} disabled={busyId === t.id} style={{ minHeight: 38, background: THEME.greenSolid, borderColor: THEME.greenSolid, color: "#fff" }}><Check size={14} /> Tugallandi</Button>}
           {t.status === "done" && <span style={{ fontSize: 12.5, color: THEME.muted }}>{dayLabel(t.doneAt)}</span>}
         </div>
       ))}

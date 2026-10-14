@@ -182,4 +182,4 @@ function ApproveSheet({ id, onClose }) {
     </div>
   );
 }
-const btn = (primary) => ({ width: "100%", height: 52, marginTop: primary ? 18 : 8, borderRadius: 15, border: 0, background: primary ? THEME.violet : "none", color: primary ? "#fff" : THEME.muted, fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 });
+const btn = (primary) => ({ width: "100%", height: 52, marginTop: primary ? 18 : 8, borderRadius: 15, border: 0, background: primary ? THEME.violet : "none", color: primary ? THEME.onPrimary : THEME.muted, fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 });

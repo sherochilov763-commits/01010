@@ -84,7 +84,7 @@ export function SelfieCapture({ onDone, onCancel, auto = true }) {
               <Camera size={34} />
               <div style={{ fontWeight: 700, fontSize: 17 }}>«Keldim» bosilganda rasm olinadi</div>
               <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "rgba(255,255,255,.8)" }}>Kamera o'zi bir soniyada suratga oladi — tugma bosish shart emas. Rasm ishga kelganingizni tasdiqlash uchun, uni faqat administrator ko'radi va muddat o'tgach o'chiriladi.</div>
-              <button type="button" data-testid="selfie-ack" onClick={() => { try { localStorage.setItem(NOTICE_KEY, "1"); } catch { /* shart emas */ } setAck(true); }} style={{ height: 46, padding: "0 22px", borderRadius: 14, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>Tushunarli</button>
+              <button type="button" data-testid="selfie-ack" onClick={() => { try { localStorage.setItem(NOTICE_KEY, "1"); } catch { /* shart emas */ } setAck(true); }} style={{ height: 46, padding: "0 22px", borderRadius: 14, border: 0, background: THEME.greenSolid, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>Tushunarli</button>
             </div>
           )}
           {err && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", color: "#FFB4B6", fontSize: 14, lineHeight: 1.5 }}>{err}</div>}
@@ -93,7 +93,7 @@ export function SelfieCapture({ onDone, onCancel, auto = true }) {
         {auto ? (shot ? <div style={{ color: "#fff", textAlign: "center", fontWeight: 700 }}>Yuborilmoqda…</div> : null) : shot ? (
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" onClick={() => setShot(null)} style={{ flex: 1, height: 52, borderRadius: 16, border: "1px solid rgba(255,255,255,0.2)", background: "none", color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit" }}><RotateCcw size={18} /> Qayta</button>
-            <button type="button" data-testid="selfie-send" onClick={() => onDone(shot)} style={{ flex: 2, height: 52, borderRadius: 16, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>Keldim ✓</button>
+            <button type="button" data-testid="selfie-send" onClick={() => onDone(shot)} style={{ flex: 2, height: 52, borderRadius: 16, border: 0, background: THEME.greenSolid, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>Keldim ✓</button>
           </div>
         ) : (
           <button type="button" data-testid="selfie-shoot" onClick={capture} disabled={!ready} style={{ alignSelf: "center", width: 76, height: 76, borderRadius: "50%", border: "4px solid #fff", background: ready ? THEME.green : "#555", cursor: ready ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }} aria-label="Rasmga olish">

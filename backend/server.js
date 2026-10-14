@@ -455,10 +455,11 @@ require("./quotes")(app, {
 // Sozlamalardagi maxfiy maydonlar — faqat admin ko'radi/o'zgartiradi
 const SECRET_SETTING_FIELDS = ["telegramBotToken", "telegramChatId", "gmailUser", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
 // Oddiy xodim yozishi mumkin bo'lgan kalitlar (qolganlari — faqat admin)
-const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:appearance", "uvix:employees"]);
+// "uvix:appearance" — kompaniya standarti, faqat admin yozadi (har bir xodimning o'zi — /api/me/appearance)
+const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -784,6 +785,9 @@ app.put("/api/me/nav", requireAuth, (req, res) => {
 // ---- Shaxsiy fon (oboi) va shisha rejimi — har xodimning o'zi uchun ----
 const BG_KINDS = new Set(["none", "preset", "dynamic", "custom"]);
 const BG_PRESETS = new Set(["mesh", "land"]);
+// Shaxsiy ko'rinish (mavzu) — har bir xodim uchun alohida
+const { registerAppearance, cleanRoleDefaults } = require("./appearance");
+registerAppearance(app, { requireAuth, getStmt, upsertStmt, deleteStmt });
 app.get("/api/me/background", requireAuth, (req, res) => {
   const row = getStmt.get(`uvix:bg:${req.user.id}`);
   let bg = null;
@@ -859,7 +863,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
 
 app.put("/api/kv/:key", (req, res) => {
   const key = req.params.key;
-  const { value } = req.body || {};
+  let { value } = req.body || {};
   if (typeof value !== "string") {
     return res.status(400).json({ error: "value_must_be_string" });
   }
@@ -871,6 +875,13 @@ app.put("/api/kv/:key", (req, res) => {
   if (isWorker(req.user) && !WORKER_WRITE_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
   if (!isAdmin && !USER_WRITABLE_KEYS.has(key)) {
     return res.status(403).json({ error: "forbidden", message: "Faqat administrator uchun" });
+  }
+  if (key === "uvix:appearance") {
+    // Kompaniya standarti: rollar bo'yicha mavzu faqat ma'lum qiymatlardan
+    try {
+      const a = JSON.parse(value);
+      if (a && typeof a === "object") { const rd = cleanRoleDefaults(a.roleDefaults); if (rd) a.roleDefaults = rd; else delete a.roleDefaults; delete a.personal; value = JSON.stringify(a); }
+    } catch { return res.status(400).json({ error: "invalid_json" }); }
   }
   const oldRow = getStmt.get(key);
   const oldValue = oldRow ? oldRow.value : null;

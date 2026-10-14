@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import LoginScreen from "./auth/LoginScreen.jsx";
 import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { QrApproveHost, QrScanButton } from "./components/PhoneToDesktop.jsx";
-import { authBootstrap, authListEmployees, authLogout, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
+import { authBootstrap, authListEmployees, authLogout, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
@@ -22,7 +22,9 @@ import { money, paymentTypeLabel, uid } from "./lib/format.js";
 import { resumePending, storageGet, storageRefresh, storageSet, subscribeRemote } from "./lib/kv.js";
 import { SaveStatus } from "./components/SaveStatus.jsx";
 import { useBackToClose, useHistoryView } from "./lib/history.js";
-import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme, migrateAppearance, withAlpha } from "./theme.js";
+import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme, migrateAppearance, withAlpha, resolveAppearance, effectiveAppearance as effectiveOf, personalPart } from "./theme.js";
+import { useAutoNight } from "./lib/autoNight.js";
+import { applyChatPalette } from "./views/crm/chatPalette.js";
 import { useIsMobile } from "./components/ui.jsx";
 import { Dashboard } from "./views/Dashboard.jsx";
 
@@ -76,7 +78,9 @@ export default function App() {
   const [auditLog, setAuditLog] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [appearance, setAppearance] = useState(DEFAULT_APPEARANCE);
+  // Ko'rinish: kompaniya standarti (admin) + xodimning shaxsiy tanlovi (null — standartga ergashadi)
+  const [companyAppearance, setCompanyAppearance] = useState(DEFAULT_APPEARANCE);
+  const [myAppearance, setMyAppearance] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   // Kirgandan so'ng, brauzer bo'sh turganda qolgan sahifalarni oldindan yuklab qo'yamiz —
   // birinchi ochilish yengil, keyin menyudan o'tish esa kutishsiz bo'ladi.
@@ -108,10 +112,13 @@ export default function App() {
   const bgOn = !!bgState.resolved && !narrow;
   const glassOn = bgOn && bgState.bg.glass;
   const nightDark = bgOn && bgState.bg.kind === "dynamic" && bgState.bg.nightDark && bgState.resolved.dark;
-  const effectiveAppearance = glassOn ? { ...appearance, mode: "dark", glass: true } : nightDark ? { ...appearance, mode: "dark" } : appearance;
+  const appearance = useMemo(() => resolveAppearance(companyAppearance, myAppearance, currentUser?.role), [companyAppearance, myAppearance, currentUser?.role]);
+  const autoNight = useAutoNight(appearance);
+  // Mavzu har doim shu yakuniy holatdan hisoblanadi (shisha fon, tungi fon, avtomatik tun) — boshqa joyda setTheme chaqirilmaydi
+  const effectiveAppearance = effectiveOf(appearance, { glass: glassOn, night: nightDark || autoNight });
   const themeKeyRef = useRef("");
   const themeKey = JSON.stringify(effectiveAppearance);
-  if (themeKeyRef.current !== themeKey) { setTheme(buildTheme(effectiveAppearance)); themeKeyRef.current = themeKey; }
+  if (themeKeyRef.current !== themeKey) { setTheme(buildTheme(effectiveAppearance)); applyChatPalette(THEME); themeKeyRef.current = themeKey; }
   const openNotifySettings = () => {
     setNavFilter(null); setView("settings");
     openSettingsSection("bildirish", "notify-settings");
@@ -152,8 +159,8 @@ export default function App() {
     if (isWorkerRole(currentUser.role)) {
       // Dizayner/Pechatchi: moliyaviy ma'lumotlar umuman yuklanmaydi (server ham bermaydi) — faqat ko'rinish
       (async () => {
-        const appr = migrateAppearance(await storageGet("uvix:appearance", false, null));
-        setTheme(buildTheme(appr)); setAppearance(appr);
+        const [company, mine] = await Promise.all([storageGet("uvix:appearance", false, null), fetchMyAppearance().catch(() => null)]);
+        setCompanyAppearance(migrateAppearance(company)); setMyAppearance(mine);
       })();
       return;
     }
@@ -216,8 +223,7 @@ export default function App() {
         sett = DEFAULT_SETTINGS;
         await storageSet("uvix:settings", true, sett);
       }
-      const appr = migrateAppearance(await storageGet("uvix:appearance", false, null));
-      setTheme(buildTheme(appr));
+      const [company, mine] = await Promise.all([storageGet("uvix:appearance", false, null), fetchMyAppearance().catch(() => null)]);
       setTransactions(tx);
       setOrders(ords);
       setAuditLog(log);
@@ -225,7 +231,7 @@ export default function App() {
       setCustomers(Array.isArray(custData) ? custData : []);
       setCategories(cats);
       setSettings(sett);
-      setAppearance(appr);
+      setCompanyAppearance(migrateAppearance(company)); setMyAppearance(mine);
       // Oldingi safar internet uzilib saqlanmay qolgan o'zgarishlar bo'lsa — endi yuboramiz
       resumePending().then((keys) => keys.length && showToast("Saqlanmay qolgan o'zgarishlar serverga yuborildi"));
     })();
@@ -261,9 +267,15 @@ export default function App() {
     document.documentElement.style.colorScheme = THEME.isDark ? "dark" : "light";
   }, [themeKey]);
 
+  // Shaxsiy ko'rinish (faqat shu xodim uchun). null — kompaniya / rol standartiga qaytish
   function applyAppearance(next) {
-    setTheme(buildTheme(next));
-    setAppearance(next);
+    const mine = next ? { ...personalPart(next), v: 2 } : null;
+    setMyAppearance(mine);
+    saveMyAppearance(mine).catch((e) => showToast(e.message || "Ko'rinishni saqlab bo'lmadi"));
+  }
+  // Kompaniya standarti va rollar bo'yicha mavzu (faqat admin)
+  function applyCompanyAppearance(next) {
+    setCompanyAppearance(next);
     storageSet("uvix:appearance", false, next);
   }
 
@@ -686,6 +698,10 @@ export default function App() {
         input, select, textarea { font-family: inherit; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
         input:focus, select:focus, textarea:focus { outline: none; border-color: ${THEME.violet} !important; box-shadow: 0 0 0 3px ${withAlpha(THEME.violet, 0.16)}; }
         :focus-visible { outline: 2px solid ${withAlpha(THEME.violet, 0.55)}; outline-offset: 1px; }
+        ${THEME.contrast ? `/* Yuqori kontrast: aniq fokus va chegaralar */
+        :focus-visible { outline: 3px solid ${THEME.violet}; outline-offset: 2px; }
+        .uvix-card { box-shadow: none !important; }
+        .uvix-table th, .uvix-table td { border-color: ${THEME.border} !important; }` : ""}
         body, input, select, textarea, button { -webkit-font-smoothing: antialiased; }
         .uvix-num, td, th { font-variant-numeric: tabular-nums; }
         button { transition: transform 0.12s ease, box-shadow 0.15s ease, opacity 0.15s ease, background-color 0.15s ease, border-color 0.15s ease; }
@@ -976,6 +992,8 @@ export default function App() {
                 onSaveSettings={persistSettings}
                 appearance={appearance}
                 onApplyAppearance={applyAppearance}
+                companyAppearance={companyAppearance}
+                onApplyCompanyAppearance={applyCompanyAppearance}
                 orders={orders}
                 transactions={transactions}
                 onRestoreOrder={restoreOrder}

@@ -10,9 +10,9 @@ export const SETTINGS_SECTIONS = [
   { id: "profil", label: "Profil", color: "#1F5FD6" },
   { id: "korinish", label: "Ko'rinish", color: "#8B5CF6" },
   { id: "bildirish", label: "Bildirishnomalar", color: "#EF4444" },
-  { id: "savdo", label: "Savdo", color: "#0F8A5F", admin: true },
+  { id: "savdo", label: "Savdo", color: "#0B7A54", admin: true },
   { id: "integratsiya", label: "Integratsiyalar", color: "#0EA5E9", admin: true },
-  { id: "bolimlar", label: "Bo'limlar", color: "#F59E0B", admin: true },
+  { id: "bolimlar", label: "Bo'limlar", color: "#D97706", admin: true },
   { id: "malumotlar", label: "Ma'lumotlar", color: "#64748B", admin: true },
   { id: "jurnal", label: "O'zgarishlar jurnali", color: "#18181B", admin: true },
 ];

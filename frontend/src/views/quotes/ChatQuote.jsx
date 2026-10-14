@@ -74,7 +74,7 @@ export const ChatQuote = forwardRef(function ChatQuote({ chatId, lead, ensureLea
       <QuoteBuilder items={items} onChange={change} prices={sales.prices || []} fx={sales.fx} P={P} advancePct={sales.advancePct} titleRef={titleRef} compact />
       {items.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <button type="button" onClick={async () => { clearTimeout(timer.current); try { const l = await ensureLead(); if (l) onConvert(l, items); } catch (e) { setStatus(`error:${e.message}`); } }} style={btn(true, C.green)} data-testid="chat-convert">
+          <button type="button" onClick={async () => { clearTimeout(timer.current); try { const l = await ensureLead(); if (l) onConvert(l, items); } catch (e) { setStatus(`error:${e.message}`); } }} style={btn(true, C.greenSolid)} data-testid="chat-convert">
             <CreditCard size={16} /> To'lov va buyurtma
           </button>
           <div style={{ fontSize: 11.5, color: C.muted, textAlign: "center" }}>Buyurtmalar avans {sales.advancePct || 0}% to'langach yaratiladi</div>

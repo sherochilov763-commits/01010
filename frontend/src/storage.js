@@ -540,6 +540,18 @@ export const savePushSubscription = (subscription) => nReq("/push/subscribe", "P
 export const removePushSubscription = (endpoint) => nReq("/push/unsubscribe", "POST", { endpoint });
 
 // ---- Shaxsiy fon (oboi) va shisha rejimi ----
+// Shaxsiy ko'rinish (mavzu, rang, zichlik, avtomatik tun). null — kompaniya standartiga ergashadi
+export async function fetchMyAppearance() {
+  const res = await fetch(`${API_BASE}/me/appearance`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  return (await res.json().catch(() => ({}))).appearance || null;
+}
+export async function saveMyAppearance(appearance) {
+  const res = await fetch(`${API_BASE}/me/appearance`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ appearance }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(d.message || "Ko'rinishni saqlab bo'lmadi");
+  return d.appearance || null;
+}
 export async function fetchMyBackground() {
   const res = await fetch(`${API_BASE}/me/background`, { headers: authHeaders() });
   if (!res.ok) return null;

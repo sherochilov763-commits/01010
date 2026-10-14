@@ -645,7 +645,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
             </button>
           ) : (
             <button type="button" onClick={startRecording} disabled={busy} aria-label="Ovozli xabar yozish" title="Ovozli xabar"
-              style={{ width: 44, height: 44, borderRadius: "50%", background: busy ? C.hover : C.blue, border: "none", color: "#fff", display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0 }}>
+              style={{ width: 44, height: 44, borderRadius: "50%", background: busy ? C.hover : C.blue, border: "none", color: busy ? C.muted : "#fff", display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0 }}>
               {busy ? <Loader2 size={18} className="uc-spin" /> : <Mic size={19} />}
             </button>
           )}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Camera, ChevronLeft, ChevronRight, Clock, Download, MapPin, Pencil, RefreshCw, Send, X } from "lucide-react";
 import { Button, Card, Field, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { roleLabel } from "../../constants.js";
-import { THEME } from "../../theme.js";
+import { SC, THEME, tintText } from "../../theme.js";
 import { authListEmployees, fetchAttendancePhoto, fetchAttendanceConfig, fetchAttendanceReport, fetchMyAttendance, saveAttendanceConfig, saveAttendanceManual, sendAttendanceReport } from "../../storage.js";
 import { exportRows } from "../../lib/excel.js";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
@@ -44,17 +44,17 @@ function OutMarks({ day }) {
 const fmtH = (min) => (min ? `${(min / 60).toFixed(1).replace(".", ",")} s` : "—");
 
 const STATUS = {
-  ontime: { label: "O'z vaqtida", color: "#10B981" },
-  late: { label: "Kechikdi", color: "#F59E0B" },
-  absent: { label: "Kelmadi", color: "#EF4444" },
-  notyet: { label: "Hali kelmadi", color: "#EF4444" },
-  pending: { label: "Kutilmoqda", color: "#94A3B8" },
-  dayoff: { label: "Dam olish", color: "#64748B" },
-  extra: { label: "Dam kuni keldi", color: "#3B82F6" },
+  ontime: { label: "O'z vaqtida", get color() { return SC.green; } },
+  late: { label: "Kechikdi", get color() { return SC.amber; } },
+  absent: { label: "Kelmadi", get color() { return SC.red; } },
+  notyet: { label: "Hali kelmadi", get color() { return SC.red; } },
+  pending: { label: "Kutilmoqda", get color() { return SC.gray; } },
+  dayoff: { label: "Dam olish", get color() { return SC.slate; } },
+  extra: { label: "Dam kuni keldi", get color() { return SC.blue; } },
 };
 function StatusBadge({ day }) {
   const s = STATUS[day.status] || STATUS.pending;
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: s.color, background: `${s.color}1F`, padding: "3px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: tintText(s.color), background: `${s.color}1F`, padding: "3px 9px", borderRadius: 20, whiteSpace: "nowrap" }}>
     <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.color }} />{s.label}{day.lateMin ? ` · ${fmtDur(day.lateMin)}` : ""}
   </span>;
 }
@@ -147,10 +147,10 @@ function TodayTab() {
   const rows = data.rows.map((r) => ({ ...r, day: r.days[0] || { status: "pending" } }));
   const count = (f) => rows.filter(f).length;
   const chips = [
-    ["Keldi", count((r) => r.day.in), "#10B981"],
-    ["Kechikdi", count((r) => r.day.status === "late"), "#F59E0B"],
-    ["Kelmadi", count((r) => ["absent", "notyet"].includes(r.day.status)), "#EF4444"],
-    ["Dam olishda", count((r) => r.day.status === "dayoff"), "#64748B"],
+    ["Keldi", count((r) => r.day.in), SC.green],
+    ["Kechikdi", count((r) => r.day.status === "late"), SC.amber],
+    ["Kelmadi", count((r) => ["absent", "notyet"].includes(r.day.status)), SC.red],
+    ["Dam olishda", count((r) => r.day.status === "dayoff"), SC.slate],
   ];
   const order = { notyet: 0, absent: 0, late: 1, pending: 2, ontime: 3, extra: 4, dayoff: 5 };
   rows.sort((a, b) => (order[a.day.status] ?? 9) - (order[b.day.status] ?? 9) || a.employee.name.localeCompare(b.employee.name));
@@ -158,7 +158,7 @@ function TodayTab() {
     <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ fontWeight: 700, fontSize: 15, marginRight: 6 }}>{dLabel(today)}</div>
-        {chips.map(([l, n, c]) => <span key={l} style={{ fontSize: 12.5, fontWeight: 700, color: c, background: `${c}1A`, padding: "5px 11px", borderRadius: 20 }}>{l}: {n}</span>)}
+        {chips.map(([l, n, c]) => <span key={l} style={{ fontSize: 12.5, fontWeight: 700, color: tintText(c), background: `${c}1A`, padding: "5px 11px", borderRadius: 20 }}>{l}: {n}</span>)}
         <button type="button" onClick={load} title="Yangilash" style={{ marginLeft: "auto", border: 0, background: "none", color: THEME.muted, cursor: "pointer" }}><RefreshCw size={16} /></button>
       </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
@@ -262,10 +262,10 @@ function PeriodTab({ kind }) {
                       </div>
                     </td>
                     <td style={td}>{s.present}/{s.workdays}</td>
-                    <td style={{ ...td, color: s.late ? "#F59E0B" : THEME.muted, fontWeight: s.late ? 700 : 400 }}>{s.late ? `${s.late}× · ${fmtDur(s.lateMin, s.dayMin)}` : "—"}</td>
+                    <td style={{ ...td, color: s.late ? SC.amber : THEME.muted, fontWeight: s.late ? 700 : 400 }}>{s.late ? `${s.late}× · ${fmtDur(s.lateMin, s.dayMin)}` : "—"}</td>
                     <td style={{ ...td, color: s.early ? "#F97316" : THEME.muted }}>{s.early ? `${s.early}× · ${fmtDur(s.earlyMin, s.dayMin)}` : "—"}</td>
-                    <td style={{ ...td, color: s.overMin ? "#3B82F6" : THEME.muted }}>{fmtDur(s.overMin, s.dayMin)}</td>
-                    <td style={{ ...td, color: s.absent ? "#EF4444" : THEME.muted, fontWeight: s.absent ? 700 : 400 }}>{s.absent || "—"}</td>
+                    <td style={{ ...td, color: s.overMin ? SC.blue : THEME.muted }}>{fmtDur(s.overMin, s.dayMin)}</td>
+                    <td style={{ ...td, color: s.absent ? SC.red : THEME.muted, fontWeight: s.absent ? 700 : 400 }}>{s.absent || "—"}</td>
                     <td style={{ ...td, paddingRight: 16, fontWeight: 700 }}>{fmtH(s.workedMin)}</td>
                   </tr>,
                   isOpen && (
@@ -276,7 +276,7 @@ function PeriodTab({ kind }) {
                           <StatusBadge day={d} />
                           <span style={{ color: THEME.muted }}>{d.in || "—"} → {d.out || (d.missingOut ? "belgilanmagan" : "—")}<OutMarks day={d} /></span>
                           {d.earlyMin > 0 && <span style={{ color: "#F97316" }}>↩ {fmtDur(d.earlyMin)} erta</span>}
-                          {d.overMin > 0 && <span style={{ color: "#3B82F6" }}>+ {fmtDur(d.overMin)}</span>}
+                          {d.overMin > 0 && <span style={{ color: SC.blue }}>+ {fmtDur(d.overMin)}</span>}
                           {d.manual && <span title={d.manual.reason} style={{ color: THEME.muted }}>✎ {d.manual.by}: {d.manual.reason}</span>}
                           {d.photo && <button type="button" onClick={(e) => { e.stopPropagation(); setPhoto({ id: d.photo, title: `${r.employee.name} · ${dLabel(d.date)} ${d.in}` }); }} style={{ border: 0, background: "none", color: THEME.green, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontFamily: "inherit" }}><Camera size={13} /> selfi</button>}
                           <button type="button" onClick={(e) => { e.stopPropagation(); setEdit({ employee: r.employee, day: d }); }} style={{ marginLeft: "auto", border: 0, background: "none", color: THEME.muted, cursor: "pointer" }} aria-label="To'g'rilash"><Pencil size={14} /></button>
@@ -349,9 +349,9 @@ function MineTab() {
       </div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         {stat("Keldi", `${s.present || 0}/${s.workdays || 0}`)}
-        {stat("Kechikish", s.late ? `${s.late}× · ${fmtDur(s.lateMin, data.dayMin)}` : "—", s.late ? "#F59E0B" : undefined)}
+        {stat("Kechikish", s.late ? `${s.late}× · ${fmtDur(s.lateMin, data.dayMin)}` : "—", s.late ? SC.amber : undefined)}
         {stat("Erta ketish", s.early ? `${s.early}×` : "—", s.early ? "#F97316" : undefined)}
-        {stat("Qo'shimcha", fmtDur(s.overMin, data.dayMin), s.overMin ? "#3B82F6" : undefined)}
+        {stat("Qo'shimcha", fmtDur(s.overMin, data.dayMin), s.overMin ? SC.blue : undefined)}
         {stat("Ishlagan", fmtH(s.workedMin))}
       </div>
       <Card style={{ padding: 0 }}>

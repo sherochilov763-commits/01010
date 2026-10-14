@@ -126,7 +126,7 @@ export function CheckInButton({ compact = false }) {
     const late = nowM > toMin(sch.start) + (data.config.grace || 0) && today.workday;
     title = "Ishga kelganingizni belgilang";
     onClick = () => run("in");
-    style = { background: late ? THEME.rose : THEME.green, color: "#fff", border: "none", boxShadow: `0 6px 18px ${late ? THEME.rose : THEME.green}55` };
+    style = { background: late ? THEME.roseSolid : THEME.greenSolid, color: "#fff", border: "none", boxShadow: `0 6px 18px ${late ? THEME.rose : THEME.green}55` };
     content = <>{data.config.photo ? <Camera size={16} /> : <MapPin size={16} />} Keldim{late && !compact ? ` · ${fmtLate(nowM - toMin(sch.start))} kech` : ""}</>;
   } else if (working) {
     const sec = sinceIn(today);
@@ -168,7 +168,7 @@ export function CheckInButton({ compact = false }) {
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                 <button type="button" onClick={() => setConfirmOut(false)} style={{ flex: 1, height: 34, borderRadius: 9, border: `1px solid ${THEME.border}`, background: "none", color: THEME.text, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Yo'q</button>
-                <button type="button" onClick={() => { setConfirmOut(false); run("out"); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 0, background: THEME.amber, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Ha, ketyapman</button>
+                <button type="button" onClick={() => { setConfirmOut(false); run("out"); }} style={{ flex: 1, height: 34, borderRadius: 9, border: 0, background: THEME.amberSolid, color: "#fff", cursor: "pointer", fontFamily: "inherit", fontWeight: 700 }}>Ha, ketyapman</button>
               </div>
             </>
           ) : (
@@ -188,7 +188,7 @@ export function CheckInButton({ compact = false }) {
             <div style={{ fontSize: 14, color: THEME.muted, marginTop: 6, lineHeight: 1.5 }}>
               Bugun {today.in} da keldingiz · ish {sch.end} da {ended ? "tugadi" : "tugaydi"}.{!ended ? " Hozir ketsangiz — erta ketish sifatida yoziladi." : ""}
             </div>
-            <button type="button" data-testid="out-prompt-go" onClick={() => { setForced(false); run("out"); }} style={{ width: "100%", height: 54, marginTop: 16, borderRadius: 16, border: 0, background: THEME.green, color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><LogOut size={20} /> Ketdim</button>
+            <button type="button" data-testid="out-prompt-go" onClick={() => { setForced(false); run("out"); }} style={{ width: "100%", height: 54, marginTop: 16, borderRadius: 16, border: 0, background: THEME.greenSolid, color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><LogOut size={20} /> Ketdim</button>
             <button type="button" onClick={dismissPrompt} style={{ width: "100%", height: 44, marginTop: 8, borderRadius: 14, border: 0, background: "none", color: THEME.muted, fontWeight: 600, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}>Hali ishlayapman</button>
           </div>
         </div>

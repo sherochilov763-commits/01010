@@ -88,7 +88,7 @@ export function TelegramOnboard({ user, onLogout, children }) {
     num: { width: 24, height: 24, borderRadius: "50%", background: TG_BLUE, color: "#fff", fontSize: 12.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
     primary: { height: 54, borderRadius: 15, border: 0, background: TG_BLUE, color: "#fff", fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, cursor: "pointer", fontFamily: "inherit", width: "100%" },
     outline: { height: 54, borderRadius: 15, border: `1px solid ${THEME.border}`, background: THEME.card, color: TG_BLUE, fontWeight: 700, fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, cursor: "pointer", fontFamily: "inherit", width: "100%" },
-    done: { height: 54, borderRadius: 15, border: 0, background: THEME.blue, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit", width: "100%" },
+    done: { height: 54, borderRadius: 15, border: 0, background: THEME.blueSolid, color: "#fff", fontWeight: 700, fontSize: 16, cursor: "pointer", fontFamily: "inherit", width: "100%" },
     link: { border: 0, background: "none", color: THEME.muted, fontSize: 14.5, fontWeight: 600, padding: 14, cursor: "pointer", fontFamily: "inherit" },
   };
 

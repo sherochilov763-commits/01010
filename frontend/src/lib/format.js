@@ -8,7 +8,7 @@ export function paymentTypeLabel(pt) {
 export function paymentTypeBadgeColors(pt) {
   if (pt === "karta") return { color: THEME.violetDark, bg: THEME.violetSoft };
   if (pt === "bank") return { color: THEME.blue, bg: THEME.blueBg };
-  return { color: "#0F6E56", bg: THEME.greenBg };
+  return { color: THEME.greenText, bg: THEME.greenBg };
 }
 
 export function uid() {
