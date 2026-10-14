@@ -181,7 +181,7 @@ export function buildTheme(appearance) {
   const isDark = isDarkMode(a.mode);
   let mode = APPEARANCE_MODE_PRESETS[a.mode] || APPEARANCE_MODE_PRESETS.light;
   // Shisha rejimi: fon ustida shaffof panellar — ikkinchi darajali yozuvlar yorqinroq bo'lishi kerak
-  if (a.glass) mode = { ...APPEARANCE_MODE_PRESETS.dark, muted: "#C4C4CC", mutedDark: "#E4E4E7", dim: "#A8A8B0", navText: "#D4D4D8", navDim: "#A8A8B0", border: "rgba(255,255,255,0.12)", border2: "rgba(255,255,255,0.18)", chip: "rgba(255,255,255,0.09)", hover: "rgba(255,255,255,0.07)", navBorder: "rgba(255,255,255,0.08)" };
+  if (a.glass) mode = { ...APPEARANCE_MODE_PRESETS.dark, muted: "#CDCDD4", mutedDark: "#E4E4E7", dim: "#B8B8C0", navText: "#D4D4D8", navDim: "#B8B8C0", border: "rgba(255,255,255,0.12)", border2: "rgba(255,255,255,0.18)", chip: "rgba(255,255,255,0.09)", hover: "rgba(255,255,255,0.07)", navBorder: "rgba(255,255,255,0.08)" };
   const preset = APPEARANCE_COLOR_PRESETS[a.colorScheme] || APPEARANCE_COLOR_PRESETS.blue;
   const colorSet = a.colorScheme === "custom"
     ? { primary: a.customPrimary || DEFAULT_APPEARANCE.customPrimary, accent: a.customAccent || DEFAULT_APPEARANCE.customAccent }

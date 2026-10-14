@@ -684,7 +684,7 @@ export default function App() {
         body { background: ${THEME.surface}; }
         /* Fon (oboi) — sahifa ortida qotib turadi; ustida yumshoq parda, yozuvlar o'qilsin */
         .uvix-bg { position: fixed; inset: 0; z-index: -1; background-size: cover; background-position: center; pointer-events: none; }
-        .uvix-bg::after { content: ""; position: absolute; inset: 0; background: ${glassOn ? `rgba(0,0,0,${0.22 + (bgState.bg.dim || 0)})` : withAlpha(THEME.surface, Math.min(0.85, 0.35 + (bgState.bg.dim || 0)))}; }
+        .uvix-bg::after { content: ""; position: absolute; inset: 0; background: ${glassOn ? `rgba(0,0,0,${Math.min(0.85, (bgState.resolved?.dark ? 0.22 : 0.64) + (bgState.bg.dim || 0))})` : withAlpha(THEME.surface, Math.min(0.85, 0.35 + (bgState.bg.dim || 0)))}; }
         @media ${BG_OFF_QUERY} { .uvix-bg { display: none; } }
         /* Shisha rejimi (Bitrix24 kabi): panellar shaffof, fon ko'rinadi, matn oq */
         .uvix-glass .uvix-glass-side { background: rgba(14,14,16,0.42) !important; -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); border-color: rgba(255,255,255,0.08) !important; }
