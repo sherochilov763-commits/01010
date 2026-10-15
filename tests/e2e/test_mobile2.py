@@ -71,6 +71,7 @@ async def main():
         await m.locator("text=Malika Interior").first.click(); await m.wait_for_timeout(1500)
         chips = await m.evaluate("[...document.querySelectorAll('[data-testid=quick-replies] [data-chip]')].map(e=>e.dataset.chip)")
         ok("tezkor javob tugmalari klaviatura ustida", len(chips) >= 3 and "narx" in chips, chips)
+        ok("takror yo'q: ⚡ tugmasi va «/» maslahati telefonda ko'rinmaydi", await m.locator("[data-testid=tpl-btn]").count() == 0 and "/" not in (await m.locator("[data-testid=composer-input]").get_attribute("placeholder")))
         await m.locator("[data-chip=narx]").click(); await m.wait_for_timeout(300)
         ok("tugma → tayyor matn maydonga tushdi", "UV bosma narxi" in await m.locator("[data-testid=composer-input]").input_value())
         ok("matn yozilganda tugmalar yashirinadi", await m.locator("[data-testid=quick-replies]").count() == 0)

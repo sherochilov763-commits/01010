@@ -563,6 +563,8 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
   }
 
   const hasText = text.trim().length > 0;
+  // Telefonda tayyor javoblar tugma bo'lib turadi — ⚡ tugmasi va «/» maslahati takrorlanmaydi
+  const chipsOn = isMobile && !isNote && !rec && !hasText && !showTpl && replies.length > 0;
   const bar = { display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "8px 8px" : "10px 14px", background: C.panel, borderTop: onSendNote && !rec ? "none" : `1px solid ${C.border}` };
 
   return (
@@ -610,10 +612,9 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
         </>
       )}
       {/* Telefonda: tayyor javoblar klaviatura ustida tugma bo'lib turadi (mobil 2-bosqich) */}
-      {isMobile && !isNote && !rec && !hasText && !showTpl && replies.length > 0 && (
+      {chipsOn && (
         <div className="uc-chips" role="group" aria-label="Tezkor javoblar" data-testid="quick-replies"
           style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 10px 2px", background: C.panel, borderTop: onSendNote ? "none" : `1px solid ${C.border}`, scrollbarWidth: "none" }}>
-          <Zap size={16} color={C.muted} style={{ flexShrink: 0, alignSelf: "center" }} aria-hidden="true" />
           {replies.slice(0, 8).map((r) => (
             <button key={r.id || r.key} type="button" data-chip={r.key} onClick={() => pickTpl(r)} title={r.text}
               style={{ flexShrink: 0, height: 34, padding: "0 14px", borderRadius: 17, border: `1px solid ${C.border}`, background: C.hover, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -638,7 +639,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
       ) : (
         <div style={bar}>
           {!isNote && <button type="button" className="uc-iconbtn" onClick={() => setAttachOpen((v) => !v)} aria-label="Biriktirish" aria-expanded={attachOpen} disabled={busy}><Paperclip size={21} /></button>}
-          {!isNote && replies.length > 0 && (
+          {!isNote && replies.length > 0 && !isMobile && (
             <button type="button" className="uc-iconbtn" onClick={() => setTplOpen((v) => !v)} aria-label="Tayyor javoblar" title="Tayyor javoblar (yoki «/» yozing)" aria-expanded={showTpl} data-testid="tpl-btn"><Zap size={19} /></button>
           )}
           <input
@@ -646,7 +647,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
             value={text}
             onChange={(e) => { setText(e.target.value); if (!isNote) onTyping?.(); }}
             onKeyDown={onInputKey}
-            placeholder={isNote ? "Ichki izoh — mijoz ko'rmaydi..." : replies.length ? "Xabar yozing...  ( / — tayyor javob)" : "Xabar yozing..."}
+            placeholder={isNote ? "Ichki izoh — mijoz ko'rmaydi..." : replies.length && !isMobile ? "Xabar yozing...  ( / — tayyor javob)" : "Xabar yozing..."}
             aria-label={isNote ? "Ichki izoh" : "Xabar"}
             data-testid="composer-input"
             style={{ flex: 1, minWidth: 0, background: isNote ? C.noteBg : C.hover, border: isNote ? `1px dashed ${C.noteBorder}` : "none", borderRadius: 20, padding: "11px 16px", fontSize: isMobile ? 16 : 14, outline: "none", color: C.text }}
