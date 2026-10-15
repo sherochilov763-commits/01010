@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# E2E testlar: har bir to'plam toza bazada, haqiqiy backend + build qilingan frontend bilan.
+# Ishlatish:  npm run build && npm run test:e2e            (hammasi)
+#             bash tests/e2e/run.sh test_money test_mobile (tanlanganlari)
+set -u
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+OUT="${E2E_OUT:-$ROOT/tests/e2e/out}"
+PORT="${E2E_PORT:-4990}"
+mkdir -p "$OUT"
+export E2E_BASE="http://localhost:$PORT" E2E_OUT="$OUT"
+[ -f "$ROOT/frontend/dist/index.html" ] || { echo "frontend/dist yo'q — avval: npm run build"; exit 1; }
+SUITES="${*:-test_money test_session test_errors test_mobile test_themes}"
+fail=0
+for s in $SUITES; do
+  TMP="$(mktemp -d)"; export E2E_DB="$TMP/uvix.db"
+  (cd "$ROOT/backend" && exec env DB_PATH="$E2E_DB" PORT="$PORT" JWT_SECRET="e2e-test-secret" node server.js) > "$OUT/$s.server.log" 2>&1 &
+  PID=$!
+  up=0; for _ in $(seq 1 100); do curl -sf "$E2E_BASE/api/health" > /dev/null && { up=1; break; }; sleep 0.2; done
+  if [ $up = 0 ]; then echo "Server ishga tushmadi ($s)"; cat "$OUT/$s.server.log"; kill $PID 2>/dev/null; exit 1; fi
+  (cd "$ROOT/tests/e2e" && python3 seed.py > /dev/null) || { echo "Ma'lumot kiritib bo'lmadi ($s)"; fail=1; }
+  echo "=============== $s"
+  (cd "$ROOT/tests/e2e" && python3 "$s.py") || fail=1
+  kill $PID 2>/dev/null; wait $PID 2>/dev/null
+  rm -rf "$TMP"
+done
+[ $fail = 0 ] && echo "E2E: hammasi o'tdi" || echo "E2E: XATO bor — yuqoriga qarang (rasmlar: $OUT)"
+exit $fail

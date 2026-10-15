@@ -4,7 +4,10 @@
   "scripts": {
     "install": "cd backend && npm install && cd ../frontend && npm install",
     "build": "cd frontend && npm run build",
-    "start": "cd backend && node server.js"
+    "start": "cd backend && node server.js",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --test tests/unit/*.test.mjs",
+    "test:e2e": "bash tests/e2e/run.sh"
   },
   "engines": {
     "node": "20.x"

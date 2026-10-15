@@ -8,6 +8,7 @@ import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format
 import { THEME } from "../../theme.js";
 import { PROD_LABEL, PROD_STAGES, prodColors, stageHint } from "../../lib/production.js";
 import { useBackToClose } from "../../lib/history.js";
+import { PENDING_LABEL } from "../../lib/approvals.jsx";
 import { useSheetDrag } from "../../lib/sheetDrag.js";
 
 const TASK_STATUS = { new: "navbatda", in_progress: "jarayonda", done: "tugadi", unassigned: "tayinlanmagan" };
@@ -19,7 +20,7 @@ const fmtTime = (iso) => {
 };
 
 // variant="sheet" — telefonda pastki varaq: tutqichdan pastga tortib, fonni bosib yoki «orqaga» bilan yopiladi
-export function OrderPanel({ order, transactions, phone, canDelete, onClose, onPayments, onInvoice, onEdit, onDelete, stage, employees, siblings, onStage, onAssign, onSelectOrder, variant = "panel", onTelegram, phoneHref }) {
+export function OrderPanel({ order, transactions, phone, canDelete, onClose, onPayments, onInvoice, onEdit, onDelete, stage, employees, siblings, onStage, onAssign, onSelectOrder, variant = "panel", onTelegram, phoneHref, pending }) {
   const sheet = variant === "sheet";
   const sheetRef = useRef(null);
   const drag = useSheetDrag(onClose, sheetRef);
@@ -83,6 +84,11 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
       </div>
 
       <div className="uvix-scroll" style={{ padding: "16px 18px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+        {pending?.length > 0 && (
+          <div data-testid="order-pending" style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 8, background: THEME.amberBg, color: THEME.amberText, fontSize: 12.5, fontWeight: 600, lineHeight: 1.4 }}>
+            {pending.map((r) => <div key={r.id}>⏳ {PENDING_LABEL[r.kind]}</div>)}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", border: `1px solid ${THEME.border}`, borderRadius: 8, overflow: "hidden" }}>
           {[
             { l: "Summa", v: fmt(total), c: THEME.text },

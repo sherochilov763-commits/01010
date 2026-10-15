@@ -10,6 +10,9 @@ import { custKey } from "../../lib/customers.js";
 /* ---------------- ORDER FORM ---------------- */
 export function OrderForm({ initial, currentUser, categories, employees, settings, allOrders, transactions, onAddSubcategory, onClose, onSave, onUploadPhotos, onDeletePhoto, prefillCustomer, customers }) {
   const isEdit = !!initial;
+  // Operator summani kamaytirsa — admin tasdig'i kerak (sabab bilan); boshqa o'zgarishlar darhol saqlanadi
+  const isAdminUser = currentUser?.role === "admin";
+  const [totalReason, setTotalReason] = useState("");
   const [orderId] = useState(() => initial?.id || uid());
   const [photos, setPhotos] = useState(initial?.photos || []);
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -103,6 +106,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
   const exchangeRateNum = parseInt(exchangeRateStr.replace(/\s/g, ""), 10) || 0;
   const autoTotalUzs = Math.round(totalUsdNum * exchangeRateNum);
   const agreementUzs = parseInt(agreementStr.replace(/\s/g, ""), 10) || 0;
+  const totalDecrease = isEdit && !isAdminUser && agreementUzs > 0 && agreementUzs < (Number(initial.agreementUzs) || 0);
 
   const kraskaSumTotal = parseInt(kraskaStr.replace(/\s/g, ""), 10) || 0;
   const matExpAmountNum = parseInt(matExpAmountStr.replace(/\s/g, ""), 10) || 0;
@@ -175,6 +179,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
     if (totalUsdNum > 0 && (!exchangeRateNum || exchangeRateNum <= 0)) return setError("Kraska hisob-kitobida $ narx kiritilgan bo'lsa, USD kursini ham kiriting");
     if (addMaterialExpense && (!matExpAmountNum || matExpAmountNum <= 0)) return setError("Material xarajati summasini kiriting");
     if (addInitialPayment && (!initPaymentNum || initPaymentNum <= 0)) return setError("Boshlang'ich to'lov summasini kiriting");
+    if (totalDecrease && totalReason.trim().length < 3) return setError("Summani kamaytirish sababini yozing — admin tasdiqlaydi");
 
     const order = {
       // Tahrirlashda formada bo'lmagan maydonlar (smeta guruhi, holat, vazifalar, lid) saqlanib qoladi
@@ -227,7 +232,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
         createdBy: currentUser.name, createdAt: new Date().toISOString(), relatedOrderId: order.id,
       };
     }
-    onSave(order, linkedExpenseTx);
+    onSave(order, linkedExpenseTx, totalDecrease ? { totalReason: totalReason.trim() } : undefined);
   }
 
   return (
@@ -299,6 +304,13 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
           <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>
             Mijoz bilan kelishilgan umumiy summani shu yerga kiriting.
           </div>
+          {totalDecrease && (
+            <div data-testid="total-decrease" style={{ marginTop: 8, padding: "10px 12px", borderRadius: 10, background: THEME.amberBg, color: THEME.amberText, fontSize: 12.5, lineHeight: 1.45 }}>
+              Summa <b>{money(initial.agreementUzs)}</b> dan <b>{money(agreementUzs)}</b> ga kamaymoqda — bu <b>admin tasdig'idan keyin</b> kuchga kiradi. Boshqa o'zgarishlar darhol saqlanadi.
+              <textarea value={totalReason} onChange={(e) => setTotalReason(e.target.value)} rows={2} maxLength={300} placeholder="Sabab (majburiy): masalan, mijoz bilan qayta kelishildi" data-testid="total-reason"
+                style={{ ...getInputStyle(), height: "auto", marginTop: 8, resize: "vertical", fontFamily: "inherit", color: THEME.text }} />
+            </div>
+          )}
         </Field>
 
         {/* 2) BOSHLANG'ICH TO'LOV / AVANS — Umumiy buyurtma summasidan keyin, darhol */}

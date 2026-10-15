@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ClipboardList, KeyRound, Plus, Send, Trash2, Users } from "lucide-react";
+import { ClipboardList, KeyRound, Lock, Plus, Send, Trash2, Users } from "lucide-react";
 import { fetchPinHelp, fetchStaffTelegram, giveTempPin } from "../storage.js";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
 import { uid } from "../lib/format.js";
@@ -121,6 +121,9 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
         </Card>
       ) : (
         <Card style={{ padding: 0, maxHeight: 480, overflowY: "auto" }} className="uvix-scroll">
+          <div data-testid="audit-note" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", fontSize: 12, color: THEME.greenText, background: THEME.greenBg, borderBottom: `1px solid ${THEME.border}` }}>
+            <Lock size={13} /> Jurnalni server yozadi — yozuvlarni o'zgartirib yoki o'chirib bo'lmaydi
+          </div>
           {auditLog.length === 0 ? <EmptyState text="Hozircha tarix yo'q" /> : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
@@ -133,8 +136,8 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
               <tbody>
                 {auditLog.map((l) => (
                   <tr key={l.id} className="uvix-row" style={{ borderBottom: `1px solid ${THEME.border}` }}>
-                    <td style={{ padding: "9px 14px", fontWeight: 600 }}>{l.who}</td>
-                    <td style={{ padding: "9px 14px" }}>{l.what}</td>
+                    <td style={{ padding: "9px 14px", fontWeight: 600 }}>{l.who}{l.dev && <div style={{ fontSize: 11, fontWeight: 500, color: THEME.dim }}>{l.dev}</div>}</td>
+                    <td style={{ padding: "9px 14px", color: /^Rad etildi/.test(l.what) ? THEME.rose : undefined }}>{l.src === "server" && <Lock size={11} style={{ verticalAlign: -1, marginRight: 5, color: THEME.dim }} aria-label="server yozuvi" />}{l.what}</td>
                     <td style={{ padding: "9px 14px", color: THEME.muted, whiteSpace: "nowrap" }}>{new Date(l.when).toLocaleString("uz-UZ")}</td>
                   </tr>
                 ))}

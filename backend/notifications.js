@@ -20,6 +20,8 @@ const CATS = {
   attendance: { label: "Davomat", aud: "admins", view: "attendance", push: false, sound: "tink" },
   reports: { label: "Hisobotlar", aud: "admins", view: "report", push: false, sound: "tink" },
   system: { label: "Tizim (zaxira, ulanish)", aud: "admins", view: "settings", push: true, sound: "critical", critical: true },
+  // Tasdiqlash so'rovlari: adminga — yangi so'rov, xodimga — qaror (har biri shaxsan, `to` bilan)
+  approvals: { label: "Tasdiqlash so'rovlari", aud: "staff", view: "orders", push: true, sound: "chime" },
 };
 // Telegram yo'nalishi turkumi → bildirishnoma turkumi
 const FROM_TG = {

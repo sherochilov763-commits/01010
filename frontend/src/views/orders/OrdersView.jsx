@@ -9,6 +9,8 @@ import { OrderForm } from "./OrderForm.jsx";
 import { PaymentsModal } from "./PaymentsModal.jsx";
 import { buildCustomers, custKey, telLink, tgLink } from "../../lib/customers.js";
 import { MobileOrderRow } from "./MobileOrderRow.jsx";
+import { useApprovals } from "../../lib/approvals.jsx";
+import { ApprovalRequestModal } from "../../components/ApprovalRequestModal.jsx";
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
 import { OrderPanel } from "./OrderPanel.jsx";
 import { Avatar } from "../../components/ui.jsx";
@@ -92,6 +94,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const [sheetId, setSheetId] = useState(null); // telefonda pastki varaqdagi buyurtma
   const [swiped, setSwiped] = useState(null); // telefonda surib ochilgan qator: { id, side }
   const blockTap = useRef(false);
+  const ap = useApprovals();
   const [toolsOpen, setToolsOpen] = useState(false);
   const [importErrors, setImportErrors] = useState(null);
   const fileInputRef = useRef(null);
@@ -586,6 +589,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             onStage={(st) => changeStage(selected, st)}
             onAssign={(kind, id) => assign(selected, kind, id)}
             onSelectOrder={(id) => setSelectedId(id)}
+            pending={ap?.forOrder(selected.id)}
           />
         </>
       )}
@@ -612,6 +616,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             onStage={(st) => changeStage(sheetOrder, st)}
             onAssign={(kind, id) => assign(sheetOrder, kind, id)}
             onSelectOrder={(id) => setSheetId(id)}
+            pending={ap?.forOrder(sheetOrder.id)}
           />
         );
       })()}
@@ -627,8 +632,8 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           customers={customerList}
           onAddSubcategory={onAddSubcategory}
           onClose={() => setModal(null)}
-          onSave={(order, linkedExpenseTx) => {
-            onSaveOrder(order, !!modal.edit, linkedExpenseTx);
+          onSave={(order, linkedExpenseTx, extra) => {
+            onSaveOrder(order, !!modal.edit, linkedExpenseTx, extra);
             setModal(null);
           }}
           onUploadPhotos={onUploadPhotos}
@@ -664,7 +669,11 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           onDeletePayment={onDeletePayment}
         />
       )}
-      {confirmDel && (
+      {confirmDel && !isAdmin && ap && (
+        <ApprovalRequestModal kind="order_delete" order={confirmDel} onClose={() => setConfirmDel(null)}
+          onSubmit={async (b) => { await ap.request(b); showToast?.("O'chirish so'rovi adminga yuborildi"); }} />
+      )}
+      {confirmDel && (isAdmin || !ap) && (
         <ConfirmDialog
           message={`${confirmDel.orderNumber} buyurtmasini (${money(confirmDel.agreementUzs)}) o'chirmoqchimisiz? Unga tegishli barcha to'lovlar tarixi ham o'chadi.`}
           onCancel={() => setConfirmDel(null)}

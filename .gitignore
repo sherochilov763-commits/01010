@@ -14,3 +14,7 @@ backend/data/
 # Tizim fayllari
 .DS_Store
 Thumbs.db
+
+# E2E sinov natijalari (rasmlar, server logi)
+tests/e2e/out/
+__pycache__/

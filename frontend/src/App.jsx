@@ -2,10 +2,25 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import LoginScreen from "./auth/LoginScreen.jsx";
 import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { QrApproveHost, QrScanButton } from "./components/PhoneToDesktop.jsx";
-import { authBootstrap, authListEmployees, authLogout, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
+import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { MORE_SHEET_CSS } from "./components/MoreSheet.jsx";
+import { ApprovalsProvider, useApprovalsState } from "./lib/approvals.jsx";
+import { ApprovalsCard, APPROVALS_CSS } from "./components/ApprovalsCard.jsx";
+import { LockScreen, LOCK_CSS } from "./components/LockScreen.jsx";
+import { clearLockState, shouldLockOnStart, useIdleLock } from "./lib/lock.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { installErrorReporting, setErrorView } from "./lib/errors.js";
+
+installErrorReporting();
+// Xato oynasini sinash uchun (faqat shu brauzerda): localStorage.uvix_crash_test = "<bo'lim>"
+function CrashProbe({ view }) {
+  let v = null;
+  try { v = localStorage.getItem("uvix_crash_test"); } catch { /* */ }
+  if (v && v === view) throw new Error("Sinov xatosi (uvix_crash_test)");
+  return null;
+}
 import { navCss, RailNav, TopNav, useNavPrefs } from "./components/Nav.jsx";
 import { CommandPalette, SearchTrigger, useCommandHotkey } from "./components/CommandPalette.jsx";
 import { buildCustomers } from "./lib/customers.js";
@@ -69,6 +84,10 @@ function ViewFallback() {
 }
 
 export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>;
+}
+
+function AppInner() {
   const [ready, setReady] = useState(false);
   const [transactions, setTransactions] = useState([]); // faqat rasxod (chiqim)
   const [orders, setOrders] = useState([]); // buyurtmalar (har birida payments[])
@@ -83,6 +102,21 @@ export default function App() {
   const [companyAppearance, setCompanyAppearance] = useState(DEFAULT_APPEARANCE);
   const [myAppearance, setMyAppearance] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  // Ekran qulfi: harakatsizlikda (standart 15 daqiqa) — PIN yoki Face ID bilan ochiladi
+  const idle = useIdleLock(!!currentUser);
+  const shellRef = useRef(null);
+  // Qulf paytida ilova klaviatura/ekran o'quvchi uchun ham yopiq (inert)
+  useEffect(() => { if (shellRef.current) shellRef.current.inert = !!idle.locked; });
+  useEffect(() => {
+    const on = () => idle.lock();
+    window.addEventListener("uvix:lock-now", on);
+    return () => window.removeEventListener("uvix:lock-now", on);
+  }, [idle.lock]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const lost = () => { clearLockState(); idle.unlock(); setCurrentUser(null); };
+    window.addEventListener("uvix:auth-lost", lost);
+    return () => window.removeEventListener("uvix:auth-lost", lost);
+  }, [idle.unlock]); // eslint-disable-line react-hooks/exhaustive-deps
   // Kirgandan so'ng, brauzer bo'sh turganda qolgan sahifalarni oldindan yuklab qo'yamiz —
   // birinchi ochilish yengil, keyin menyudan o'tish esa kutishsiz bo'ladi.
   useEffect(() => {
@@ -94,6 +128,7 @@ export default function App() {
   }, [currentUser?.id]);
   // Bo'limlar tarixi: ← strelka va telefonning "orqaga" harakati oldingi bo'limga qaytaradi
   const { view, go: setView, back: goBack, canGoBack } = useHistoryView("dashboard", !!currentUser && !isWorkerRole(currentUser.role));
+  setErrorView(view); // xato hisobotida qaysi bo'lim — render paytida (xato aynan shu yerda chiqishi mumkin)
   const [navFilter, setNavFilter] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useBackToClose(sidebarOpen, () => setSidebarOpen(false));
@@ -107,6 +142,22 @@ export default function App() {
     enabled: !!currentUser && !isWorkerRole(currentUser.role),
     onNavigate: (v) => { setNavFilter(null); setView(v); },
   });
+  // Tasdiqlash so'rovlari (pul ma'lumotlari himoyasi): admin qaror qilgach — buyurtmalar va jurnal yangilanadi
+  const approvalsState = useApprovalsState({
+    enabled: !!currentUser && !isWorkerRole(currentUser.role),
+    isAdmin: currentUser?.role === "admin",
+    onDecided: async () => {
+      for (const [key, setter] of [["uvix:orders", setOrders], ["uvix:audit", setAuditLog]]) {
+        const fresh = await storageRefresh(key);
+        if (Array.isArray(fresh)) setter(fresh);
+      }
+    },
+  });
+  const editPaymentRef = useRef(null);
+  const approvalsCtx = useMemo(() => ({
+    ...approvalsState,
+    editPayment: currentUser?.role === "admin" ? (...a) => editPaymentRef.current?.(...a) : null,
+  }), [approvalsState, currentUser?.role]);
   // Shaxsiy fon va shisha rejimi (faqat kompyuterda — telefonda tezlik uchun o'chiq)
   const bgState = useBackground(!!currentUser && !isWorkerRole(currentUser.role));
   const narrow = useBgSuppressed();
@@ -141,6 +192,19 @@ export default function App() {
   useEffect(() => {
     if (currentUser) return; // tizimdan chiqilganda ro'yxat (va Face ID holati) yangilanadi
     (async () => {
+      // Sahifa yangilandi (F5) yoki ilova qayta ochildi: saqlangan kirish hali amal qilsa — PIN so'ramaymiz.
+      // Uzoq harakatsizlikdan keyin — qulf ekrani.
+      if (getToken()) {
+        try {
+          const me = await authMe();
+          if (me?.employee && !me.mustChangePin) {
+            if (shouldLockOnStart()) idle.lock();
+            setCurrentUser(me.employee);
+            setReady(true);
+            return;
+          }
+        } catch { /* server javob bermadi — oddiy kirish ekrani */ }
+      }
       let emp = [];
       let loaded = false;
       try {
@@ -428,8 +492,23 @@ export default function App() {
     addLog(`Excel orqali ${newOrders.length} ta buyurtma import qilindi`);
     showToast(`${newOrders.length} ta buyurtma qo'shildi`);
   }
-  function saveOrder(order, isEdit, linkedExpenseTx) {
+  function saveOrder(order, isEdit, linkedExpenseTx, extra) {
     let next;
+    // Operator summani kamaytirgan bo'lsa: boshqa o'zgarishlar saqlanadi, yangi summa — admin tasdig'iga
+    let totalRequest = null;
+    if (isEdit && currentUser?.role !== "admin") {
+      const prev = orders.find((o) => o.id === order.id);
+      if (prev && (Number(order.agreementUzs) || 0) < (Number(prev.agreementUzs) || 0)) {
+        totalRequest = { kind: "order_total", orderId: order.id, agreementUzs: order.agreementUzs, reason: extra?.totalReason || "Sabab ko'rsatilmagan" };
+        order = { ...order, agreementUzs: prev.agreementUzs, agreementUsd: prev.agreementUsd };
+      }
+    }
+    if (totalRequest) {
+      // Avval tahrir saqlanadi, so'ng so'rov yuboriladi (server buyurtmaning joriy summasini tekshiradi)
+      Promise.resolve().then(() => approvalsState.request(totalRequest))
+        .then(() => showToast("Summani kamaytirish so'rovi adminga yuborildi"))
+        .catch((e) => showToast(e.message));
+    }
     if (isEdit) {
       next = orders.map((o) => (o.id === order.id ? order : o));
       addLog(`Buyurtma tahrirlandi: ${order.orderNumber} (${money(order.agreementUzs)})`);
@@ -596,6 +675,19 @@ export default function App() {
     showToast("Butunlay o'chirildi");
   }
 
+  // Admin: to'lov summasini to'g'ridan-to'g'ri o'zgartirish (operator — tasdiq so'rovi orqali)
+  function editPayment(orderId, paymentId, amount, note) {
+    const order = orders.find((o) => o.id === orderId);
+    const p = order?.payments?.find((x) => x.id === paymentId);
+    if (!order || !p || !amount || amount === p.amount) return;
+    const at = new Date().toISOString();
+    const next = orders.map((o) => (o.id === orderId ? { ...o, payments: o.payments.map((x) => (x.id === paymentId ? { ...x, amount, prevAmount: x.amount, editedAt: at, editedBy: currentUser.name } : x)) } : o));
+    persistOrders(next);
+    addLog(`To'lov o'zgartirildi: ${order.orderNumber} — ${money(p.amount)} → ${money(amount)}${note ? ` · «${note}»` : ""}`);
+    showToast("To'lov o'zgartirildi");
+  }
+  editPaymentRef.current = editPayment;
+
   latest.current = { restoreOrder, restoreTransaction, restorePayment };
 
   // Sidebar'dagi «Mijozlar» yonidagi raqam — qarzdor mijozlar soni
@@ -667,20 +759,25 @@ export default function App() {
   }
 
   if (isWorkerRole(currentUser.role)) {
-    const workerLogout = () => { authLogout(); resetAttendance(); setCurrentUser(null); };
+    const workerLogout = () => { authLogout(); resetAttendance(); clearLockState(); idle.unlock(); setCurrentUser(null); };
     return (
+      <>
+      <div ref={shellRef}>
       <TelegramOnboard user={currentUser} onLogout={workerLogout}>
       <AttendanceGate user={currentUser} onLogout={workerLogout}>
         <Suspense fallback={<div style={{ padding: 24 }}><ViewFallback /></div>}><WorkerApp currentUser={currentUser} onLogout={workerLogout} /></Suspense>
       </AttendanceGate>
       </TelegramOnboard>
+      </div>
+      {idle.locked && <><style>{LOCK_CSS}</style><LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={workerLogout} /></>}
+      </>
     );
   }
 
   const isAdmin = currentUser.role === "admin";
   const visibleNav = navCfg.items;
   const goView = (v) => { setNavFilter(null); setView(v); };
-  const logout = () => { authLogout(); resetAttendance(); setCurrentUser(null); };
+  const logout = () => { authLogout(); resetAttendance(); clearLockState(); idle.unlock(); setCurrentUser(null); };
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
   const myTx = isAdmin ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
@@ -689,7 +786,9 @@ export default function App() {
   return (
     <TelegramOnboard user={currentUser} onLogout={logout}>
     <AttendanceGate user={currentUser} onLogout={logout}>
-    <div style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
+    <ApprovalsProvider value={approvalsCtx}>
+    {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
+    <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
         html, body { overflow-x: hidden; max-width: 100vw; overscroll-behavior-x: none; }
         /* clip — gorizontal aylanishni to'sadi, lekin (hidden'dan farqli) tepa panelning "yopishqoq"ligini buzmaydi */
@@ -850,6 +949,8 @@ export default function App() {
         ${ncenterCss()}
         ${BOTTOM_NAV_CSS}
         ${MORE_SHEET_CSS}
+        ${APPROVALS_CSS}
+        ${LOCK_CSS}
       `}</style>
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
@@ -858,10 +959,13 @@ export default function App() {
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={() => { authLogout(); setCurrentUser(null); }} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
+          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
+            <ErrorBoundary inline onHome={() => goView("dashboard")}>
+            <CrashProbe view={view} />
             <Suspense fallback={<ViewFallback />}>
+            {isAdmin && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
             {view === "dashboard" && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
@@ -1007,7 +1111,7 @@ export default function App() {
                 currentUser={currentUser}
                 employees={employees}
                 onSave={persistEmployees}
-                onLogout={() => { authLogout(); setCurrentUser(null); }}
+                onLogout={logout}
                 isAdmin={isAdmin}
                 settings={settings}
                 onSaveSettings={persistSettings}
@@ -1035,6 +1139,7 @@ export default function App() {
               />
             )}
             </Suspense>
+            </ErrorBoundary>
           </div>
         </div>
       </div>
@@ -1096,6 +1201,7 @@ export default function App() {
         </div>
       )}
     </div>
+    </ApprovalsProvider>
     </AttendanceGate>
     </TelegramOnboard>
   );

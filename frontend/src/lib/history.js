@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 let overlaySeq = 0;
+let reloadUsed = false;
 const H = typeof window !== "undefined" ? window.history : null;
 
 /**
@@ -20,10 +21,19 @@ export function useHistoryView(initial, enabled = true) {
 
   useEffect(() => {
     if (!enabled || !H) return;
-    const base = { uvix: true, view: initial, depth: 0 };
+    // Sahifa yangilansa (F5) — xodim qaysi bo'limda bo'lsa, o'sha yerda qoladi (faqat birinchi marta)
+    let start = initial;
+    if (!reloadUsed) {
+      reloadUsed = true;
+      try {
+        const nav = performance.getEntriesByType?.("navigation")?.[0];
+        if (nav?.type === "reload" && H.state?.uvix && typeof H.state.view === "string") start = H.state.view;
+      } catch { /* eski brauzer */ }
+    }
+    const base = { uvix: true, view: start, depth: 0 };
     H.replaceState(base, "");
-    viewRef.current = initial;
-    setView(initial);
+    viewRef.current = start;
+    setView(start);
     setDepth(0);
 
     // Himoya yozuvi foydalanuvchi birinchi marta ekranga tekkanda qo'yiladi —
@@ -42,8 +52,8 @@ export function useHistoryView(initial, enabled = true) {
         // Asosiy sahifadan ham orqaga — ilovadan chiqmaymiz, asosiy sahifada qolamiz
         H.pushState(base, "");
         armed = false;
-        viewRef.current = initial;
-        setView(initial);
+        viewRef.current = base.view;
+        setView(base.view);
         setDepth(0);
         return;
       }

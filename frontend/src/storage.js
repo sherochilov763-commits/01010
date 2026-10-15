@@ -6,15 +6,25 @@
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 const TOKEN_KEY = "uvix_auth_token";
 
+// Token qurilmada saqlanadi (12 soat): sahifa yangilansa yoki ilova qayta ochilsa ham kirish tiklanadi.
+// Uzoq harakatsizlikda ekran qulflanadi (lib/lock.js), «Chiqish» tokenni serverda ham bekor qiladi.
+function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function lsSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* private rejim */ } }
+function ssGet(k) { try { return sessionStorage.getItem(k); } catch { return null; } }
+function ssDel(k) { try { sessionStorage.removeItem(k); } catch { /* */ } }
 export function getToken() {
-  return sessionStorage.getItem(TOKEN_KEY) || "";
+  return lsGet(TOKEN_KEY) || ssGet(TOKEN_KEY) || "";
 }
 export function setToken(token) {
-  if (token) sessionStorage.setItem(TOKEN_KEY, token);
-  else sessionStorage.removeItem(TOKEN_KEY);
+  lsSet(TOKEN_KEY, token || null);
+  ssDel(TOKEN_KEY); // eski joy (sessionStorage) — bitta joyda saqlaymiz
 }
 export function clearToken() {
-  sessionStorage.removeItem(TOKEN_KEY);
+  const had = !!getToken();
+  lsSet(TOKEN_KEY, null);
+  ssDel(TOKEN_KEY);
+  // Seans tugadi yoki boshqa qurilmadan «Chiqarish» bosildi — ilova kirish ekraniga qaytadi
+  if (had && typeof window !== "undefined") window.dispatchEvent(new Event("uvix:auth-lost"));
 }
 
 function authHeaders() {
@@ -229,6 +239,9 @@ export async function sendTelegramUserMessage(chatId, text, replyToTgId) {
 
 
 export function authLogout() {
+  // Serverda ham seansni yopamiz (javobni kutmaymiz — internet bo'lmasa ham chiqiladi)
+  const t = getToken();
+  if (t) fetch(`${API_BASE}/auth/logout`, { method: "POST", headers: { Authorization: `Bearer ${t}` }, keepalive: true }).catch(() => {});
   clearToken();
   // Umumiy kompyuterda keyingi odamga saqlanmay qolgan ma'lumot qolmasin
   try { Object.keys(localStorage).filter((k) => k.startsWith("uvix-pending:")).forEach((k) => localStorage.removeItem(k)); } catch { /* */ }
@@ -606,3 +619,49 @@ export const convertQuote = (body) => apiReq("/quotes/convert", "POST", body);
 export const payOrdersBatch = (body) => apiReq("/orders/pay-batch", "POST", body);
 export const setOrderStage = (id, stage) => apiReq(`/orders/${encodeURIComponent(id)}/stage`, "POST", { stage });
 export const assignOrderTask = (id, body) => apiReq(`/orders/${encodeURIComponent(id)}/task`, "POST", body);
+
+// ---- Tasdiqlash so'rovlari (pul ma'lumotlari himoyasi) ----
+async function approvalsReq(path, method = "GET", body) {
+  const res = await fetch(`${API_BASE}/approvals${path}`, {
+    method,
+    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...authHeaders() },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "So'rovni bajarib bo'lmadi");
+  return data;
+}
+export const fetchApprovals = () => approvalsReq("");
+export const createApproval = (body) => approvalsReq("", "POST", body);
+export const cancelApproval = (id) => approvalsReq(`/${encodeURIComponent(id)}`, "DELETE");
+export const decideApproval = (id, action, note) => approvalsReq(`/${encodeURIComponent(id)}/${action}`, "POST", note ? { note } : {});
+
+// ---- Seans: tiklash, qulf ekrani, ochiq qurilmalar ----
+export async function authMe() {
+  const t = getToken();
+  if (!t) return null;
+  const res = await fetch(`${API_BASE}/auth/me`, { headers: { Authorization: `Bearer ${t}` } });
+  if (res.status === 401 || res.status === 403) { clearToken(); return null; }
+  if (!res.ok) throw new Error("server");
+  return res.json();
+}
+export async function authUnlock(pin) {
+  const res = await fetch(`${API_BASE}/auth/unlock`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ pin }) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(data.message || "PIN noto'g'ri"); e.status = res.status; e.code = data.error; throw e; }
+  return true;
+}
+export async function fetchSessions(all = false) {
+  const res = await fetch(`${API_BASE}/me/sessions${all ? "?all=1" : ""}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error("Qurilmalar ro'yxatini olib bo'lmadi");
+  return (await res.json()).sessions || [];
+}
+export async function revokeSession(id) {
+  const res = await fetch(`${API_BASE}/me/sessions/${encodeURIComponent(id)}`, { method: "DELETE", headers: authHeaders() });
+  if (!res.ok) throw new Error("Chiqarib bo'lmadi");
+  return true;
+}
+// ---- So'nggi xatolar (admin) ----
+export const fetchSystemErrors = () => apiReq("/system/errors");
+export const clearSystemErrors = () => apiReq("/system/errors", "DELETE");

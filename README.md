@@ -950,3 +950,26 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Yangi fayllar: `views/orders/MobileOrderRow.jsx`, `components/MoreSheet.jsx`, `lib/sheetDrag.js`; `OrderPanel` — `variant="sheet"`.
 - Tekshiruv: haqiqiy backend E2E — 61 ta (sichqoncha va sensorli surish, varaq, menyu, rollar, saqlash), sensorli imo-ishoralar alohida, demo — 9 ta, menyu standartlari unit — 10 ta, avvalgi mavzu E2E — 30/30.
 - Keyingi bosqichlar: 01 «Bugun» bosh ekrani, 05 Chat + smeta; 3-bosqich — QR skaner. Pastga tortib yangilash sessiyani tiklash (A2) bilan birga qilinadi: hozir brauzerning o'z «tortib yangilash»i sahifani qayta yuklab, tizimdan chiqarib yuboradi.
+
+## 🛡️ Muhim tuzatishlar A1–A4: pul himoyasi, sessiya va qulf, xatolar, avtomatik testlar (2026-10)
+**A1 — pul ma'lumotlari serverda himoyalangan** (`backend/money-guard.js`)
+- Operator to'lov **qo'sha oladi**. Mavjud to'lovni o'zgartirish yoki o'chirish, buyurtmani o'chirish va buyurtma summasini **kamaytirish** — faqat **admin tasdig'i bilan**: operator sabab yozib «Tasdiqlashga yuborish»ni bosadi, to'lov qatorida «tasdiq kutmoqda» turadi.
+- Admin Dashboard va Buyurtmalar tepasida **«Tasdiqlash so'rovlari»** kartasini ko'radi (eski → yangi summa, sabab), bir bosishda tasdiqlaydi yoki rad etadi. Adminga Telegram'da va ilovada xabar, xodimga — qaror. Admin to'lov summasini o'zi to'g'ridan-to'g'ri o'zgartira oladi (qatorda «avval …» ko'rinadi).
+- Qoidalarni **server tekshiradi** (`/api/kv/uvix:orders` — PUT va merge): ilovani chetlab yuborilgan o'zgarish qabul qilinmaydi, serverdagi holat qaytariladi, urinish jurnalga «Rad etildi (server)» bo'lib yoziladi va adminga xabar boradi. Eskirgan nusxa (boshqa xodim keyinroq o'zgartirgan) urinish deb hisoblanmaydi — `editedAt` / `totalAt` belgilari solishtiriladi.
+- **Jurnal faqat qo'shiladi**: kim, qachon va qaysi qurilmadan — server yozadi; eski yozuvni hech kim (admin ham) o'zgartira yoki o'chira olmaydi. Xodimlar → Tarix: qulf belgisi va qurilma ustuni.
+- API: `GET/POST /api/approvals`, `DELETE /api/approvals/:id` (o'z so'rovini bekor qilish), `POST /api/approvals/:id/approve|reject` (admin). Ichki kalit `uvix:approvals`.
+
+**A2 — sessiya tiklanadi, ekran qulflanadi** (`backend/sessions.js`, `frontend/src/lib/lock.js`)
+- Kirish qurilmada 12 soat saqlanadi: **F5** yoki ilovani qayta ochishda PIN qayta so'ralmaydi, xodim qaysi bo'limda bo'lsa o'sha yerda qoladi (`GET /api/auth/me`).
+- Harakatsiz qolsa (standart **15 daqiqa**, Sozlamalar → Profil → Xavfsizlik: 5/15/30/60/o'chiq, shu qurilma uchun) — **qulf ekrani**: PIN yoki Face ID bilan ochiladi, ochiq oynalar va kiritilayotgan ma'lumot joyida qoladi. Bir nechta oyna bir-biri bilan sinxron qulflanadi/ochiladi. «Hozir qulflash» tugmasi bor.
+- **Ochiq qurilmalar**: har bir kirish o'z seans raqamiga ega (`jti`); ro'yxatda qurilma, oxirgi faollik va **«Chiqarish»** (yo'qolgan telefon). Admin barcha xodimlarnikini ko'radi. «Chiqish» tokenni serverda ham bekor qiladi. Chiqarilgan qurilma keyingi so'rovda kirish ekraniga qaytadi.
+
+**A3 — xatolar ushlanadi va adminga yetadi** (`backend/error-reports.js`, `components/ErrorBoundary.jsx`)
+- Oq ekran o'rniga **«Nimadir xato ketdi»** oynasi: «Qayta yuklash» (avval saqlanmagan o'zgarishlar yuboriladi), «Bosh sahifaga», **xato kodi**. Bo'limdagi xato menyuni yiqitmaydi.
+- Xato (brauzer va server) **«Sozlamalar → Ma'lumotlar → So'nggi xatolar»**ga yoziladi: kod, bo'lim, xodim, qurilma, necha marta. Adminga Telegram va ilovada xabar — **bir xil xato takrorlansa bitta xabar** (24 soatda bir). «Tizim holati»da «Xatolar (24 soat)».
+- **Serverni tashqaridan kuzatish (bir martalik sozlash):** UptimeRobot (bepul) yoki shunga o'xshash xizmatda HTTP monitor: `https://<sizning-domen>/api/health`, har 5 daqiqa — server to'xtasa SMS/email/Telegram keladi.
+
+**A4 — avtomatik testlar loyihada** (`tests/`, `.github/workflows/tests.yml`)
+- `npm run test:unit` (node:test) va `npm run test:e2e` (haqiqiy server + Playwright, har to'plam toza bazada): mavzular, pul himoyasi, sessiya va qulf, xatolar, telefon ekranlari — 22 ta unit test (ichida 2 617 ta mavzu sharti) va 162 ta E2E tekshiruv. Tafsilot — `tests/README.md`.
+- GitHub **har yangilanishda o'zi ishga tushiradi**. **Bir martalik sozlash:** Railway → servis → Settings → **«Wait for CI»**ni yoqing (GitHub ruxsatini tasdiqlash so'ralishi mumkin) — shunda biror test yiqilsa yangi versiya ishga chiqmaydi, eski versiya ishlashda davom etadi.
+- Kompyuter ko'rinishi: oldingi versiya bilan 18 ta ekranda piksel bo'yicha solishtirildi — farq faqat Sozlamalar → Profil'dagi yangi «Xavfsizlik» kartasida.

@@ -73,12 +73,15 @@ if (!JWT_SECRET) try {
   fs.writeFileSync(SECRET_PATH, JWT_SECRET, { mode: 0o600 });
 }
 const TOKEN_TTL = "12h";
+const SERVER_STARTED_AT = new Date().toISOString();
 function issueToken(employee) {
-  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
+  // jti — seans raqami: «Ochiq qurilmalar» ro'yxati va masofadan chiqarish uchun
+  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name, jti: crypto.randomBytes(9).toString("hex") }, JWT_SECRET, { expiresIn: TOKEN_TTL });
   // mustChangePin — vaqtinchalik PIN bilan kirildi: ilova avval yangi PIN so'raydi
   return { token, employee: { id: employee.id, name: employee.name, role: employee.role }, ...(employee.mustChangePin ? { mustChangePin: true } : {}) };
 }
 let passkeyApi = null; // pastda, requireAuth'dan keyin ulanadi
+let sessionsApi = null; // ochiq seanslar (qurilmalar) — pastda ulanadi
 
 app.get("/api/health", (req, res) => {
   // "persistent: false" — Railway'da Volume yo'q: deploy'da ma'lumotlar o'chadi
@@ -174,8 +177,7 @@ app.post("/api/auth/bootstrap", (req, res) => {
     pin: bcrypt.hashSync(String(pin), 10),
   };
   writeEmployees([employee]);
-  const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name }, JWT_SECRET, { expiresIn: TOKEN_TTL });
-  res.json({ token, employee: { id: employee.id, name: employee.name, role: employee.role } });
+  res.json(issueToken(employee));
 });
 
 // Admin PIN'ini tiklash endi faqat server konsolidan: `node reset-admin-pin.js`
@@ -230,6 +232,9 @@ function requireAuth(req, res, next) {
   // admin huquqi olib tashlansa — bu darhol kuchga kiradi (12 soat kutmasdan).
   const employee = readEmployees().find((e) => e.id === payload.sub);
   if (!employee) return res.status(401).json({ error: "invalid_token" });
+  // «Ochiq qurilmalar»dan chiqarilgan (yoki «Chiqish» bosilgan) seans — darhol yaroqsiz
+  if (sessionsApi && !sessionsApi.check(payload, req)) return res.status(401).json({ error: "session_revoked" });
+  req.auth = payload;
   req.user = { sub: employee.id, id: employee.id, name: employee.name, role: employee.role };
   next();
 }
@@ -248,6 +253,8 @@ function requireAdmin(req, res, next) {
   next();
 }
 app.use("/api/kv", requireAuth);
+// Seanslar: /api/auth/me (F5 dan keyin tiklash), /api/auth/unlock (qulf ekrani), /api/me/sessions (qurilmalar)
+sessionsApi = require("./sessions")(app, { getStmt, upsertStmt, readEmployees, requireAuth, pinMatches, checkRateLimit, clearRateLimit });
 
 // ==================== Face ID / barmoq izi (passkey) ====================
 passkeyApi = require("./passkeys")(app, {
@@ -320,6 +327,8 @@ app.get("/api/system-status", requireAuth, requireAdmin, async (req, res) => {
     pinHelp: emps.filter((e) => help[e.id]).map((e) => e.name),
     fx: fxInfo,
     storage: { persistent: db.STORAGE.persistent },
+    errors: (() => { try { const l = JSON.parse(getStmt.get("uvix:errors")?.value || "[]"); const day = Date.now() - 86400000; const recent = l.filter((e) => e.lastAt > day); return { count: recent.reduce((s, e) => s + e.count, 0), last: recent[0]?.message || "" }; } catch { return { count: 0, last: "" }; } })(),
+    startedAt: SERVER_STARTED_AT,
   });
 });
 app.get("/api/settings-log", requireAuth, requireAdmin, (req, res) => res.json({ log: settingsLog.read().slice(0, Math.min(1000, Number(req.query.limit) || 300)) }));
@@ -330,6 +339,22 @@ app.get("/api/settings-log", requireAuth, requireAdmin, (req, res) => res.json({
 let webpushLib = null;
 try { webpushLib = require("web-push"); } catch { console.warn("web-push o'rnatilmagan — push bildirishnomalar o'chiq"); }
 const notifications = require("./notifications")(app, { getStmt, upsertStmt, readEmployees, requireAuth, webpush: webpushLib });
+// Ilova va server xatolari: yig'iladi, adminga Telegram (bir xil xato — bitta xabar), «So'nggi xatolar» (A3)
+const errorReports = require("./error-reports")(app, {
+  getStmt, upsertStmt, requireAuth, requireAdmin,
+  userOf: (req) => {
+    const h = req.headers.authorization || "";
+    if (!h.startsWith("Bearer ")) return null;
+    try { const p = jwt.verify(h.slice(7), JWT_SECRET); return readEmployees().find((e) => e.id === p.sub) || null; } catch { return null; }
+  },
+  notify: (text) => notify("system", text),
+});
+// Pul ma'lumotlari himoyasi: operator qoidalari, tasdiqlash so'rovlari, server jurnali (A1)
+const moneyGuard = require("./money-guard")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff,
+  sendToEmployee: (id, text) => staffBot.sendToEmployee(id, text),
+  emit: (cat, item) => notifications.emit(cat, item),
+});
 
 // ==================== Chatlar: mas'ul, izohlar, tayyor javoblar, javobsiz ogohlantirish ====================
 const chatTools = require("./chat-tools")(app, {
@@ -459,7 +484,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "telegramChatId", "gmailUser"
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -826,13 +851,25 @@ app.post("/api/kv/:key/merge", (req, res) => {
   if (upserts.some((u) => !u || typeof u.item !== "object" || u.item === null || typeof u.item.id !== "string" && typeof u.item.id !== "number")) {
     return res.status(400).json({ error: "invalid_item", message: "Har bir yozuvda id bo'lishi kerak" });
   }
+  const isAdminUser = req.user.role === "admin";
+  const dev = moneyGuard.deviceOf(req);
+  let violations = [];
   const tx = db.transaction(() => {
     const oldRow = getStmt.get(key);
     const oldValue = oldRow ? oldRow.value : null;
     let list = [];
     try { list = oldValue ? JSON.parse(oldValue) : []; } catch { list = []; }
     if (!Array.isArray(list)) list = [];
-    const del = new Set(deletes.map(String));
+    if (key === "uvix:audit") {
+      // Jurnal faqat qo'shiladi: eski yozuvlar o'zgarmaydi va o'chmaydi, kim/qachon — serverdan
+      const value = JSON.stringify(moneyGuard.guardAudit(upserts.map((u) => u.item), list, req.user, dev));
+      upsertStmt.run(key, value);
+      return { oldValue, value };
+    }
+    const oldList = list;
+    // Operator buyurtmani o'chira olmaydi (faqat admin tasdig'i bilan) — o'chirish so'rovi e'tiborsiz qoladi
+    const blocked = key === "uvix:orders" && !isAdminUser ? oldList.filter((x) => deletes.map(String).includes(String(x?.id))) : [];
+    const del = new Set(deletes.map(String).filter((id) => !blocked.some((x) => String(x.id) === id)));
     list = list.filter((x) => !del.has(String(x?.id)));
     const pos = new Map(list.map((x, i) => [String(x?.id), i]));
     const toStart = [];
@@ -844,7 +881,11 @@ app.post("/api/kv/:key/merge", (req, res) => {
     }
     let next = [...toStart, ...list, ...toEnd];
     if (key === "uvix:leads") next = mergeLeadTaskState(next, oldValue ? JSON.parse(oldValue) : []);
-    if (key === "uvix:orders") next = mergeOrderState(next, oldValue ? JSON.parse(oldValue) : []);
+    if (key === "uvix:orders") {
+      const g = moneyGuard.guardOrders(next, oldList, req.user);
+      violations = [...blocked.map((o) => ({ kind: "order_delete", order: o })), ...g.violations];
+      next = mergeOrderState(g.list, oldList);
+    }
     if (MAX_ITEMS[key] && next.length > MAX_ITEMS[key]) next = next.slice(0, MAX_ITEMS[key]);
     const value = JSON.stringify(next);
     upsertStmt.run(key, value);
@@ -858,6 +899,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     return res.status(500).json({ error: "merge_failed" });
   }
   res.json({ key, rev: revOf(key), value: result.value });
+  if (violations.length) moneyGuard.report(req.user, violations, dev);
   if (key === "uvix:orders") { notifyOrdersDiff(result.oldValue, result.value); customerMsg.onOrdersChanged(result.oldValue, result.value).catch((e) => console.error("Mijozga kvitansiya:", e.message)); }
   else if (key === "uvix:transactions") notifyExpensesDiff(result.oldValue, result.value);
 });
@@ -922,12 +964,23 @@ app.put("/api/kv/:key", (req, res) => {
       return res.json({ key, rev: revOf(key), value: JSON.stringify(merged) });
     } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
+  if (key === "uvix:audit") {
+    // Jurnal faqat qo'shiladi (hatto admin ham eski yozuvni o'zgartira olmaydi)
+    try {
+      const merged = JSON.stringify(moneyGuard.guardAudit(JSON.parse(value), oldValue ? JSON.parse(oldValue) : [], req.user, moneyGuard.deviceOf(req)));
+      upsertStmt.run(key, merged);
+      return res.json({ key, rev: revOf(key), value: merged });
+    } catch { return res.status(400).json({ error: "invalid_json" }); }
+  }
   if (key === "uvix:orders") {
     // Dizayner/pechatchi holati va server kiritgan to'lovlar eskirgan nusxa bilan yo'qolmasin
     try {
-      const merged = JSON.stringify(mergeOrderState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []));
+      const oldList = oldValue ? JSON.parse(oldValue) : [];
+      const g = moneyGuard.guardOrders(JSON.parse(value), oldList, req.user);
+      const merged = JSON.stringify(mergeOrderState(g.list, oldList));
       upsertStmt.run(key, merged);
       res.json({ key, rev: revOf(key), value: merged });
+      if (g.violations.length) moneyGuard.report(req.user, g.violations, moneyGuard.deviceOf(req));
       notifyOrdersDiff(oldValue, merged);
       customerMsg.onOrdersChanged(oldValue, merged).catch((e) => console.error("Mijozga kvitansiya:", e.message));
       return;
@@ -1670,6 +1723,24 @@ function gracefulShutdown(signal) {
   force.unref?.();
   Promise.allSettled([telegramUserbot.disconnect(), telegramLogin.cancel()]).finally(() => process.exit(0));
 }
+// Ushlanmagan server xatolari ham «So'nggi xatolar»ga yoziladi va adminga xabar boradi
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err?.type === "entity.too.large") return res.status(413).json({ error: "too_large", message: "Ma'lumot juda katta" });
+  if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "invalid_json" });
+  console.error("Server xatosi:", req.method, req.path, err);
+  try { errorReports.record({ message: `${err?.name || "Error"}: ${err?.message || err}`, stack: err?.stack, src: "server", url: `${req.method} ${req.path}`, user: req.user?.name || null }); } catch { /* */ }
+  res.status(500).json({ error: "server_error", message: "Serverda xato — administrator xabardor qilindi" });
+});
+process.on("unhandledRejection", (e) => {
+  console.error("Ushlanmagan xato (promise):", e);
+  try { errorReports.record({ message: `${e?.name || "Error"}: ${e?.message || e}`, stack: e?.stack, src: "server", url: "promise" }); } catch { /* */ }
+});
+process.on("uncaughtException", (e) => {
+  console.error("Ushlanmagan xato:", e);
+  try { errorReports.record({ message: `${e?.name || "Error"}: ${e?.message || e}`, stack: e?.stack, src: "server", url: "process" }); } catch { /* */ }
+  setTimeout(() => process.exit(1), 1500); // Telegram xabari ketib ulgursin; Railway qayta ishga tushiradi
+});
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 

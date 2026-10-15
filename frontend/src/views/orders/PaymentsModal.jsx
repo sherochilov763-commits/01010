@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Clock, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, Field, Modal, MultiPaymentLines, getIconBtn, getInputStyle } from "../../components/ui.jsx";
 import { orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { money, paymentTypeLabel, todayStr, uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
+import { useApprovals, PENDING_LABEL } from "../../lib/approvals.jsx";
+import { ApprovalRequestModal } from "../../components/ApprovalRequestModal.jsx";
 
 export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClose, onAddPayment, onDeletePayment }) {
   const [date, setDate] = useState(todayStr());
@@ -11,6 +13,8 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
+  const [reqFor, setReqFor] = useState(null); // { kind, payment } — operator: tasdiqqa so'rov; admin: to'g'ridan-to'g'ri tahrir
+  const ap = useApprovals();
 
   const paid = orderTotalPaid(order);
   const debt = orderDebt(order);
@@ -92,12 +96,35 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
               {payments.map((p) => (
                 <div key={p.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: THEME.surface, borderRadius: 10 }}>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{money(p.amount)}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{money(p.amount)}{p.prevAmount != null && <span title={`Avval: ${money(p.prevAmount)}${p.approvedBy ? ` · tasdiqladi: ${p.approvedBy}` : ""}`} style={{ fontSize: 11, fontWeight: 600, color: THEME.muted, marginLeft: 6 }}>(avval {money(p.prevAmount)})</span>}</div>
                     <div style={{ fontSize: 11, color: THEME.muted }}>{p.date} &middot; {paymentTypeLabel(p.paymentType)}{p.comment ? ` · ${p.comment}` : ""}</div>
                   </div>
-                  {(isAdmin || p.createdBy === currentUser.name) && (
-                    <button onClick={() => setConfirmDel(p)} className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={13} color={THEME.rose} /></button>
-                  )}
+                  {(() => {
+                    const pend = ap?.forPayment(p.id);
+                    if (pend) {
+                      return (
+                        <span data-testid="pay-pending" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, color: THEME.amberText, background: THEME.amberBg, borderRadius: 10, padding: "3px 8px", whiteSpace: "nowrap" }}>
+                          <Clock size={12} /> {PENDING_LABEL[pend.kind]}
+                          {pend.by?.id === currentUser.id && <button type="button" onClick={() => ap.cancel(pend.id).catch(() => {})} style={{ background: "none", border: 0, padding: 0, marginLeft: 4, color: THEME.amberText, textDecoration: "underline", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>bekor</button>}
+                        </span>
+                      );
+                    }
+                    if (isAdmin) {
+                      return (
+                        <span style={{ display: "flex", gap: 6 }}>
+                          {ap?.editPayment && <button onClick={() => setReqFor({ kind: "payment_edit", payment: p, direct: true })} aria-label="To'lovni o'zgartirish" title="O'zgartirish" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-edit"><Pencil size={13} /></button>}
+                          <button onClick={() => setConfirmDel(p)} aria-label="To'lovni o'chirish" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-delete"><Trash2 size={13} color={THEME.rose} /></button>
+                        </span>
+                      );
+                    }
+                    // Operator: o'zgartirish va o'chirish — faqat admin tasdig'i bilan
+                    return ap ? (
+                      <span style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => setReqFor({ kind: "payment_edit", payment: p })} aria-label="O'zgartirishni so'rash" title="O'zgartirish (admin tasdig'i bilan)" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-edit"><Pencil size={13} /></button>
+                        <button onClick={() => setReqFor({ kind: "payment_delete", payment: p })} aria-label="O'chirishni so'rash" title="O'chirish (admin tasdig'i bilan)" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-delete"><Trash2 size={13} color={THEME.rose} /></button>
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
               ))}
             </div>
@@ -129,6 +156,10 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
           </div>
         </div>
       </div>
+      {reqFor && (
+        <ApprovalRequestModal kind={reqFor.kind} order={order} payment={reqFor.payment} direct={reqFor.direct} onClose={() => setReqFor(null)}
+          onSubmit={(b) => (reqFor.direct ? ap.editPayment(order.id, reqFor.payment.id, b.amount, b.reason) : ap.request(b))} />
+      )}
       {confirmDel && (
         <ConfirmDialog
           message={`${money(confirmDel.amount)} to'lovni o'chirmoqchimisiz?`}

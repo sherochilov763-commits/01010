@@ -9,6 +9,8 @@ import { Badge, Button, Card, Field, Modal, getInputStyle } from "../../componen
 import { money } from "../../lib/format.js";
 import { roleLabel } from "../../constants.js";
 import { THEME } from "../../theme.js";
+import { SecuritySection } from "./SecuritySection.jsx";
+import { ErrorsSection } from "./ErrorsSection.jsx";
 import { AppearancePreviewCard, AppearanceSection, CompanyAppearanceCard } from "./AppearanceSection.jsx";
 import { TrashSection } from "./TrashSection.jsx";
 import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
@@ -319,6 +321,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
 
 
       <PasskeySection currentUser={currentUser} theme={THEME} Card={Card} />
+      <SecuritySection isAdmin={isAdmin} />
     </>,
     korinish: <>
       <AppearanceSection appearance={appearance} onApply={onApplyAppearance} />
@@ -435,6 +438,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
     </>,
     bolimlar: isAdmin && <ModulesSection onOpenView={onOpenView} />,
     malumotlar: isAdmin && <>
+        <ErrorsSection />
         {isAdmin && (
           <Card data-testid="backup-time-card">
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Kunlik hisobot va zaxira nusxa</div>

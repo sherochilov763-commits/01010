@@ -67,6 +67,9 @@ export function buildStatusItems(st) {
     : { ok: true, title: "Xodimlar Telegrami", text: "Hammasi ulangan", view: ["employees"] });
   if (st.pinHelp?.length) items.push({ ok: false, title: "PIN so'ralmoqda", text: `${st.pinHelp.join(", ")} — vaqtinchalik PIN bering`, view: ["employees"], act: "Berish" });
   if (st.fx) items.push({ ok: true, title: "Dollar kursi", text: `${st.fx.source === "cbu" ? "Markaziy bank" : "Qo'lda"} · 1 $ = ${(() => { const [a, b] = String(Math.round(st.fx.rate * 100) / 100).split("."); return a.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + (b ? "," + b : ""); })()} so'm`, section: "savdo" });
+  if (st.errors) items.push(st.errors.count
+    ? { ok: false, title: "Xatolar (24 soat)", text: `${st.errors.count} ta · ${String(st.errors.last || "").slice(0, 60)}`, section: "malumotlar", act: "Ko'rish" }
+    : { ok: true, title: "Xatolar (24 soat)", text: "Qayd etilmagan", section: "malumotlar" });
   if (st.storage && st.storage.persistent === false) items.push({ ok: false, title: "Ma'lumotlar diski", text: "Doimiy disk ulanmagan — qayta joylashda ma'lumot o'chadi", section: "malumotlar", act: "Ko'rish" });
   return items;
 }
