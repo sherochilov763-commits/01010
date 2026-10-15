@@ -1419,6 +1419,7 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
   const allMessages = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
   const lastSeen = JSON.parse(getStmt.get("uvix:telegramLastSeen")?.value || "{}");
   const contacts = JSON.parse(getStmt.get("uvix:telegramContacts")?.value || "{}");
+  const chatMeta = JSON.parse(getStmt.get("uvix:chatMeta")?.value || "{}");
   const byId = new Map();
   for (const [chatId, msgs] of Object.entries(allMessages)) {
     if (!msgs.length) continue;
@@ -1442,7 +1443,8 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
   }
   const chats = [...byId.values()].map((c) => {
     const info = contacts[c.chatId];
-    return info ? { ...c, name: info.name, username: info.username || "", phone: info.phone || "" } : c;
+    const out = info ? { ...c, name: info.name, username: info.username || "", phone: info.phone || "" } : c;
+    return !out.lastOut && require("./chat-tools").noReplyCovers(chatMeta[c.chatId], out.lastDate) ? { ...out, noReply: true } : out;
   });
   chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
   res.json({ chats });

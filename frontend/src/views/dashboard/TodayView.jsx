@@ -81,7 +81,7 @@ export function attentionItems(orders, { now = Date.now(), empById = new Map(), 
 
 // Javobsiz chatlar: oxirgi xabar mijozdan, 3 kundan yangi; eng uzoq kutgani birinchi
 export function waitingChats(chats, now = Date.now()) {
-  return (chats || []).filter((c) => !c.lastOut && c.lastDate && now - Date.parse(c.lastDate) < 72 * H)
+  return (chats || []).filter((c) => !c.lastOut && !c.noReply && c.lastDate && now - Date.parse(c.lastDate) < 72 * H)
     .sort((a, b) => Date.parse(a.lastDate) - Date.parse(b.lastDate));
 }
 

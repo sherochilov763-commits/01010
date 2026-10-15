@@ -20,6 +20,10 @@ const DEFAULT_REPLIES = [
   { id: "r4", key: "maket", text: "Maket tayyor! Ko'rib chiqing va «tasdiqlayman» deb yozing — shundan so'ng bosmaga beramiz." },
   { id: "r5", key: "vaqt", text: "Ish vaqtimiz: Dushanba–Shanba 09:00–19:00, Yakshanba — dam olish kuni." },
 ];
+// Chat «Javob shart emas» deb belgilangandan keyin mijozdan yangi xabar kelmaganmi
+function noReplyCovers(meta, lastDate) {
+  return !!(meta && meta.noReply && lastDate && Date.parse(meta.noReply) >= Date.parse(lastDate));
+}
 const DEFAULT_CFG = { slaMinutes: 15, workFrom: "09:00", workTo: "19:00", workDays: [1, 2, 3, 4, 5, 6] };
 
 module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, notify, now = () => new Date() }) {
@@ -72,6 +76,7 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
       if (!Array.isArray(list) || !list.length || meta[chatId]?.archived) continue;
       const last = list[list.length - 1];
       if (last.out) continue;
+      if (noReplyCovers(meta[chatId], last.date)) continue; // «Javob shart emas» deb belgilangan
       const mins = Math.floor((t - new Date(last.date).getTime()) / 60000);
       if (mins >= (cfg.slaMinutes || 15) && mins < 60 * 24 * 3) out.push({ chatId, mins, lastId: last.id || last.tgId || last.date, name: contacts[chatId]?.name || "", assignee: meta[chatId]?.assignee || null });
     }
@@ -122,6 +127,8 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
     }
     if ("pinned" in b) { if (b.pinned) cur.pinned = now().toISOString(); else delete cur.pinned; }
     if ("archived" in b) { if (b.archived) { cur.archived = now().toISOString(); delete cur.pinned; } else delete cur.archived; }
+    // «Javob shart emas»: shu vaqtgacha kelgan xabarlar javobsiz hisoblanmaydi; mijoz yana yozsa — qayta «Javob kutmoqda»
+    if ("noReply" in b) { if (b.noReply) cur.noReply = now().toISOString(); else delete cur.noReply; }
     if (Object.keys(cur).length) all[chatId] = cur; else delete all[chatId];
     write(KEY_META, all);
     res.json({ ok: true, meta: all[chatId] || {} });
@@ -211,3 +218,4 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
   return { slaTick, waitingChats, isWorkTime, config, DEFAULT_REPLIES };
 };
 module.exports.DEFAULT_CFG = DEFAULT_CFG;
+module.exports.noReplyCovers = noReplyCovers;

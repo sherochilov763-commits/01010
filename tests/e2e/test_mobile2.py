@@ -91,6 +91,25 @@ async def main():
         await m.locator("[aria-label=\"Mijoz ma'lumotlari\"]").click(); await m.wait_for_timeout(600)
         await m.locator("[data-testid=info-open-quote]").click(); await m.wait_for_timeout(900)
         ok("mijoz ma'lumotidan «Smeta» — chat yonida ochiladi", await m.locator("[data-testid=quote-sheet]").count() == 1)
+        # «Javob shart emas»: ochish bilan o'chmaydi, belgilansa — chiqadi, mijoz yana yozsa — qaytadi
+        await m.locator("[data-testid=quote-sheet-close]").click(); await m.wait_for_timeout(400)
+        ok("javobsiz chatda ogohlantirish qatori (ochilgan bo'lsa ham)", await m.locator("[data-testid=wait-strip]").count() == 1 and "javob kutmoqda" in await m.locator("[data-testid=wait-strip]").inner_text())
+        await m.locator("[data-testid=noreply-btn]").click(); await m.wait_for_timeout(800)
+        ok("«Javob shart emas» → qator yo'qoldi", await m.locator("[data-testid=wait-strip]").count() == 0)
+        az = api("/api/auth/login", {"employeeId": "aziza", "pin": "1234"})["token"]
+        ch = {c["chatId"]: c for c in api("/api/telegram-user/chats", token=az)["chats"]}
+        ok("server: chat «javob shart emas» deb belgilandi, boshqasi kutmoqda", ch["777001"].get("noReply") is True and not ch["777002"].get("noReply"), ch)
+        await m.go_back(); await m.wait_for_timeout(800)
+        wl = await m.evaluate("[...document.querySelectorAll('[data-chat][data-waiting]')].map(e=>e.dataset.chat)")
+        ok("ro'yxatda qizil belgi faqat haqiqatan kutayotganda", "777001" not in wl and "777002" in wl, wl)
+        await m.locator(".uvix-bottomnav [data-tab=dashboard]").click(); await m.wait_for_timeout(1500)
+        t = await m.locator("[data-attn=chats]").inner_text()
+        ok("«Bugun»: endi 1 ta javobsiz chat", "1 ta chat javobsiz" in t and "Malika" not in t, t)
+        msgs = json.loads(sqlite3.connect(DB).execute("select value from kv_store where key='uvix:telegramMessages'").fetchone()[0])
+        msgs["777001"].append({"id": "m9", "tgId": 9, "text": "Yana bir savol bor edi", "out": False, "date": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")})
+        dbset("uvix:telegramMessages", msgs)
+        ch = {c["chatId"]: c for c in api("/api/telegram-user/chats", token=az)["chats"]}
+        ok("mijoz yana yozdi → yana «Javob kutmoqda»", not ch["777001"].get("noReply"), ch["777001"])
         # ---------- 3. Kompyuter: o'zgarmagan + QR yorliq ----------
         d = await (await b.new_context(viewport={"width": 1280, "height": 860}, timezone_id="Asia/Tashkent")).new_page(); d.on("pageerror", lambda e: errs.append("D:" + str(e)))
         await d.add_init_script("window.__uvixPrintHook = (h) => { window.__printed = h; };")

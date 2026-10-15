@@ -1,7 +1,7 @@
 // chatExtras.jsx — Chatlar bo'limining qo'shimcha qismlari:
 // holat (mas'ul, mahkamlash, arxiv, tayyor javoblar), mijoz kartasi, menejer tanlash. Smeta — ../quotes/ChatQuote.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Check, FileText, Package, Palette, Pin, PinOff, UserRound, Wallet } from "lucide-react";
+import { CheckCheck, Archive, ArchiveRestore, Check, FileText, Package, Palette, Pin, PinOff, UserRound, Wallet } from "lucide-react";
 import { C } from "./chatPalette.js";
 import { readableOn } from "../../theme.js";
 import { fetchChatTools, saveChatMeta } from "../../storage.js";
@@ -27,6 +27,7 @@ export function useChatTools(openChatId) {
       if ("assignee" in patch) { if (patch.assignee) cur.assignee = patch.assignee; else delete cur.assignee; }
       if ("pinned" in patch) { if (patch.pinned) cur.pinned = new Date().toISOString(); else delete cur.pinned; }
       if ("archived" in patch) { if (patch.archived) { cur.archived = new Date().toISOString(); delete cur.pinned; } else delete cur.archived; }
+      if ("noReply" in patch) { if (patch.noReply) cur.noReply = new Date().toISOString(); else delete cur.noReply; }
       return { ...s, meta: { ...s.meta, [chatId]: cur } };
     });
     try { await saveChatMeta(chatId, patch); } catch { load(); }
@@ -35,8 +36,11 @@ export function useChatTools(openChatId) {
 }
 
 // Mijoz kutayotgan daqiqalar (oxirgi xabar mijozdan bo'lsa)
-export function waitingMinutes(chat, slaMinutes, nowMs = Date.now()) {
+// meta.noReply — «Javob shart emas» bosilgan vaqt: undan keyin mijoz yozmagan bo'lsa, chat kutmayapti
+export const noReplyCovers = (meta, lastDate) => !!(meta?.noReply && lastDate && Date.parse(meta.noReply) >= Date.parse(lastDate));
+export function waitingMinutes(chat, slaMinutes, nowMs = Date.now(), meta = null) {
   if (!chat || chat.lastOut || !chat.lastDate || !slaMinutes) return 0;
+  if (meta ? noReplyCovers(meta, chat.lastDate) : chat.noReply) return 0;
   const mins = Math.floor((nowMs - new Date(chat.lastDate).getTime()) / 60000);
   return mins >= slaMinutes && mins < 60 * 24 * 3 ? mins : 0;
 }
@@ -103,7 +107,7 @@ export function AssigneePicker({ value, employees, onChange, typingNames = [], c
 }
 
 // ---------- Chat qatori menyusi (mahkamlash / arxiv) ----------
-export function RowMenu({ x, y, meta, onClose, onPin, onArchive }) {
+export function RowMenu({ x, y, meta, onClose, onPin, onArchive, waiting, onNoReply }) {
   useEffect(() => {
     const k = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);
@@ -117,6 +121,7 @@ export function RowMenu({ x, y, meta, onClose, onPin, onArchive }) {
       <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 400 }} />
       <div role="menu" data-testid="row-menu" style={{ position: "fixed", left, top, width: 220, zIndex: 401, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: C.shadow, padding: 6 }}>
         {!meta?.archived && <button type="button" role="menuitem" className="uc-menuitem" style={item} onClick={onPin}>{meta?.pinned ? <PinOff size={17} color={C.muted} /> : <Pin size={17} color={C.muted} />}{meta?.pinned ? "Mahkamlashni olish" : "Tepaga mahkamlash"}</button>}
+        {waiting && onNoReply && <button type="button" role="menuitem" className="uc-menuitem" style={item} onClick={onNoReply} data-testid="menu-noreply"><CheckCheck size={17} color={C.muted} />Javob shart emas</button>}
         <button type="button" role="menuitem" className="uc-menuitem" style={item} onClick={onArchive}>{meta?.archived ? <ArchiveRestore size={17} color={C.muted} /> : <Archive size={17} color={C.muted} />}{meta?.archived ? "Arxivdan qaytarish" : "Arxivga"}</button>
       </div>
     </>

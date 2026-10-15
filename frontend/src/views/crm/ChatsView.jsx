@@ -276,7 +276,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     return {
       all: live.length,
       unread: live.filter((c) => c.unread).length,
-      waiting: live.filter((c) => waitingMinutes(c, sla, nowMs) > 0).length,
+      waiting: live.filter((c) => waitingMinutes(c, sla, nowMs, ct.meta[c.chatId] || {}) > 0).length,
       mine: live.filter((c) => ct.meta[c.chatId]?.assignee === me).length,
       nocrm: live.filter((c) => !leadForChat(c.chatId)).length,
       archive: chats.length - live.length,
@@ -290,7 +290,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
       if (filter === "archive" ? !meta.archived : meta.archived) return false;
       if (!tgf.inFolder(c.chatId)) return false;
       if (filter === "unread" && !c.unread) return false;
-      if (filter === "waiting" && !waitingMinutes(c, sla, nowMs)) return false;
+      if (filter === "waiting" && !waitingMinutes(c, sla, nowMs, meta)) return false;
       if (filter === "mine" && meta.assignee !== me) return false;
       if (filter === "nocrm" && leadForChat(c.chatId)) return false;
       if (!q) return true;
@@ -513,7 +513,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               const isSelected = selectedChatId === chat.chatId;
               const meta = ct.meta[chat.chatId] || {};
               const owner = meta.assignee ? (employees || []).find((e) => e.id === meta.assignee) : null;
-              const wait = filter !== "archive" ? waitingMinutes(chat, sla, nowMs) : 0;
+              const wait = filter !== "archive" ? waitingMinutes(chat, sla, nowMs, meta) : 0;
               const prevPinned = idx > 0 && filteredChats[idx - 1]?.pinned;
               const typingHere = (ct.typing?.[chat.chatId] || []).map((t) => t.name.split(" ")[0]);
               let lp = null;
@@ -654,6 +654,20 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             {error && (
               <div role="alert" onClick={() => setError("")} style={{ color: C.redText, background: "rgba(220,38,38,0.10)", fontSize: 12.5, padding: "8px 18px", cursor: "pointer" }}>{error}</div>
             )}
+            {(() => {
+              const w = waitingMinutes(chats.find((c) => c.chatId === selectedChatId), sla, nowMs, selectedMeta);
+              if (!w || quoteSheet) return null;
+              return (
+                <div data-testid="wait-strip" style={{ display: "flex", alignItems: "center", gap: 10, padding: isMobile ? "8px 12px" : "8px 18px", background: C.panel, borderTop: `1px solid ${C.border}`, fontSize: 13, color: C.muted }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, flexShrink: 0 }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>Mijoz <b style={{ color: C.text }}>{waitLabel(w).replace(" javobsiz", "")}</b> javob kutmoqda</span>
+                  <button type="button" onClick={() => ct.setMeta(selectedChatId, { noReply: true })} data-testid="noreply-btn" title="Masalan, mijoz «Rahmat» deb yozgan bo'lsa. Mijoz yana yozsa — qayta «Javob kutmoqda»ga tushadi."
+                    style={{ flexShrink: 0, height: 30, padding: "0 12px", borderRadius: 15, border: `1px solid ${C.border}`, background: C.hover, color: C.text, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <Check size={14} /> Javob shart emas
+                  </button>
+                </div>
+              );
+            })()}
             {isMobile && quoteSheet ? (
               <div data-testid="quote-sheet" data-size={quoteSheet} style={{ flexShrink: 0, height: quoteSheet === "full" ? "86dvh" : "56dvh", display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR, borderRadius: "20px 20px 0 0", boxShadow: "0 -10px 30px rgba(0,0,0,.28)", borderTop: `1px solid ${TG_DARK_BORDER}`, transition: "height .22s ease" }}>
                 <div style={{ display: "flex", alignItems: "center", padding: "6px 8px 2px" }}>
@@ -820,6 +834,8 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
       {rowMenu && (
         <RowMenu x={rowMenu.x} y={rowMenu.y} meta={ct.meta[rowMenu.chatId]} onClose={() => setRowMenu(null)}
           onPin={() => { ct.setMeta(rowMenu.chatId, { pinned: !ct.meta[rowMenu.chatId]?.pinned }); setRowMenu(null); }}
+          waiting={!!waitingMinutes(chats.find((c) => c.chatId === rowMenu.chatId), sla, nowMs, ct.meta[rowMenu.chatId] || {})}
+          onNoReply={() => { ct.setMeta(rowMenu.chatId, { noReply: true }); setRowMenu(null); }}
           onArchive={() => { const arch = !ct.meta[rowMenu.chatId]?.archived; ct.setMeta(rowMenu.chatId, { archived: arch }); if (arch && rowMenu.chatId === selectedChatId) closeChat(); setRowMenu(null); }} />
       )}
       {invoiceFor && <InvoiceModal order={invoiceFor} customer={customer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}

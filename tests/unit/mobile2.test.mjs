@@ -101,3 +101,12 @@ test("QR matnidan buyurtma id: faqat ?o= havolasi", () => {
   assert.equal(M.orderIdFromText("https://uvix.uz/?o=<script>"), null);
   assert.equal(M.orderIdFromText("o2"), null);
 });
+
+test("«Javob shart emas»: belgidan keyin mijoz yozmagan bo'lsa — kutmayapti", () => {
+  const req2 = createRequire(path.join(here, "../../backend/package.json"));
+  const { noReplyCovers } = req2("./chat-tools.js");
+  assert.equal(noReplyCovers({ noReply: "2026-10-15T10:00:00Z" }, "2026-10-15T09:59:00Z"), true);
+  assert.equal(noReplyCovers({ noReply: "2026-10-15T10:00:00Z" }, "2026-10-15T10:05:00Z"), false);
+  assert.equal(noReplyCovers({}, "2026-10-15T10:05:00Z"), false);
+  assert.equal(noReplyCovers(null, "2026-10-15T10:05:00Z"), false);
+});

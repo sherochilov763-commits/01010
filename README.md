@@ -993,3 +993,6 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - **Xodim** (admin/operator) skanerlasa — buyurtmaning o'zi ochiladi. Yorliqni oddiy telefon kamerasi bilan o'qisa ham bo'ladi: UVIX ochiladi va kirgandan keyin shu buyurtma (yoki vazifa) ko'rsatiladi.
 
 **Sinovlar:** yangi `tests/unit/mobile2.test.mjs` (5) va `tests/e2e/test_mobile2.py` (36 tekshiruv; skaner Chromium'ning soxta kamerasiga QR video berib, haqiqiy o'qish bilan sinaladi). Jami: 27 unit, 198 E2E. Kompyuter ko'rinishi 18 ta ekranda solishtirildi — farq faqat buyurtma panelining sarlavhasidagi kichik QR belgisi.
+
+### 💬 «Javob shart emas» (2026-10)
+«Javob kutmoqda» chatni ochish bilan o'chmaydi — mijozga javob yozilgandagina o'chadi (aks holda ochib ko'rib, javob unutilardi). Javob kerak bo'lmagan chatlar uchun («Rahmat», «Xo'p»): ochiq chatdagi «Mijoz … javob kutmoqda» qatoridagi yoki ro'yxatda chatni bosib turganda (kompyuterda — o'ng tugma) chiqadigan **«Javob shart emas»**. Shundan keyin chat «Javob kutmoqda», «Bugun» ekrani va kechikish haqidagi Telegram eslatmalaridan chiqadi; mijoz yana yozsa — avtomatik qaytadi.
