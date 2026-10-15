@@ -1,7 +1,9 @@
-// PhoneToDesktop.jsx — telefondan kompyuterga kirishni tasdiqlash.
+// PhoneToDesktop.jsx — telefondagi QR skaner: kompyuterga kirishni tasdiqlash va buyurtma yorlig'ini skanerlash.
 //  • «Kompyuterga kirish» tugmasi → kamera ochiladi → kompyuterdagi QR skanerlanadi
 //  • yoki telefon kamerasi QR'ni o'zi ochadi: UVIX ?qr=<id> bilan ochiladi
 //  • «Kompyuterga kirasizmi? Chrome · Windows» → Face ID (yoki Face ID yo'q telefonda — PIN) → kompyuter ochiladi
+//  • Buyurtma yorlig'idagi QR (…/?o=<buyurtma id>) — skanerlanganda ORDER_SCAN_EVT hodisasi; xodim ilovasi buyurtmani,
+//    ishchi ilovasi esa o'z vazifasini ochadi. Telefon kamerasi bilan ochilsa — ?o= parametri bir marta saqlanadi.
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Monitor, QrCode, ScanFace, X } from "lucide-react";
 import jsQR from "jsqr";
@@ -10,6 +12,29 @@ import { qrApprove, qrInfo, qrReject } from "../storage.js";
 import { biometricLabel, confirmWithPreparedResponse, isCancel, isEnrolledMe, prepareConfirm } from "../auth/passkey.js";
 
 const EVT = "uvix:qr-open";
+export const ORDER_SCAN_EVT = "uvix:order-scan";
+const ORDER_RE = /^[A-Za-z0-9_-]{1,64}$/;
+// Yorliqdagi QR matni: «https://…/?o=<id>»
+export function orderIdFromText(t) {
+  try { const u = new URL(String(t || "").trim()); const id = u.searchParams.get("o"); return id && ORDER_RE.test(id) ? id : null; } catch { return null; }
+}
+export const orderQrUrl = (id) => `${window.location.origin}${window.location.pathname}?o=${encodeURIComponent(id)}`;
+// ?o=<id> bilan ochilganda — kirishdan keyin ham ochish uchun saqlab qo'yamiz
+(function captureOrderParam() {
+  try {
+    const u = new URL(window.location.href);
+    const id = u.searchParams.get("o");
+    if (!id) return;
+    u.searchParams.delete("o");
+    window.history.replaceState(window.history.state, "", u.toString());
+    if (ORDER_RE.test(id)) sessionStorage.setItem("uvix:pendingOrder", id);
+  } catch { /* shart emas */ }
+})();
+export function takePendingOrder() {
+  try { const id = sessionStorage.getItem("uvix:pendingOrder"); if (id) sessionStorage.removeItem("uvix:pendingOrder"); return id; } catch { return null; }
+}
+// Skanerni ochish: mode "order" — buyurtma yorlig'i (sarlavha «Skaner»), "login" — kompyuterga kirish
+export const openScanner = (mode = "order") => window.dispatchEvent(new CustomEvent(EVT, { detail: { scan: true, mode } }));
 const takeQrParam = () => {
   try {
     const u = new URL(window.location.href);
@@ -32,7 +57,7 @@ export function QrScanButton({ compact = false, full = false, onClick }) {
   const phone = typeof window !== "undefined" && window.matchMedia?.("(max-width: 860px), (pointer: coarse)").matches;
   if (!phone) return null;
   return (
-    <button type="button" onClick={() => { onClick?.(); window.dispatchEvent(new CustomEvent(EVT, { detail: { scan: true } })); }} data-testid="qr-scan-btn"
+    <button type="button" onClick={() => { onClick?.(); openScanner("login"); }} data-testid="qr-scan-btn"
       title="Kompyuterga kirish (QR)" aria-label="Kompyuterga kirish"
       style={{ ...(full ? { width: "100%", justifyContent: "flex-start", margin: "0 0 10px", height: 38 } : {}), height: full ? 38 : 40, borderRadius: 10, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text, display: "inline-flex", alignItems: "center", gap: 6, padding: compact ? "0 10px" : "0 12px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
       <QrCode size={17} />{!compact && "Kompyuterga kirish"}
@@ -44,17 +69,18 @@ export function QrScanButton({ compact = false, full = false, onClick }) {
 export function QrApproveHost() {
   const [state, setState] = useState(() => { const id = takeQrParam(); return id ? { stage: "info", id } : null; });
   useEffect(() => {
-    const on = (e) => setState(e.detail?.id ? { stage: "info", id: e.detail.id } : { stage: "scan" });
+    const on = (e) => setState(e.detail?.id ? { stage: "info", id: e.detail.id } : { stage: "scan", mode: e.detail?.mode || "login" });
     window.addEventListener(EVT, on);
     return () => window.removeEventListener(EVT, on);
   }, []);
   if (!state) return null;
   const close = () => setState(null);
-  if (state.stage === "scan") return <Scanner onClose={close} onId={(id) => setState({ stage: "info", id })} />;
+  if (state.stage === "scan") return <Scanner mode={state.mode} onClose={close} onId={(id) => setState({ stage: "info", id })}
+    onOrder={(id) => { close(); window.dispatchEvent(new CustomEvent(ORDER_SCAN_EVT, { detail: { id } })); }} />;
   return <ApproveSheet id={state.id} onClose={close} />;
 }
 
-function Scanner({ onClose, onId }) {
+function Scanner({ mode = "login", onClose, onId, onOrder }) {
   const video = useRef(null);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -75,6 +101,8 @@ function Scanner({ onClose, onId }) {
             const img = ctx.getImageData(0, 0, w, h);
             text = jsQR(img.data, w, h, { inversionAttempts: "dontInvert" })?.data || null;
           }
+          const oid = orderIdFromText(text);
+          if (oid) { navigator.vibrate?.(30); onOrder(oid); return; }
           const id = idFromText(text);
           if (id) { navigator.vibrate?.(30); onId(id); return; }
         } catch { /* keyingi kadr */ }
@@ -97,7 +125,7 @@ function Scanner({ onClose, onId }) {
     <div role="dialog" aria-label="QR skanerlash" data-testid="qr-scanner" style={{ position: "fixed", inset: 0, zIndex: 420, background: "#0B0B10", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 18, color: "#fff" }}>
       <div style={{ width: "min(380px, 100%)", display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontWeight: 700, fontSize: 17 }}>Kompyuterga kirish</div>
+          <div style={{ fontWeight: 700, fontSize: 17 }}>{mode === "order" ? "Skaner" : "Kompyuterga kirish"}</div>
           <button type="button" onClick={onClose} aria-label="Yopish" style={{ border: 0, background: "rgba(255,255,255,.12)", color: "#fff", width: 36, height: 36, borderRadius: 10, cursor: "pointer" }}><X size={18} /></button>
         </div>
         <div style={{ position: "relative", aspectRatio: "1 / 1", borderRadius: 22, overflow: "hidden", background: "#000" }}>
@@ -105,7 +133,9 @@ function Scanner({ onClose, onId }) {
           <div style={{ position: "absolute", inset: "14%", border: "3px solid rgba(255,255,255,.85)", borderRadius: 20, boxShadow: "0 0 0 999px rgba(0,0,0,.35)" }} />
           {err && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", color: "#FFB4B6", fontSize: 14, lineHeight: 1.5, background: "#000" }}>{err}</div>}
         </div>
-        <div style={{ fontSize: 13.5, color: "rgba(255,255,255,.75)", textAlign: "center", lineHeight: 1.5 }}>Kompyuterda UVIX'ni oching → «Telefon bilan» → ekrandagi QR kodni shu ramkaga tushiring.</div>
+        <div data-testid="qr-hint" style={{ fontSize: 13.5, color: "rgba(255,255,255,.75)", textAlign: "center", lineHeight: 1.5 }}>{mode === "order"
+          ? "Buyurtma yorlig'idagi QR kodni ramkaga tushiring — buyurtma o'zi ochiladi."
+          : "Kompyuterda UVIX'ni oching → «Telefon bilan» → ekrandagi QR kodni shu ramkaga tushiring."}</div>
       </div>
     </div>
   );

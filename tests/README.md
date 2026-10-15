@@ -22,10 +22,12 @@ Faqat bittasini: `bash tests/e2e/run.sh test_money`.
 | `unit/money-guard.test.mjs` | Pul himoyasi: operator to'lov qo'sha oladi, o'zgartira/o'chira olmaydi; eskirgan nusxa; jurnal faqat qo'shiladi |
 | `unit/nav.test.mjs` | Telefon pastki menyusi: rol standarti, qo'lda tanlangan panel |
 | `unit/error-reports.test.mjs` | Bir xil xato bitta yozuv bo'lib yig'iladi |
+| `unit/mobile2.test.mjs` | «Bugun» hisoblari, «Diqqat talab qiladi», yorliq matni (summasiz), QR havolasini o'qish |
 | `e2e/test_money.py` | A1: so'rov → admin tasdig'i/rad, ilovani chetlab urinishlar rad etiladi, jurnal |
 | `e2e/test_session.py` | A2: F5 dan keyin kirish saqlanadi, qulf ekrani, ochiq qurilmalar, chiqish |
 | `e2e/test_errors.py` | A3: xato oynasi, xato kodi, adminga xabar, «So'nggi xatolar» |
 | `e2e/test_mobile.py` | Telefon: ixcham qator + surish, pastki varaq, rolga mos menyu, «Yana» plitkalari |
+| `e2e/test_mobile2.py` | «Bugun» ekrani, chat + smeta varag'i, tezkor javoblar, QR yorliq, soxta kamera bilan skaner, ishchi «Boshlash/Tayyor» |
 | `e2e/test_themes.py` | Mavzular galereyasi, avtomatik tun, rol bo'yicha mavzu, shisha rejimi |
 
 Har bir E2E to'plam toza bazada (vaqtinchalik papka) haqiqiy server bilan ishlaydi; ma'lumotlar `e2e/seed.py` dan.

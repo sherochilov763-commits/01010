@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Wallet, Download, FileBarChart2, FileText, Landmark, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile } from "../../components/ui.jsx";
 import { exportWorkbook, loadXLSX } from "../../lib/excel.js";
@@ -46,6 +46,8 @@ function StageBar({ counts }) {
 }
 
 /* ---------------- ORDERS VIEW ---------------- */
+const LabelModal = lazy(() => import("./LabelModal.jsx"));
+
 export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
   const isMobile = useIsMobile();
   const [modal, setModal] = useState(null); // {edit} — faqat tahrirlash (yangi buyurtma smeta orqali)
@@ -77,11 +79,20 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   }, [quickAddNonce]);
   const [confirmDel, setConfirmDel] = useState(null);
   const [paymentsFor, setPaymentsFor] = useState(null); // order object
+  const [labelFor, setLabelFor] = useState(null); // QR yorliq oynasi
   const [search, setSearch] = useState(initialFilter?.search || "");
   // Ctrl+K yoki boshqa bo'limdan qayta kelinganda filtrni yangilaymiz
   useEffect(() => {
     if (initialFilter?.search !== undefined) setSearch(initialFilter.search || "");
     if (initialFilter?.onlyDebt !== undefined) setOnlyDebt(!!initialFilter.onlyDebt);
+    if (initialFilter?.stage !== undefined) setStageF(initialFilter.stage || null);
+    // «Bugun» ekrani yoki QR yorliqdan — aniq buyurtmani ochamiz (telefonda pastki varaq, kompyuterda o'ng panel)
+    if (initialFilter?.openId) {
+      const o = orders.find((x) => x.id === initialFilter.openId);
+      if (!o) showToast?.((allOrders || []).some((x) => x.id === initialFilter.openId && !x.deletedAt) ? "Bu buyurtma sizga tegishli emas" : "Buyurtma topilmadi");
+      else if (isMobile) setSheetId(o.id);
+      else setSelectedId(o.id);
+    }
   }, [initialFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -590,6 +601,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             onAssign={(kind, id) => assign(selected, kind, id)}
             onSelectOrder={(id) => setSelectedId(id)}
             pending={ap?.forOrder(selected.id)}
+            onLabel={() => setLabelFor(selected)}
           />
         </>
       )}
@@ -617,6 +629,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             onAssign={(kind, id) => assign(sheetOrder, kind, id)}
             onSelectOrder={(id) => setSheetId(id)}
             pending={ap?.forOrder(sheetOrder.id)}
+            onLabel={() => setLabelFor(sheetOrder)}
           />
         );
       })()}
@@ -672,6 +685,12 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
       {confirmDel && !isAdmin && ap && (
         <ApprovalRequestModal kind="order_delete" order={confirmDel} onClose={() => setConfirmDel(null)}
           onSubmit={async (b) => { await ap.request(b); showToast?.("O'chirish so'rovi adminga yuborildi"); }} />
+      )}
+      {labelFor && (
+        <Suspense fallback={null}>
+          <LabelModal order={labelFor} onClose={() => setLabelFor(null)}
+            group={labelFor.groupId ? (allOrders || orders).filter((o) => o.groupId === labelFor.groupId && !o.deletedAt).sort((a, b) => (a.groupIdx || 0) - (b.groupIdx || 0)) : null} />
+        </Suspense>
       )}
       {confirmDel && (isAdmin || !ap) && (
         <ConfirmDialog

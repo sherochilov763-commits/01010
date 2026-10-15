@@ -973,3 +973,23 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - `npm run test:unit` (node:test) va `npm run test:e2e` (haqiqiy server + Playwright, har to'plam toza bazada): mavzular, pul himoyasi, sessiya va qulf, xatolar, telefon ekranlari — 22 ta unit test (ichida 2 617 ta mavzu sharti) va 162 ta E2E tekshiruv. Tafsilot — `tests/README.md`.
 - GitHub **har yangilanishda o'zi ishga tushiradi**. **Bir martalik sozlash:** Railway → servis → Settings → **«Wait for CI»**ni yoqing (GitHub ruxsatini tasdiqlash so'ralishi mumkin) — shunda biror test yiqilsa yangi versiya ishga chiqmaydi, eski versiya ishlashda davom etadi.
 - Kompyuter ko'rinishi: oldingi versiya bilan 18 ta ekranda piksel bo'yicha solishtirildi — farq faqat Sozlamalar → Profil'dagi yangi «Xavfsizlik» kartasida.
+
+---
+
+## 📱 Telefon: 2–3-bosqich — «Bugun», chat + smeta, QR yorliq va skaner (2026-10)
+
+**1. «Bugun» bosh ekrani** (telefonda Dashboard o'rniga; kompyuterda o'zgarmagan)
+- Tepada surib ko'riladigan kartalar: **bugungi tushum** (kecha bilan farq, 7 kunlik chiziq), **qarzdorlik** (necha mijoz), **bugungi buyurtmalar**.
+- **«Diqqat talab qiladi»** — har biri bir bosishda: javobsiz chatlar (mijoz oxirgi yozgan, eng uzoq kutgani birinchi) → «Javob»; tayyor, olib ketilmagan buyurtma → «Topshirish» (pastki varaq ochiladi); 7 kundan oshgan qarzlar → «Ko'rish»; dizaynda 3 soatdan uzoq turgan ish (dizayner ismi bilan); vazifa berilmagan buyurtmalar → «Berish».
+- Tezkor amallar: Buyurtma · To'lov · Rasxod · Skaner. To'liq hisobot — pastdagi «Batafsil hisobot» (holat eslab qolinadi). Pastki menyuda bo'lim nomi — «Bugun».
+
+**5. Chat va smeta bir ekranda** (telefon)
+- Chat sarlavhasidagi 🧮 tugmasi smetani **chat ostidagi varaqda** ochadi — mijoz xabarlari ko'rinib turadi. Varaqni kattalashtirish, ✕ yoki telefonning «orqaga»si bilan yopiladi. «Mijoz ma'lumotlari»dagi smeta ham shu varaqqa o'tdi.
+- Klaviatura ustida **tayyor javob tugmalari** (Narx, Karta, Manzil…): bosilsa matn maydonga tushadi, yuborishdan oldin tahrirlash mumkin. Ro'yxat — avvalgi «Tayyor javoblar» sozlamasidan.
+
+**6. QR yorliq va sex skaneri**
+- Buyurtma panelida (kompyuter: sarlavhadagi QR belgisi; telefon: «⋯» → «QR yorliq chop etish») — yorliq: QR, buyurtma raqami (smetada «2/3»), ish nomi, material/o'lcham/m², mijoz, sana va muddat. **Summa yo'q.** O'lcham: 58×40 mm (termoprinter) yoki 100×70 mm; nusxa soni; smetaning hamma buyurtmalari bir yo'la.
+- **Pechatchi/dizayner telefonida** pastki menyu: Vazifalar · **Skaner** · Profil. Yorliq skanerlansa — o'sha buyurtmadagi **o'z vazifasi** katta tugmalar bilan ochiladi: «Boshlash», «Pauza», «Tayyor» (adashmaslik uchun ikki bosishda). Dizayn tugasa ish o'zi pechatchiga o'tadi, pechat tugasa buyurtma «Tayyor». Boshqaning ishi bo'lsa — «sizga vazifa yo'q» (server ham ruxsat bermaydi).
+- **Xodim** (admin/operator) skanerlasa — buyurtmaning o'zi ochiladi. Yorliqni oddiy telefon kamerasi bilan o'qisa ham bo'ladi: UVIX ochiladi va kirgandan keyin shu buyurtma (yoki vazifa) ko'rsatiladi.
+
+**Sinovlar:** yangi `tests/unit/mobile2.test.mjs` (5) va `tests/e2e/test_mobile2.py` (36 tekshiruv; skaner Chromium'ning soxta kamerasiga QR video berib, haqiqiy o'qish bilan sinaladi). Jami: 27 unit, 198 E2E. Kompyuter ko'rinishi 18 ta ekranda solishtirildi — farq faqat buyurtma panelining sarlavhasidagi kichik QR belgisi.

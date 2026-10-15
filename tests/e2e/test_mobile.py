@@ -114,7 +114,7 @@ async def main():
         await m.screenshot(path=S + "s5_sheet.png")
         await m.locator("[data-testid=sheet-more]").click(); await m.wait_for_timeout(300)
         items = await m.evaluate("[...document.querySelectorAll('[data-testid=sheet-menu] [role=menuitem]')].map(x=>x.dataset.testid)")
-        ok("«⋯»: faktura, tahrirlash, qo'ng'iroq, o'chirish", items == ["sheet-invoice", "sheet-edit", "sheet-call", "sheet-delete"], items)
+        ok("«⋯»: faktura, tahrirlash, QR yorliq, qo'ng'iroq, o'chirish", items == ["sheet-invoice", "sheet-edit", "sheet-label", "sheet-call", "sheet-delete"], items)
         await m.screenshot(path=S + "s6_sheet_menu.png")
         await m.locator("[data-testid=sheet-invoice]").click(); await m.wait_for_timeout(800)
         ok("Faktura oynasi varaq ustida", await m.locator(".uvix-modal-backdrop").count() >= 1)

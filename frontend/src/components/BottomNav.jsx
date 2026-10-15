@@ -11,7 +11,7 @@ import { MoreSheet } from "./MoreSheet.jsx";
 function buildTabs(keys) {
   const tabs = (keys && keys.length ? keys : ["dashboard", "orders", "expense", "crm"]).slice(0, 4)
     .map((k) => NAV.find((n) => n.key === k)).filter(Boolean)
-    .map((n) => ({ key: n.key, label: NAV_SHORT[n.key] || n.label, icon: n.icon }));
+    .map((n) => ({ key: n.key, label: n.key === "dashboard" ? "Bugun" : NAV_SHORT[n.key] || n.label, icon: n.icon }));
   const mid = Math.ceil(tabs.length / 2);
   return [...tabs.slice(0, mid), { key: "__add" }, ...tabs.slice(mid), { key: "__more", label: "Yana", icon: MoreHorizontal }];
 }

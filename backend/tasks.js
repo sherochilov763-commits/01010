@@ -74,6 +74,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
     return {
       id: `${lead.id}:${kind}`,
       leadId: lead.id,
+      orderId: lead.orderId || null, // QR yorliq skanerlanganda vazifani topish uchun
       kind,
       taskNo: taskNumber(lead, orders),
       jobTitle: lead.jobTitle || (kind === "design" ? "Maket tayyorlash" : "Bosma ish"),
@@ -102,6 +103,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
     return {
       id: `o:${order.id}:${kind}`,
       leadId: `o:${order.id}`,
+      orderId: order.id,
       kind,
       taskNo: (order.orderNumber || "") + group,
       jobTitle: order.title || (kind === "design" ? "Maket tayyorlash" : "Bosma ish"),

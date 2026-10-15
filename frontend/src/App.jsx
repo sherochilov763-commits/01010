@@ -1,7 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LoginScreen from "./auth/LoginScreen.jsx";
 import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
-import { QrApproveHost, QrScanButton } from "./components/PhoneToDesktop.jsx";
+import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
+import { TodayView } from "./views/dashboard/TodayView.jsx";
+import { legacyLeadIndex, orderStage } from "./lib/production.js";
 import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
@@ -89,6 +91,7 @@ export default function App() {
 
 function AppInner() {
   const [ready, setReady] = useState(false);
+  const [dataFor, setDataFor] = useState(null); // ma'lumotlari yuklangan xodim id'si (QR havolani shundan keyin ochamiz)
   const [transactions, setTransactions] = useState([]); // faqat rasxod (chiqim)
   const [orders, setOrders] = useState([]); // buyurtmalar (har birida payments[])
   const [leads, setLeads] = useState([]); // CRM — savdo voronkasi lidlari
@@ -291,6 +294,7 @@ function AppInner() {
       const [company, mine] = await Promise.all([storageGet("uvix:appearance", false, null), fetchMyAppearance().catch(() => null)]);
       setTransactions(tx);
       setOrders(ords);
+      setDataFor(currentUser.id);
       setAuditLog(log);
       setLeads(leadsData);
       setCustomers(Array.isArray(custData) ? custData : []);
@@ -712,6 +716,21 @@ function AppInner() {
     mark();
     return mark;
   }, [view, currentUser?.id]);
+  // Telefon: «Bugun» bosh ekrani (to'liq hisobot — so'rov bilan) va QR yorliqdan buyurtmani ochish
+  const phoneUi = useIsMobile();
+  const [fullReport, setFullReport] = useState(() => { try { return localStorage.getItem("uvix_today_report") === "1"; } catch { return false; } });
+  const toggleReport = () => setFullReport((v) => { try { localStorage.setItem("uvix_today_report", v ? "0" : "1"); } catch { /* */ } return !v; });
+  const legacyIdx = useMemo(() => legacyLeadIndex(leads), [leads]);
+  const stageOfOrder = useCallback((o) => orderStage(o, legacyIdx), [legacyIdx]);
+  useEffect(() => {
+    if (!currentUser || isWorkerRole(currentUser.role)) return undefined;
+    if (dataFor !== currentUser.id) return undefined;
+    const open = (id) => { if (id) { setNavFilter({ openId: id, n: Date.now() }); setView("orders"); } };
+    open(takePendingOrder());
+    const on = (e) => open(e.detail?.id);
+    window.addEventListener(ORDER_SCAN_EVT, on);
+    return () => window.removeEventListener(ORDER_SCAN_EVT, on);
+  }, [currentUser?.id, dataFor]); // eslint-disable-line react-hooks/exhaustive-deps
   const mobileBadges = useMemo(() => {
     const chats = view === "chats" ? 0 : (notif.items || []).filter((n) => n.cat === "chats" && !n.read && Date.parse(n.at) > chatsSeen).length;
     return { ...navBadges, chats };
@@ -959,14 +978,29 @@ function AppInner() {
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
+          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
             <ErrorBoundary inline onHome={() => goView("dashboard")}>
             <CrashProbe view={view} />
             <Suspense fallback={<ViewFallback />}>
+            {view === "dashboard" && phoneUi && (
+              <TodayView user={currentUser} orders={myOrders} employees={employees} stageOf={stageOfOrder}
+                chatsEnabled={visibleNav.some((n) => n.key === "chats")} canExpense={visibleNav.some((n) => n.key === "expense")}
+                onOpenChat={(id) => { if (id) setOpenChatId(id); goView("chats"); }}
+                onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id, n: Date.now() })}
+                onNavigate={(v, f) => navigateWithFilter(v, { ...f, n: Date.now() })}
+                onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
+                onScan={() => openScanner("order")} />
+            )}
             {isAdmin && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
-            {view === "dashboard" && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && phoneUi && (
+              <button type="button" onClick={toggleReport} data-testid="today-report" aria-expanded={fullReport}
+                style={{ width: "100%", height: 48, borderRadius: 14, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, fontFamily: "inherit", fontSize: 14.5, fontWeight: 600, cursor: "pointer", marginBottom: fullReport ? 18 : 0 }}>
+                {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
+              </button>
+            )}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}

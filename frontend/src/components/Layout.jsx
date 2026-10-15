@@ -79,7 +79,7 @@ export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarSty
 }
 
 
-export function Topbar({ user, view, onLogout, onMenuClick, onBack, right }) {
+export function Topbar({ user, view, onLogout, onMenuClick, onBack, right, bare = false }) {
   const title = NAV.find((n) => n.key === view)?.label || "";
   return (
     <div className="no-print uvix-topbar" style={{ padding: "18px 28px 0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -106,12 +106,12 @@ export function Topbar({ user, view, onLogout, onMenuClick, onBack, right }) {
             <ArrowLeft size={19} />
           </button>
         )}
-        <div>
+        {!bare && <div>
           <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: -0.3, lineHeight: 1.2 }}>{title}</h1>
           <div style={{ fontSize: 12.5, color: THEME.dim, marginTop: 2 }}>
             {longDateUz()}
           </div>
-        </div>
+        </div>}
       </div>
       {right && <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>{right}</div>}
     </div>

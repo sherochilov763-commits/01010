@@ -609,6 +609,19 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
           </div>
         </>
       )}
+      {/* Telefonda: tayyor javoblar klaviatura ustida tugma bo'lib turadi (mobil 2-bosqich) */}
+      {isMobile && !isNote && !rec && !hasText && !showTpl && replies.length > 0 && (
+        <div className="uc-chips" role="group" aria-label="Tezkor javoblar" data-testid="quick-replies"
+          style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 10px 2px", background: C.panel, borderTop: onSendNote ? "none" : `1px solid ${C.border}`, scrollbarWidth: "none" }}>
+          <Zap size={16} color={C.muted} style={{ flexShrink: 0, alignSelf: "center" }} aria-hidden="true" />
+          {replies.slice(0, 8).map((r) => (
+            <button key={r.id || r.key} type="button" data-chip={r.key} onClick={() => pickTpl(r)} title={r.text}
+              style={{ flexShrink: 0, height: 34, padding: "0 14px", borderRadius: 17, border: `1px solid ${C.border}`, background: C.hover, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
+              {r.key.charAt(0).toUpperCase() + r.key.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
       {rec ? (
         <div style={bar}>
           <button type="button" className="uc-iconbtn" onClick={() => finishRecording(false)} aria-label="Ovozli xabarni bekor qilish" style={{ color: C.red }}><Trash2 size={20} /></button>

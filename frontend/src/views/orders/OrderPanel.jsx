@@ -1,7 +1,7 @@
 // OrderPanel.jsx — buyurtma tafsiloti o'ng panelda (jadvaldan chiqmasdan ko'rish).
 // Faqat ko'rinish: barcha amallar avvalgi oynalar orqali (To'lovlar, Hisob-faktura, Tahrirlash).
 import { useEffect, useRef, useState } from "react";
-import { Check, CreditCard, FileText, MoreHorizontal, Pencil, Phone, Send, Trash2, X } from "lucide-react";
+import { Check, CreditCard, FileText, MoreHorizontal, Pencil, Phone, QrCode, Send, Trash2, X } from "lucide-react";
 import { Avatar, Button } from "../../components/ui.jsx";
 import { orderAddedValue, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format.js";
@@ -20,7 +20,7 @@ const fmtTime = (iso) => {
 };
 
 // variant="sheet" — telefonda pastki varaq: tutqichdan pastga tortib, fonni bosib yoki «orqaga» bilan yopiladi
-export function OrderPanel({ order, transactions, phone, canDelete, onClose, onPayments, onInvoice, onEdit, onDelete, stage, employees, siblings, onStage, onAssign, onSelectOrder, variant = "panel", onTelegram, phoneHref, pending }) {
+export function OrderPanel({ order, transactions, phone, canDelete, onClose, onPayments, onInvoice, onEdit, onDelete, stage, employees, siblings, onStage, onAssign, onSelectOrder, variant = "panel", onTelegram, phoneHref, pending, onLabel }) {
   const sheet = variant === "sheet";
   const sheetRef = useRef(null);
   const drag = useSheetDrag(onClose, sheetRef);
@@ -64,6 +64,10 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12.5, color: THEME.dim, fontVariantNumeric: "tabular-nums" }}>{order.orderNumber} · {shortDateUz(order.date)}</span>
           <div style={{ flex: 1 }} />
+          {!sheet && onLabel && (
+            <button type="button" onClick={onLabel} title="QR yorliq chop etish" aria-label="QR yorliq" data-testid="order-label" className="uvix-iconbtn"
+              style={{ background: "none", border: 0, padding: 5, borderRadius: 6, cursor: "pointer", color: THEME.muted, display: "flex" }}><QrCode size={16} /></button>
+          )}
           <button type="button" onClick={onClose} aria-label="Panelni yopish" className="uvix-iconbtn" style={{ background: "none", border: 0, padding: 5, borderRadius: 6, cursor: "pointer", color: THEME.muted, display: "flex" }}><X size={16} /></button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
@@ -207,6 +211,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
                 {[
                   { k: "invoice", l: "Hisob-faktura", icon: FileText, on: onInvoice },
                   { k: "edit", l: "Tahrirlash", icon: Pencil, on: onEdit },
+                  onLabel ? { k: "label", l: "QR yorliq chop etish", icon: QrCode, on: onLabel } : null,
                   phoneHref ? { k: "call", l: `Qo'ng'iroq${phone ? ` · ${phone}` : ""}`, icon: Phone, href: phoneHref } : null,
                   canDelete ? { k: "delete", l: "O'chirish", icon: Trash2, on: onDelete, danger: true } : null,
                 ].filter(Boolean).map((a) => {

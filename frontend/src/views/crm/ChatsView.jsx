@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pin, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Calculator, Check, ChevronDown, ChevronUp, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pin, Search, UserPlus, X } from "lucide-react";
 import { layoutCss, Resizer, useChatLayout } from "./chatLayout.jsx";
 import { C, applyChatPalette } from "./chatPalette.js";
 import { Incremental, useIsMobile } from "../../components/ui.jsx";
@@ -102,7 +102,9 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
   const isMobile = useIsMobile();
   const tgf = useTgFolders(true);
   const [infoOpen, setInfoOpen] = useState(false);
-  function closeChat() { setSelectedChatId(null); setInfoOpen(false); }
+  // Telefonda smeta chat ostidagi varaqda: mijoz xabarlari ko'rinib turadi (mobil 2-bosqich, 5-band)
+  const [quoteSheet, setQuoteSheet] = useState(null); // null | "half" | "full"
+  function closeChat() { setSelectedChatId(null); setInfoOpen(false); setQuoteSheet(null); }
   // Telefonda: "orqaga" avval mijoz ma'lumotini, keyin suhbatni yopadi — bo'limdan chiqmaydi
   useBackToClose(isMobile && !!selectedChatId, () => {
     closeChat();
@@ -112,6 +114,17 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     }
   });
   useBackToClose(isMobile && infoOpen, () => setInfoOpen(false));
+  useBackToClose(isMobile && !!quoteSheet, () => setQuoteSheet(null));
+  const openQuoteSheet = () => {
+    const show = () => { setQuoteSheet("half"); setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "auto" }), 80); };
+    if (!infoOpen) return show();
+    // Mijoz ma'lumoti yopilganda tarixdagi yozuvi olib tashlanadi — varaqni shundan keyin ochamiz
+    setInfoOpen(false);
+    let done = false;
+    const go = () => { if (done) return; done = true; window.removeEventListener("popstate", go); setTimeout(show, 0); };
+    window.addEventListener("popstate", go);
+    setTimeout(go, 400);
+  };
 
   // Telegram'dagi barcha shaxsiy suhbatlar; yangi yozganlar ro'yxatga tushishi uchun har 30 soniyada yangilanadi
   useEffect(() => {
@@ -338,6 +351,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
   async function newOrder() {
     const its = quoteRef.current?.items || [];
     if (its.length) { try { const lead = await ensureLead(); if (lead) setConvertFor({ lead, items: its }); } catch (e) { setError(e.message); } return; }
+    if (isMobile && !quoteSheet) { openQuoteSheet(); setTimeout(() => quoteRef.current?.focus(), 120); return; }
     quoteRef.current?.focus();
   }
 
@@ -604,8 +618,14 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               </div>
               {tools}
               {isMobile && (
+                <button type="button" onClick={() => (quoteSheet ? setQuoteSheet(null) : openQuoteSheet())} aria-label="Smeta" aria-pressed={!!quoteSheet} data-testid="chat-quote-btn"
+                  style={{ marginLeft: selectedLead ? "auto" : 0, width: 44, height: 44, border: 0, borderRadius: 12, background: quoteSheet ? C.hover : "none", color: quoteSheet ? C.link : TG_DARK_MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  <Calculator size={21} />
+                </button>
+              )}
+              {isMobile && (
                 <button type="button" onClick={() => setInfoOpen(true)} aria-label="Mijoz ma'lumotlari"
-                  style={{ marginLeft: selectedLead ? "auto" : 0, width: 44, height: 44, border: 0, background: "none", color: TG_DARK_MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+                  style={{ marginLeft: 0, width: 44, height: 44, border: 0, background: "none", color: TG_DARK_MUTED, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
                   <Info size={21} />
                 </button>
               )}
@@ -634,6 +654,28 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             {error && (
               <div role="alert" onClick={() => setError("")} style={{ color: C.redText, background: "rgba(220,38,38,0.10)", fontSize: 12.5, padding: "8px 18px", cursor: "pointer" }}>{error}</div>
             )}
+            {isMobile && quoteSheet ? (
+              <div data-testid="quote-sheet" data-size={quoteSheet} style={{ flexShrink: 0, height: quoteSheet === "full" ? "86dvh" : "56dvh", display: "flex", flexDirection: "column", background: TG_DARK_SIDEBAR, borderRadius: "20px 20px 0 0", boxShadow: "0 -10px 30px rgba(0,0,0,.28)", borderTop: `1px solid ${TG_DARK_BORDER}`, transition: "height .22s ease" }}>
+                <div style={{ display: "flex", alignItems: "center", padding: "6px 8px 2px" }}>
+                  <button type="button" onClick={() => setQuoteSheet((v) => (v === "full" ? "half" : "full"))} aria-label={quoteSheet === "full" ? "Varaqni kichraytirish" : "Varaqni kattalashtirish"} data-testid="quote-sheet-size"
+                    style={{ flex: 1, height: 30, border: 0, background: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: TG_DARK_MUTED }}>
+                    <span style={{ width: 40, height: 5, borderRadius: 3, background: TG_DARK_BORDER }} />
+                    {quoteSheet === "full" ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+                  </button>
+                  <button type="button" onClick={() => setQuoteSheet(null)} aria-label="Smetani yopish" data-testid="quote-sheet-close"
+                    style={{ width: 36, height: 36, border: 0, borderRadius: 10, background: TG_DARK_HOVER, color: TG_DARK_TEXT, display: "grid", placeItems: "center", cursor: "pointer" }}><X size={18} /></button>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "4px 16px calc(16px + env(safe-area-inset-bottom, 0px))" }}>
+                  <ChatQuote ref={quoteRef} chatId={selectedChatId} lead={selectedLead} ensureLead={ensureLead}
+                    onLeadSaved={(l) => onServerChange?.({ lead: l })}
+                    onConvert={(l, items) => setConvertFor({ lead: l, items })}
+                    customerName={selectedName || "Mijoz"}
+                    onSendDirect={handleSendText}
+                    onSendText={(text) => { setInsert({ text, n: Date.now() }); setQuoteSheet(null); }} />
+                  {okMsg && <div role="status" data-testid="convert-ok" style={{ display: "flex", alignItems: "center", gap: 6, color: C.green, fontSize: 12.5, marginTop: 10 }}><Check size={15} /> {okMsg}</div>}
+                </div>
+              </div>
+            ) : (
             <Composer
               key={selectedChatId}
               isMobile={isMobile}
@@ -649,6 +691,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               insert={insert}
               onTyping={onTyping}
             />
+            )}
           </>
         )}
       </div>
@@ -687,6 +730,12 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               onPayment={(o) => o && setPaymentsFor(o)}
               onDesigner={() => toDesigner(null)} />
           </div>
+          {isMobile ? (
+            <button type="button" onClick={openQuoteSheet} data-testid="info-open-quote"
+              style={{ width: "100%", height: 48, marginBottom: 16, borderRadius: 12, border: `1px solid ${TG_DARK_BORDER}`, background: TG_DARK_HOVER, color: TG_DARK_TEXT, fontFamily: "inherit", fontSize: 15, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, cursor: "pointer" }}>
+              <Calculator size={18} /> Smeta — chat yonida ochish
+            </button>
+          ) : (
           <div style={{ marginBottom: 16 }}>
             <ChatQuote ref={quoteRef} chatId={selectedChatId} lead={selectedLead} ensureLead={ensureLead}
               onLeadSaved={(l) => onServerChange?.({ lead: l })}
@@ -696,6 +745,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               onSendText={(text) => { setInsert({ text, n: Date.now() }); setInfoOpen(false); }} />
             {okMsg && <div role="status" data-testid="convert-ok" style={{ display: "flex", alignItems: "center", gap: 6, color: C.green, fontSize: 12.5, marginTop: 10 }}><Check size={15} /> {okMsg}</div>}
           </div>
+          )}
 
           {!selectedLead && (
             <div style={{ background: TG_DARK_HOVER, borderRadius: 12, padding: 12, marginBottom: 16 }}>
