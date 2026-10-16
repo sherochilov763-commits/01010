@@ -4,9 +4,9 @@ import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
 import { TodayView } from "./views/dashboard/TodayView.jsx";
 import { JobsView } from "./views/jobs/JobsView.jsx";
-import { LineContext, scopeByLine, useLineState } from "./lib/lines.js";
+import { LineContext, WorkStatsContext, scopeByLine, useLineState } from "./lib/lines.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
-import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
+import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos, fetchWorkStats } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { MORE_SHEET_CSS } from "./components/MoreSheet.jsx";
@@ -722,6 +722,17 @@ function AppInner() {
   const phoneUi = useIsMobile();
   // Ikki yo'nalish: joriy ish maydoni (UVIXPRINT / UVONYX / admin — ikkalasi)
   const meEmp = currentUser ? employees.find((e) => e.id === currentUser.id) : null;
+  // Umumiy xodim oyligini bo'lish uchun bajarilgan ish statistikasi (faqat rahbar)
+  const [workStats, setWorkStats] = useState(null);
+  const wsAdmin = currentUser?.role === "admin";
+  useEffect(() => {
+    if (!wsAdmin) return undefined;
+    let alive = true;
+    const load = () => fetchWorkStats().then((w) => alive && setWorkStats(w)).catch(() => {});
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [wsAdmin]);
   const lineState = useLineState(currentUser && !isWorkerRole(currentUser.role) ? { ...currentUser, line: meEmp ? meEmp.line : currentUser.line } : null);
   const [fullReport, setFullReport] = useState(() => { try { return localStorage.getItem("uvix_today_report") === "1"; } catch { return false; } });
   const toggleReport = () => setFullReport((v) => { try { localStorage.setItem("uvix_today_report", v ? "0" : "1"); } catch { /* */ } return !v; });
@@ -817,6 +828,7 @@ function AppInner() {
     <AttendanceGate user={currentUser} onLogout={logout}>
     <ApprovalsProvider value={approvalsCtx}>
     <LineContext.Provider value={lineState}>
+    <WorkStatsContext.Provider value={workStats}>
     {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
     <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
@@ -1095,6 +1107,7 @@ function AppInner() {
                 onQuickAddHandled={() => setQuickAdd(null)}
                 transactions={scope.txList}
                 orders={myOrders}
+                employees={employees}
                 currentUser={currentUser}
                 categories={categories}
                 onAddCategory={addCategory}
@@ -1247,6 +1260,7 @@ function AppInner() {
         </div>
       )}
     </div>
+    </WorkStatsContext.Provider>
     </LineContext.Provider>
     </ApprovalsProvider>
     </AttendanceGate>

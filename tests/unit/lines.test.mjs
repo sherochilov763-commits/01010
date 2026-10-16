@@ -85,3 +85,19 @@ test("Foyda va zarar: yo'nalishlar, umumiy ulush, o'tgan oy, qarz", async () => 
   assert.equal(p.UVONYX.change, null);
   assert.equal(p.UVIXPRINT.debt, 300); assert.equal(p.UVONYX.debt, 100); assert.equal(p.total.debt, 400);
 });
+
+test("Umumiy xodim oyligi — bajargan ishi nisbatida", async () => {
+  const { computePnl, scopeByLine } = await import(out);
+  const orders = [{ id: "a", subcategory: "UVIXPRINT", payments: [{ amount: 900, date: "2026-10-02" }] }, { id: "b", subcategory: "UVONYX", payments: [{ amount: 100, date: "2026-10-02" }] }];
+  const tx = [{ id: "s", line: "common", employeeId: "j", amount: 1000, date: "2026-10-30" }, { id: "r", line: "common", amount: 100, date: "2026-10-01" }];
+  const work = { "2026-10": { j: { UVIXPRINT: 3, UVONYX: 7 } } };
+  const p = computePnl(orders, tx, "2026-10", work);
+  assert.equal(p.UVIXPRINT.staff, 300); assert.equal(p.UVONYX.staff, 700);
+  assert.equal(p.UVIXPRINT.common, 90); assert.equal(p.UVONYX.common, 10);
+  assert.equal(p.hasStaff, true);
+  const sc = scopeByLine("UVONYX", orders, tx, orders, work);
+  assert.equal(sc.txStats.find((t) => t.id === "s").amount, 700);
+  // Ish bo'lmasa — tushum ulushi
+  const p2 = computePnl(orders, tx, "2026-10", null);
+  assert.equal(p2.UVONYX.common, 110); assert.equal(p2.hasStaff, false);
+});

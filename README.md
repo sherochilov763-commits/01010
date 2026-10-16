@@ -1024,3 +1024,8 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - **Huquqlar**: rahbar — hammasi; yo'nalish xodimi — o'z yo'nalishi; ishchi — faqat o'ziga berilgani (faqat holat va izoh). Vazifani menejer/rahbar qo'shadi.
 - **Telegram**: tayinlanganda mas'ulga xabar; sana va vaqt bo'lsa — 1 soat oldin eslatma.
 - Server: `backend/jobs.js` (`/api/jobs`), ma'lumot `uvix:jobs` (KV orqali yopiq). Test: `tests/e2e/test_jobs.py`.
+
+## 👷 Yo'nalishlar — 4-etap: umumiy xodim oyligi (2026-10)
+- Rasxod → «Xodimlar» kategoriyasi → **Xodim** tanlanadi (rahbar). Xodim UVIXPRINT/UVONYX bo'lsa — rasxod shu yo'nalishga; **Umumiy** bo'lsa — oylik shu oyda bajargan vazifalari nisbatida bo'linadi (masalan 84 UV / 36 ON → 70% / 30%). Vazifa bo'lmagan oyda — tushum ulushi.
+- Hisoblanadigan ishlar: buyurtmadagi dizayn/pechat (bajarilgan) va «Vazifalar»dagi o'lchov/montaj/yetkazish (bajarilgan, har mas'ulga). Server: `GET /api/work-stats` (faqat rahbar); yo'nalish xodimiga umumiy oylik o'z ulushi bilan yuboriladi.
+- «Foyda va zarar»da alohida qator — «Umumiy xodimlar oyligi (bajargan ishi bo'yicha)»; Xodimlar ro'yxatida umumiy xodim yonida «Shu oy: 84 UV · 36 ON → 70% / 30%».

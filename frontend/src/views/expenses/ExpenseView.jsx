@@ -9,7 +9,7 @@ import { LINE_META, lineColor, lineOfOrder, txLine, useLine } from "../../lib/li
 import { LineTag } from "../../components/LineSwitcher.jsx";
 
 /* ---------------- EXPENSE VIEW ---------------- */
-export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, orders, currentUser, categories, onAddCategory, onAddSubcategory, onSave, onDelete }) {
+export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, orders, employees, currentUser, categories, onAddCategory, onAddSubcategory, onSave, onDelete }) {
   const isMobile = useIsMobile();
   const [modal, setModal] = useState(null);
   // Pastki menyudagi "+" tugmasidan kelinganda — formani darhol ochamiz
@@ -142,6 +142,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
           currentUser={currentUser}
           categories={categories}
           orders={orders}
+          employees={employees}
           onAddCategory={onAddCategory}
           onAddSubcategory={onAddSubcategory}
           onClose={() => setModal(null)}

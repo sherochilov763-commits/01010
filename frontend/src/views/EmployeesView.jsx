@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { ClipboardList, KeyRound, Lock, Plus, Send, Trash2, Users } from "lucide-react";
 import { fetchPinHelp, fetchStaffTelegram, giveTempPin } from "../storage.js";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
 import { uid } from "../lib/format.js";
 import { roleLabel } from "../constants.js";
-import { EMP_LINE_OPTIONS, empLineLabel, lineColor } from "../lib/lines.js";
+import { EMP_LINE_OPTIONS, WorkStatsContext, empLineLabel, lineColor } from "../lib/lines.js";
 import { THEME } from "../theme.js";
 
 /* ---------------- EMPLOYEES VIEW ---------------- */
@@ -25,6 +25,8 @@ const ROLE_BADGE = (role) => ({
 }[role] || { color: THEME.greenText, bg: THEME.greenBg });
 
 export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
+  const work = useContext(WorkStatsContext);
+  const curMonth = new Date().toISOString().slice(0, 7);
   const [modal, setModal] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
@@ -122,6 +124,15 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
                         {EMP_LINE_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
                       </select>
                     ) : <span style={{ fontSize: 12.5, fontWeight: 600, color: THEME.muted }}>{empLineLabel(e)}</span>}
+                    {e.line === "common" && (() => {
+                      const r = work?.[curMonth]?.[e.id];
+                      const tot = r ? r.UVIXPRINT + r.UVONYX : 0;
+                      return (
+                        <div data-emp-work={e.id} style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4, whiteSpace: "nowrap" }} title="Oylik shu nisbatda bo'linadi (bajarilgan vazifalar)">
+                          {tot ? <>Shu oy: <b style={{ color: lineColor("UVIXPRINT", THEME.isDark) }}>{r.UVIXPRINT} UV</b> · <b style={{ color: lineColor("UVONYX", THEME.isDark) }}>{r.UVONYX} ON</b> → {Math.round((r.UVIXPRINT / tot) * 100)}% / {100 - Math.round((r.UVIXPRINT / tot) * 100)}%</> : "Shu oy bajarilgan ish yo'q"}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding: "13px 16px", color: THEME.muted, fontSize: 12 }}>
                     {ROLE_DESCRIPTIONS[e.role] || ROLE_DESCRIPTIONS.operator}

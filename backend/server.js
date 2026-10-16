@@ -243,6 +243,7 @@ function requireAuth(req, res, next) {
 const WORKER_ROLES = new Set(["designer", "printer", "installer"]);
 const isWorker = (user) => WORKER_ROLES.has(user?.role);
 const linesApi = require("./lines");
+let jobsApi = null; // «Vazifalar» (pastda ro'yxatdan o'tadi) — bajarilgan ish statistikasi uchun
 // Ishchi rollar o'qishi/yozishi mumkin bo'lgan KV kalitlari (qolgani — 403)
 const WORKER_READ_KEYS = new Set(["uvix:employees", "uvix:appearance", "uvix:settings"]);
 const WORKER_WRITE_KEYS = new Set(["uvix:employees"]); // faqat o'z PIN'ini o'zgartirish uchun
@@ -468,7 +469,7 @@ const onOrderReady = (order) => customerMsg.sendReady(order).catch((e) => consol
 registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, onOrderReady });
 
 // ==================== Vazifalar (o'lchov, montaj, yetkazish) ====================
-require("./jobs")(app, {
+jobsApi = require("./jobs")(app, {
   getStmt, upsertStmt, readEmployees, requireAuth, isWorker,
   sendToEmployee: (id, text) => (tgAllowed(id, "tasks") ? staffBot.sendToEmployee(id, text) : Promise.resolve(false)),
   appUrl: () => { try { return JSON.parse(getStmt.get("uvix:attConfig")?.value || "{}").appUrl || ""; } catch { return ""; } },
@@ -584,7 +585,7 @@ app.get("/api/kv/:key", (req, res) => {
   if (req.lineScope && linesApi.SCOPED_KEYS.has(key)) {
     try {
       const allOrders = key === "uvix:orders" ? JSON.parse(row.value) : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), req.lineScope, allOrders)) });
+      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), req.lineScope, allOrders, jobsApi?.workStats())) });
     } catch { return res.status(500).json({ error: "read_failed" }); }
   }
   res.json({ key: row.key, rev, value: row.value });
@@ -595,7 +596,7 @@ function scopedValue(req, key, value) {
   try {
     const list = JSON.parse(value);
     const allOrders = key === "uvix:orders" ? list : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-    return JSON.stringify(linesApi.filterForClient(key, list, req.lineScope, allOrders));
+    return JSON.stringify(linesApi.filterForClient(key, list, req.lineScope, allOrders, jobsApi?.workStats()));
   } catch { return value; }
 }
 

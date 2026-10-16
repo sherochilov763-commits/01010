@@ -7,7 +7,7 @@ import { THEME } from "../../theme.js";
 import { LINE_META, lineColor, useLine } from "../../lib/lines.js";
 
 /* ---------------- RASXOD FORMASI (faqat chiqim uchun) ---------------- */
-export function TransactionForm({ initial, preset, currentUser, categories, orders, onAddCategory, onAddSubcategory, onClose, onSave }) {
+export function TransactionForm({ initial, preset, currentUser, categories, orders, employees, onAddCategory, onAddSubcategory, onClose, onSave }) {
   const catNames = categories ? Object.keys(categories) : [];
   const [date, setDate] = useState(initial?.date || todayStr());
   const [category, setCategory] = useState(initial?.category || (preset?.category && catNames.includes(preset.category) ? preset.category : catNames[0]) || "");
@@ -37,6 +37,16 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
 
   const isBrak = category === "Brak";
   const isPaint = category === "Kraska";
+  // Oylik/avans: qaysi xodimniki. Xodim yo'nalishi rasxodga o'tadi; «Umumiy» xodim — bajargan ishi bo'yicha bo'linadi.
+  const isStaff = category === "Xodimlar";
+  const [employeeId, setEmployeeId] = useState(initial?.employeeId || "");
+  const staffList = (employees || []).filter((e) => e.role !== "admin");
+  const pickEmployee = (id) => {
+    setEmployeeId(id);
+    const e = staffList.find((x) => x.id === id);
+    if (e) setTxLineSel(e.line === "common" ? "common" : e.line === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+  };
+  const empCommon = staffList.find((x) => x.id === employeeId)?.line === "common";
   // Bo'yoq omboriga kirim: qaysi bo'yoqdan necha litr olindi (bitta to'lovda bir nechta bo'yoq bo'lishi mumkin)
   const [paintItems, setPaintItems] = useState(null);
   const [paintLines, setPaintLines] = useState(() => (initial?.paintLines || []).map((l) => ({ itemId: l.itemId, liters: String(l.liters).replace(".", ",") })));
@@ -125,6 +135,7 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
       relatedOrderId: isBrak ? linkedOrderId : (initial?.relatedOrderId || undefined),
       // Brak — yo'nalishni buyurtmadan oladi
       line: isBrak ? undefined : txLineSel,
+      employeeId: isStaff && employeeId ? employeeId : undefined,
       ...(cleanPaint.length ? { paintLines: cleanPaint } : {}),
     };
     onSave(tx);
@@ -136,6 +147,15 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
         <Field label="Sana">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={getInputStyle()} />
         </Field>
+        {isStaff && curLine.line === "all" && staffList.length > 0 && (
+          <Field label="Xodim (ixtiyoriy)">
+            <select value={employeeId} onChange={(e) => pickEmployee(e.target.value)} style={getInputStyle()} data-testid="tx-employee">
+              <option value="">— Tanlanmagan</option>
+              {staffList.map((e) => <option key={e.id} value={e.id}>{e.name}{e.line === "common" ? " · Umumiy" : e.line === "UVONYX" ? " · UVONYX" : " · UVIXPRINT"}</option>)}
+            </select>
+            {empCommon && txLineSel === "common" && <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>Umumiy xodim: oylik yo'nalishlarga shu oyda bajargan vazifalari nisbatida bo'linadi (vazifa bo'lmasa — tushum ulushi).</div>}
+          </Field>
+        )}
         {!isBrak && curLine.line === "all" && (
           <Field label="Kimga tegishli">
             <div role="group" aria-label="Kimga tegishli" data-testid="tx-line" style={{ display: "flex", gap: 4, background: THEME.surface, borderRadius: 11, padding: 3 }}>

@@ -42,11 +42,21 @@ export function shareOf(line, month, income) {
   return total > 0 ? r[line] / total : 0.5;
 }
 
+// Umumiy xodim oyligi (rasxodda employeeId): shu oyda bajargan ishlari nisbatida bo'linadi.
+// work = { "2026-10": { empId: { UVIXPRINT: n, UVONYX: n } } } (serverdan, /api/work-stats). Ish bo'lmasa — null.
+export function workShareOf(line, t, work) {
+  if (!t?.employeeId || !work) return null;
+  const r = work[String(t.date || "").slice(0, 7)]?.[t.employeeId];
+  const tot = r ? (r.UVIXPRINT || 0) + (r.UVONYX || 0) : 0;
+  return tot > 0 ? (r[line] || 0) / tot : null;
+}
+export const WorkStatsContext = createContext(null);
+
 // Yo'nalish ko'rinishi uchun ma'lumotlar:
 //   orders — shu yo'nalish buyurtmalari
 //   txList — shu yo'nalish + umumiy rasxodlar (to'liq summa bilan; ro'yxatlar uchun)
 //   txStats — shu yo'nalish + umumiy rasxodlarning ULUSHI (hisob-kitob: qoldiq, foyda, hisobot)
-export function scopeByLine(line, orders, tx, allOrders = orders) {
+export function scopeByLine(line, orders, tx, allOrders = orders, work = null) {
   if (!LINES.includes(line)) return { orders, txList: tx, txStats: tx };
   const lineById = new Map((allOrders || []).map((o) => [o.id, lineOfOrder(o)]));
   const income = monthIncome(allOrders);
@@ -59,7 +69,7 @@ export function scopeByLine(line, orders, tx, allOrders = orders) {
     if (l !== COMMON) continue;
     txList.push(t);
     // Server xodimga umumiy rasxodni _lineShare bilan yuboradi (boshqa yo'nalish tushumini ko'rmagani uchun)
-    const share = typeof t._lineShare === "number" ? t._lineShare : shareOf(line, String(t.date || "").slice(0, 7), income);
+    const share = typeof t._lineShare === "number" ? t._lineShare : workShareOf(line, t, work) ?? shareOf(line, String(t.date || "").slice(0, 7), income);
     txStats.push({ ...t, amount: Math.round((t.amount || 0) * share), _share: share, _fullAmount: t.amount });
   }
   return { orders: ords, txList, txStats };

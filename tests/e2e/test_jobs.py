@@ -66,6 +66,35 @@ async def main():
         o2 = [o for o in orders(adm) if o["id"] == "o2"][0]
         ok("yetkazish bajarildi → buyurtma «Topshirildi»", o2.get("prodStage") == "delivered", o2.get("prodStage"))
         ok("ishchi: bajarilgani ro'yxatdan ketdi", await mj.locator("[data-myjob]").count() == 1)
+        # ---------- 4-etap: umumiy xodim (Jasur) oyligi — bajargan ishi bo'yicha ----------
+        oj = api("/api/jobs", {"kind": "install", "title": "Oniks panno montaji", "line": "UVONYX", "date": TODAY, "assigneeIds": ["jasur"]}, adm)["job"]
+        api(f"/api/jobs/{oj['id']}", {"status": "done"}, adm, method="PATCH")
+        el = json.loads(api("/api/kv/uvix:employees", token=adm)["value"])
+        for e in el:
+            if e["id"] == "jasur": e["line"] = "common"
+        api("/api/kv/uvix:employees", {"value": json.dumps(el)}, adm, method="PUT")
+        await d.reload(); await d.wait_for_timeout(2500)
+        await nav(d, "Rasxod")
+        await d.locator("button", has_text="Yangi rasxod").click(); await d.wait_for_timeout(500)
+        m = d.locator(".uvix-modal-panel")
+        await m.locator("select").filter(has=d.locator("option[value='Xodimlar']")).first.select_option("Xodimlar"); await d.wait_for_timeout(300)
+        await m.locator("[data-testid=tx-employee]").select_option("jasur"); await d.wait_for_timeout(200)
+        ok("xodim tanlanganda — «Umumiy» avtomatik", await m.locator("[data-testid=tx-line] [data-line=common][aria-pressed=true]").count() == 1)
+        await m.locator("input[inputmode=numeric], input[placeholder='0']").first.fill("6000000")
+        await m.locator("button", has_text="Saqlash").last.click(); await d.wait_for_timeout(1200)
+        tx = [t for t in json.loads(api("/api/kv/uvix:transactions", token=adm)["value"]) if t.get("employeeId") == "jasur"]
+        ok("saqlandi: Xodimlar, employeeId=jasur, line=common", len(tx) == 1 and tx[0]["line"] == "common" and tx[0]["amount"] == 6000000, tx)
+        ws = api("/api/work-stats", token=adm)["stats"].get(datetime.date.today().strftime("%Y-%m"), {}).get("jasur", {})
+        tot = ws.get("UVIXPRINT", 0) + ws.get("UVONYX", 0)
+        ok("ish statistikasi: Jasur ikkala yo'nalishda ishlagan", ws.get("UVIXPRINT", 0) > 0 and ws.get("UVONYX", 0) == 1, ws)
+        await nav(d, "Dashboard"); await d.wait_for_timeout(1500)
+        pnl = d.locator("[data-testid=pnl]")
+        uv = round(6000000 * ws.get("UVIXPRINT", 0) / tot) if tot else 0
+        got = await pnl.locator("[data-pnl-row=staff] [data-col=UVIXPRINT]").inner_text() if await pnl.locator("[data-pnl-row=staff]").count() else ""
+        ok("P&L: «Umumiy xodimlar oyligi» qatori ish nisbatida", got == "−" + f"{uv:,}".replace(",", " "), (got, uv, ws))
+        await pnl.screenshot(path=OUT + "jobs_pnl_staff.png")
+        await nav(d, "Xodimlar")
+        ok("Xodimlar: umumiy xodimda shu oy ish nisbati", "Shu oy" in await d.locator("[data-emp-work=jasur]").inner_text())
         await b.close()
 
     # ---------- Server: huquqlar va yo'nalish ----------
@@ -82,6 +111,11 @@ async def main():
     ok("boshqa yo'nalish vazifasini o'zgartirib bo'lmaydi", r.get("_code") == 404, r)
     r = api("/api/kv/uvix:jobs", token=adm)
     ok("uvix:jobs KV orqali yopiq", r.get("_code") == 403, r)
+    r = api("/api/work-stats", token=az)
+    ok("ish statistikasi faqat rahbarga", r.get("_code") == 403, r)
+    # UVIXPRINT xodimiga Jasur oyligi ish ulushi bilan keladi
+    t = [x for x in json.loads(api("/api/kv/uvix:transactions", token=az)["value"]) if x.get("employeeId") == "jasur"]
+    ok("xodimga: umumiy oylik ish ulushi bilan (_lineShare)", len(t) == 1 and abs(t[0]["_lineShare"] - (ws.get("UVIXPRINT", 0) / tot)) < 1e-9, t)
     ok("JS xatolar yo'q", not errs, errs)
     finish()
 

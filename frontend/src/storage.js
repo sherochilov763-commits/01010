@@ -678,3 +678,9 @@ export const fetchJobs = () => jobsCall("");
 export const createJob = (job) => jobsCall("", "POST", job);
 export const updateJob = (id, patch) => jobsCall(`/${encodeURIComponent(id)}`, "PATCH", patch);
 export const deleteJob = (id) => jobsCall(`/${encodeURIComponent(id)}`, "DELETE");
+export async function fetchWorkStats() {
+  const res = await fetch(`${API_BASE}/work-stats`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => ({}));
+  return data.stats || null;
+}

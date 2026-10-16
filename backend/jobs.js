@@ -160,6 +160,33 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
     res.json({ ok: true });
   });
 
+  // ---------- Bajarilgan ish statistikasi (umumiy xodim oyligini bo'lish uchun) ----------
+  // { "2026-10": { empId: { UVIXPRINT: n, UVONYX: n } } } — vazifalar + buyurtmadagi dizayn/pechat
+  function workStats() {
+    const out = {};
+    const add = (month, emp, line) => {
+      if (!month || !emp) return;
+      ((out[month] ||= {})[emp] ||= { UVIXPRINT: 0, UVONYX: 0 })[line] += 1;
+    };
+    for (const j of jobs()) {
+      if (j.status !== "done" || !j.doneAt) continue;
+      for (const id of j.assigneeIds || []) add(String(j.doneAt).slice(0, 7), id, j.line === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+    }
+    for (const o of read("uvix:orders", []) || []) {
+      if (!o || o.deletedAt) continue;
+      for (const kind of ["design", "print"]) {
+        const t = o[kind];
+        if (!t || t.status !== "done" || !t.assigneeId) continue;
+        add(String(t.doneAt || t.statusAt || o.date || "").slice(0, 7), t.assigneeId, lineOfOrder(o));
+      }
+    }
+    return out;
+  }
+  app.get("/api/work-stats", requireAuth, (req, res) => {
+    if (req.user.role !== "admin") return res.status(403).json({ error: "forbidden" });
+    res.json({ stats: workStats() });
+  });
+
   // ---------- Avtomatik vazifalar va eslatmalar (fon) ----------
   function reconcile() {
     const orders = read("uvix:orders", []);
@@ -202,6 +229,6 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
     try { reconcile(); await remind(); } catch (e) { console.error("Vazifalar foni:", e.message); }
   }
   if (interval > 0) { setTimeout(tick, 3000); setInterval(tick, interval).unref?.(); }
-  return { reconcile, remind, tashkent };
+  return { reconcile, remind, tashkent, workStats };
 };
 module.exports.KINDS = KINDS;

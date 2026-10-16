@@ -55,14 +55,25 @@ function editable(key, item, scope, orderLineById) {
 }
 const SCOPED_KEYS = new Set(["uvix:orders", "uvix:transactions"]);
 
+// Umumiy xodim oyligi: shu oyda bajargan ishlari nisbatida (ish bo'lmasa — null, ya'ni tushum ulushi)
+function workShare(line, t, work) {
+  if (!t?.employeeId || !work) return null;
+  const r = work[String(t.date || "").slice(0, 7)]?.[t.employeeId];
+  const tot = r ? (r.UVIXPRINT || 0) + (r.UVONYX || 0) : 0;
+  return tot > 0 ? (r[line] || 0) / tot : null;
+}
 // GET uchun: o'z yo'nalishi + umumiy rasxodlar (umumiy rasxodga _lineShare — shu oydagi ulush)
-function filterForClient(key, list, scope, allOrders) {
+function filterForClient(key, list, scope, allOrders, work) {
   if (!scope || !SCOPED_KEYS.has(key) || !Array.isArray(list)) return list;
   const lm = lineMap(allOrders);
   const out = list.filter((x) => visible(key, x, scope, lm));
   if (key !== "uvix:transactions") return out;
   const sh = sharesFor(scope, allOrders);
-  return out.map((t) => (txLine(t, lm) === "common" ? { ...t, _lineShare: sh[String(t.date || "").slice(0, 7)] ?? 0.5 } : t));
+  return out.map((t) => {
+    if (txLine(t, lm) !== "common") return t;
+    const w = workShare(scope, t, work);
+    return { ...t, _lineShare: w ?? sh[String(t.date || "").slice(0, 7)] ?? 0.5 };
+  });
 }
 
 // Yozish uchun: yangi/o'zgargan yozuv shu xodimga tegishli bo'lishi kerak.
@@ -97,4 +108,4 @@ function mergeScopedPut(key, incoming, oldList, scope, allOrders) {
   return [...mine.filter(Boolean), ...kept];
 }
 
-module.exports = { LINES, EMP_LINES, cleanEmpLine, scopeOf, lineOfOrder, txLine, lineMap, sharesFor, visible, editable, filterForClient, prepareUpsert, mergeScopedPut, SCOPED_KEYS };
+module.exports = { workShare, LINES, EMP_LINES, cleanEmpLine, scopeOf, lineOfOrder, txLine, lineMap, sharesFor, visible, editable, filterForClient, prepareUpsert, mergeScopedPut, SCOPED_KEYS };

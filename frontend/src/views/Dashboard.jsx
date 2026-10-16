@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useContext, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Banknote, CreditCard, FileBarChart2, FolderTree, Landmark, Package, Settings, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
 import { Avatar, Button, Card, EmptyState, MetricCard, SectionTitle, getInputStyle } from "../components/ui.jsx";
 import { DASHBOARD_GROUPS, DASHBOARD_SIZE_SPANS, DASHBOARD_WIDGET_CATALOG } from "../constants.js";
@@ -7,7 +7,7 @@ import { dateLabel, fmt, localDateStr, money, monthKey, monthLabel, todayStr, us
 import { THEME, CHART_COLORS } from "../theme.js";
 import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardConfig, useDragReorder } from "./dashboard/DashboardEditor.jsx";
 import { CardStyleContext } from "../components/CardStyleMenu.jsx";
-import { scopeByLine, useLine } from "../lib/lines.js";
+import { WorkStatsContext, scopeByLine, useLine } from "../lib/lines.js";
 import { LineTag } from "../components/LineSwitcher.jsx";
 import { ProfitLoss } from "./dashboard/ProfitLoss.jsx";
 
@@ -26,7 +26,8 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   const { line } = useLine();
   // Rahbar (ikkala yo'nalish) — yo'nalish tugmalari buyurtma VA rasxodni birga ajratadi (umumiy rasxod — ulush bilan)
   const [lineFilter, setLineFilter] = useState("all");
-  const sc = useMemo(() => (line === "all" && lineFilter !== "all" ? scopeByLine(lineFilter, ordersIn, expensesIn, ordersIn) : { orders: ordersIn, txStats: expensesIn }), [line, lineFilter, ordersIn, expensesIn]);
+  const work = useContext(WorkStatsContext);
+  const sc = useMemo(() => (line === "all" && lineFilter !== "all" ? scopeByLine(lineFilter, ordersIn, expensesIn, ordersIn, work) : { orders: ordersIn, txStats: expensesIn }), [line, lineFilter, ordersIn, expensesIn, work]);
   const orders = sc.orders;
   const expenses = sc.txStats;
   const subFilter = "all";
