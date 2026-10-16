@@ -59,7 +59,7 @@ module.exports = function registerNotifications(app, { getStmt, upsertStmt, read
   }
 
   // ---------- Xodim sozlamalari ----------
-  const isStaffRole = (role) => role === "admin" || role === "operator" || !role;
+  const isStaffRole = (role) => role === "admin" || role === "manager" || role === "operator" || !role;
   function allowedCats(user) {
     return Object.keys(CATS).filter((c) => (CATS[c].aud === "admins" ? user.role === "admin" : isStaffRole(user.role)));
   }

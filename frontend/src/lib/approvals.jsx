@@ -25,6 +25,8 @@ export function useApprovalsState({ enabled, isAdmin, onDecided }) {
   }, [enabled, refresh]);
 
   const pending = useMemo(() => list.filter((r) => r.status === "pending"), [list]);
+  // Qaror qila oladigani: rahbar — hammasi, katta menejer — chegarasi doirasidagilar (server belgilaydi)
+  const decidable = useMemo(() => pending.filter((r) => isAdmin || r.canDecide), [pending, isAdmin]);
   const request = useCallback(async (body) => { const r = await createApproval(body); await refresh(); return r.approval; }, [refresh]);
   const cancel = useCallback(async (id) => { await cancelApproval(id); await refresh(); }, [refresh]);
   const decide = useCallback(async (id, action, note) => {
@@ -35,7 +37,7 @@ export function useApprovalsState({ enabled, isAdmin, onDecided }) {
   }, [refresh]);
   const forOrder = useCallback((orderId) => pending.filter((r) => r.orderId === orderId), [pending]);
   const forPayment = useCallback((paymentId) => pending.find((r) => r.paymentId === paymentId) || null, [pending]);
-  return useMemo(() => ({ list, pending, isAdmin, refresh, request, cancel, decide, forOrder, forPayment }), [list, pending, isAdmin, refresh, request, cancel, decide, forOrder, forPayment]);
+  return useMemo(() => ({ list, pending, decidable, isAdmin, refresh, request, cancel, decide, forOrder, forPayment }), [list, pending, decidable, isAdmin, refresh, request, cancel, decide, forOrder, forPayment]);
 }
 
 export const APPROVAL_TITLE = {

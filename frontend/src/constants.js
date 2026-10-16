@@ -46,7 +46,7 @@ export function leadStagesFor(line) {
 export const ORDER_READY_STAGES = ["design", "printing", "ready", "won"];
 
 // Rollar: admin va operator — to'liq tizim; dizayner va pechatchi — faqat o'z vazifalari (pulsiz)
-export const ROLE_LABELS = { admin: "Administrator", operator: "Operator", designer: "Dizayner", printer: "Pechatchi", installer: "Montajchi" };
+export const ROLE_LABELS = { admin: "Administrator", manager: "Katta menejer", operator: "Operator", designer: "Dizayner", printer: "Pechatchi", installer: "Montajchi" };
 export const WORKER_ROLES = ["designer", "printer", "installer"];
 export const isWorkerRole = (role) => WORKER_ROLES.includes(role);
 export const roleLabel = (role) => ROLE_LABELS[role] || "Operator";
@@ -59,7 +59,7 @@ export const NAV = [
   { key: "customers", label: "Mijozlar", icon: Contact },
   { key: "expense", label: "Rasxod", icon: TrendingDown },
   { key: "operations", label: "Operatsiyalar", icon: ListChecks },
-  { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true },
+  { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true, managerOk: true },
   { key: "jobs", label: "Vazifalar", icon: ClipboardCheck },
   { key: "categories", label: "Kategoriyalar", icon: FolderTree },
   { key: "employees", label: "Xodimlar", icon: Users, adminOnly: true },

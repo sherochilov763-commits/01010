@@ -1041,3 +1041,9 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - **CRM (UVONYX):** Murojaat → O'lchov → Smeta → Dizayn → Ishlab chiqarish → Tayyor/o'rnatish. Lid kartasidagi 📏 tugma — o'lchov vazifasi (lid bilan bog'lanadi): qo'shilsa lid «O'lchov»ga, bajarilsa «Smeta»ga o'tadi. Kartada eng yaqin ochiq ish ko'rinadi.
 - **Buyurtma (UVONYX):** Navbatda → Dizayn → Material → Ishlab chiqarish → Tayyor → O'rnatish → Topshirildi. Montaj vazifasi boshlansa — «O'rnatish», bajarilsa — «Topshirildi» (lid yopiladi). UVIXPRINT bosqichlari avvalgidek.
 - Test: `tests/e2e/test_stages.py`.
+
+## 🧑‍💼 Yo'nalishlar — 7-etap: rollar va huquqlar (2026-10)
+- **Rahbar → Katta menejer → Operator (sotuv menejeri).** Katta menejer o'z yo'nalishining hammasini ko'radi, «Hisobot» ochiq; tasdiqlash so'rovlarini (to'lovni o'zgartirish/o'chirish, summani kamaytirish, buyurtmani o'chirish) o'z chegarasigacha tasdiqlaydi — server tekshiradi (`backend/money-guard.js`: `canDecide`, `requestAmount`).
+- Xodimlar → ✏️ «Rol va huquqlar»: rol, kassa qoldig'i (Dashboard qoldiqlari, «Jami pul», to'lov turlari), foyda (qo'shilgan qiymat, kraska), tasdiqlash chegarasi. `employee.perm = { cash, profit, approveLimit }`.
+- Mijozlar: «Mas'ul menejer» — operator boshqa menejerga biriktirilgan mijozni ko'rmaydi; mas'ulni faqat rahbar yoki katta menejer o'zgartiradi (server ham).
+- Test: `tests/e2e/test_roles.py`.

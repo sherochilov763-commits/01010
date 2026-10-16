@@ -69,7 +69,7 @@ export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) 
   const prefs = editingGlobal ? globalPrefs : (minePrefs || globalPrefs);
 
   const byKey = Object.fromEntries(NAV.map((n) => [n.key, n]));
-  const allowed = (n) => n && (!n.adminOnly || isAdmin);
+  const allowed = (n) => n && (!n.adminOnly || isAdmin || (n.managerOk && role === "manager"));
   const editorItems = prefs.order.map((k) => byKey[k]).filter(allowed);
   const items = editorItems.filter((n) => !prefs.hidden.includes(n.key));
   const mobileBar = prefs.mobileBar.filter((k) => allowed(byKey[k]));

@@ -386,7 +386,7 @@ const TG_ROUTE_DEFAULTS = {
   paint: "admin", debts: "admin", system: "admin", monthlyReport: "admin",
 };
 const TG_STAFF_ALLOWED = new Set(["orders", "paint"]);
-const TG_STAFF_ROLES = new Set(["admin", "operator"]);
+const TG_STAFF_ROLES = new Set(["admin", "manager", "operator"]);
 function tgRoute(cat) {
   let s = {};
   try { s = JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch {}
@@ -601,6 +601,17 @@ app.get("/api/kv/:key", (req, res) => {
   }
   res.json({ key: row.key, rev, value: row.value });
 });
+// Mijozning mas'ul menejerini faqat rahbar yoki katta menejer o'zgartiradi
+function keepCustomerManager(user, items, oldList) {
+  if (!Array.isArray(items) || user?.role === "admin" || user?.role === "manager") return items;
+  const old = new Map((Array.isArray(oldList) ? oldList : []).filter(Boolean).map((x) => [String(x.id), x]));
+  return items.map((it) => {
+    if (!it || typeof it !== "object") return it;
+    const o = old.get(String(it.id));
+    const { managerId, ...rest } = it; // eslint-disable-line no-unused-vars
+    return o?.managerId ? { ...rest, managerId: o.managerId } : rest;
+  });
+}
 // Yo'nalish bo'yicha javob: xodimga faqat o'z yo'nalishi ko'rinadi
 function scopedValue(req, key, value) {
   if (!req.lineScope || !linesApi.SCOPED_KEYS.has(key)) return value;
@@ -789,6 +800,10 @@ function mergeEmployees(incoming, user) {
     const next = { ...oldRest, ...rest, name, role, pin };
     const ln = linesApi.cleanEmpLine(rest.line !== undefined ? rest.line : old?.line);
     if (ln) next.line = ln; else delete next.line;
+    // Huquqlar (rahbar beradi): kassa qoldig'ini ko'rish, foydani ko'rish, tasdiqlash chegarasi (so'm)
+    const pr = rest.perm !== undefined ? rest.perm : old?.perm;
+    if (pr && typeof pr === "object" && role !== "admin") next.perm = { cash: pr.cash !== false, profit: pr.profit !== false, approveLimit: Math.max(0, Math.min(1e12, Math.round(Number(pr.approveLimit) || 0))) };
+    else delete next.perm;
     if (old && pin !== old.pin) { delete next.mustChangePin; delete next.tempPinExp; } // admin PIN'ni qo'lda o'zgartirdi
     result.push(next);
   }
@@ -923,6 +938,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     const pos = new Map(list.map((x, i) => [String(x?.id), i]));
     const toStart = [];
     const toEnd = [];
+    if (key === "uvix:customers") scopedUpserts = keepCustomerManager(req.user, scopedUpserts.map((u) => u.item), oldList).map((item, i) => ({ ...scopedUpserts[i], item }));
     for (const u of scopedUpserts) {
       const id = String(u.item.id);
       if (pos.has(id)) list[pos.get(id)] = u.item;
@@ -1040,6 +1056,9 @@ app.put("/api/kv/:key", (req, res) => {
   }
   if (req.params.key === "uvix:settings") {
     try { settingsLog.settingsChanged(req.user.name, oldValue ? JSON.parse(oldValue) : {}, JSON.parse(value)); } catch { /* jurnal ixtiyoriy */ }
+  }
+  if (key === "uvix:customers") {
+    try { value = JSON.stringify(keepCustomerManager(req.user, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [])); } catch { return res.status(400).json({ error: "invalid_json" }); }
   }
   if ((key === "uvix:transactions" || key === "uvix:customers") && req.lineScope) {
     try {

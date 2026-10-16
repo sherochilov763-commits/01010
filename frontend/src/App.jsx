@@ -816,12 +816,14 @@ function AppInner() {
   const logout = () => { authLogout(); resetAttendance(); clearLockState(); idle.unlock(); setCurrentUser(null); };
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
-  const myTx = isAdmin ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
-  const myOrders = isAdmin ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
+  // Katta menejer — o'z yo'nalishining hammasini ko'radi (server yo'nalish bo'yicha ajratib beradi)
+  const seesAll = isAdmin || currentUser.role === "manager";
+  const myTx = seesAll ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
+  const myOrders = seesAll ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
   // Yo'nalish bo'yicha: buyurtmalar, rasxodlar ro'yxati (to'liq) va hisob-kitob uchun (umumiy rasxod — ulushi bilan)
   const scope = scopeByLine(lineState.line, myOrders, myTx, activeOrders);
   const lOrders = scope.orders;
-  const reportScope = isAdmin ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
+  const reportScope = isAdmin || currentUser.role === "manager" ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
 
   return (
     <TelegramOnboard user={currentUser} onLogout={logout}>
@@ -1016,14 +1018,14 @@ function AppInner() {
                 onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
                 onScan={() => openScanner("order")} />
             )}
-            {isAdmin && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
+            {(isAdmin || currentUser.role === "manager") && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
             {view === "dashboard" && phoneUi && (
               <button type="button" onClick={toggleReport} data-testid="today-report" aria-expanded={fullReport}
                 style={{ width: "100%", height: 48, borderRadius: 14, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, fontFamily: "inherit", fontSize: 14.5, fontWeight: 600, cursor: "pointer", marginBottom: fullReport ? 18 : 0 }}>
                 {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
               </button>
             )}
-            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} perm={meEmp?.perm} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
@@ -1130,7 +1132,7 @@ function AppInner() {
             )}
             {view === "attendance" && <AttendanceView currentUser={currentUser} isAdmin={isAdmin} />}
             {view === "customers" && (
-              <CustomersView currentUser={currentUser} isAdmin={isAdmin} orders={lOrders} leads={leads} profiles={customers} transactions={scope.txList}
+              <CustomersView currentUser={currentUser} isAdmin={isAdmin} employees={employees} orders={lOrders} leads={leads} profiles={customers} transactions={scope.txList}
                 onSaveCustomer={saveCustomer} onAddPayment={addPayment} onDeletePayment={deletePayment}
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
@@ -1140,7 +1142,7 @@ function AppInner() {
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
             )}
-            {view === "report" && isAdmin && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
+            {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
             {view === "categories" && (
               <CategoriesView
                 transactions={activeTransactions}

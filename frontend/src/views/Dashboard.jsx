@@ -22,7 +22,10 @@ function Chart({ kind, ...props }) {
   return <Suspense fallback={<ChartSkeleton />}><C {...props} /></Suspense>;
 }
 
-export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings }) {
+export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm }) {
+  // Huquqlar (rahbar beradi): kassa qoldig'i va foyda ko'rinishi
+  const canCash = isAdmin || perm?.cash !== false;
+  const canProfit = isAdmin || perm?.profit !== false;
   const { line } = useLine();
   // Rahbar (ikkala yo'nalish) — yo'nalish tugmalari buyurtma VA rasxodni birga ajratadi (umumiy rasxod — ulush bilan)
   const [lineFilter, setLineFilter] = useState("all");
@@ -180,7 +183,9 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   // Ko'rinish: administrator belgilagan umumiy yoki xodimning o'zi moslashtirgan
   const cfg = useDashboardConfig({ settings, onSaveSettings, isAdmin });
   const view = editMode ? cfg.editing : cfg.shown;
-  const layout = view.layout;
+  // Huquq yo'q bo'lsa — kassa/foyda kartalari ko'rsatilmaydi
+  const HIDDEN_BY_PERM = new Set([...(canCash ? [] : ["m_totalMoney", "paymentMethods"]), ...(canProfit ? [] : ["m_addedValue", "m_kraska"])]);
+  const layout = view.layout.filter((w) => editMode || !HIDDEN_BY_PERM.has(w.id));
   const cardStyles = view.cardStyles || {};
   const { dragId, onDragStart } = useDragReorder(cfg);
   const [openMenu, setOpenMenu] = useState(null);
@@ -219,11 +224,11 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
               {money(stats.totalOrderValue)}
             </div>
             <div style={{ fontSize: 13, color: THEME.muted }}>To'langan <b style={{ color: THEME.text, fontWeight: 600 }}>{money(stats.totalPaid)}</b> &middot; qarzdorlik <b style={{ color: stats.totalDebt > 0 ? THEME.rose : THEME.text, fontWeight: 600 }}>{money(stats.totalDebt)}</b></div>
-            <div style={{ marginTop: 16, height: 8, borderRadius: 4, overflow: "hidden", display: "flex", gap: 2, background: THEME.chip }} aria-label="Qoldiqlar ulushi">
+            {canCash && <div style={{ marginTop: 16, height: 8, borderRadius: 4, overflow: "hidden", display: "flex", gap: 2, background: THEME.chip }} aria-label="Qoldiqlar ulushi">
               {bal.map((b) => <div key={b.l} style={{ width: `${pct(Math.max(0, b.v))}%`, background: b.c }} />)}
-            </div>
+            </div>}
           </div>
-          <div className="uvix-hero-bal" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
+          {canCash && <div className="uvix-hero-bal" data-testid="hero-balances" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
             {bal.map((b) => (
               <div key={b.l} style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12.5, color: THEME.muted, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
@@ -232,7 +237,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
                 <div style={{ fontSize: 17, fontWeight: 600, marginTop: 3, color: b.v >= 0 ? THEME.text : THEME.rose, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money(b.v)}</div>
               </div>
             ))}
-          </div>
+          </div>}
         </div>
       </Card>
       );

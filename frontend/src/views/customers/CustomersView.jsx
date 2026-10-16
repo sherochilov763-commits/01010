@@ -45,9 +45,12 @@ function ContactButtons({ c, onOpenChat }) {
   );
 }
 
-export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, transactions, onSaveCustomer, onAddPayment, onDeletePayment, onOpenChat, onOpenOrders }) {
+export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, transactions, employees, onSaveCustomer, onAddPayment, onDeletePayment, onOpenChat, onOpenOrders }) {
   const today = todayStr();
-  const all = useMemo(() => buildCustomers(orders, leads, profiles, today), [orders, leads, profiles, today]);
+  // Mas'ul menejer: operator boshqa menejerga biriktirilgan mijozni ko'rmaydi; rahbar va katta menejer — hammasini
+  const canAssign = isAdmin || currentUser?.role === "manager";
+  const all = useMemo(() => buildCustomers(orders, leads, profiles, today).filter((c) => canAssign || !c.managerId || c.managerId === currentUser?.id), [orders, leads, profiles, today, canAssign, currentUser?.id]);
+  const empName = (id) => (employees || []).find((e) => e.id === id)?.name || "";
   const debtors = useMemo(() => all.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt), [all]);
   const [tab, setTab] = useState(() => takeOpenTab("customers", ["list","debt", ...(isAdmin ? ["msg"] : [])]) || "list");
   const [openId, setOpenId] = useState(null);
@@ -72,12 +75,12 @@ export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, t
         <div style={{ flex: 1 }} />
         <Button onClick={() => setEdit({})} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={15} /> Mijoz</Button>
       </div>
-      {tab === "list" && <ListTab all={all} onOpen={(c) => setOpenId(c.id)} onOpenChat={onOpenChat} />}
+      {tab === "list" && <ListTab all={all} me={currentUser?.id} empName={empName} onOpen={(c) => setOpenId(c.id)} onOpenChat={onOpenChat} />}
       {tab === "debt" && <DebtTab debtors={debtors} totalDebt={totalDebt} isAdmin={isAdmin} onOpen={(c) => setOpenId(c.id)} onPay={setPayFor} onInvoice={(order, customer) => setInvoiceFor({ order, customer })} onOpenChat={onOpenChat} />}
       {tab === "msg" && isAdmin && <MessagesTab />}
       {invoiceFor && <InvoiceModal order={invoiceFor.order} customer={invoiceFor.customer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}
-      {open && <CustomerCard c={open} onClose={() => setOpenId(null)} onEdit={() => setEdit(open)} onPay={setPayFor} onInvoice={(order) => setInvoiceFor({ order, customer: open })} onOpenChat={onOpenChat} onOpenOrders={onOpenOrders} />}
-      {edit && <EditCustomer c={edit.id ? edit : null} all={all} onClose={() => setEdit(null)}
+      {open && <CustomerCard c={open} managerName={empName(open.managerId)} onClose={() => setOpenId(null)} onEdit={() => setEdit(open)} onPay={setPayFor} onInvoice={(order) => setInvoiceFor({ order, customer: open })} onOpenChat={onOpenChat} onOpenOrders={onOpenOrders} />}
+      {edit && <EditCustomer c={edit.id ? edit : null} all={all} managers={canAssign ? (employees || []).filter((e) => ["admin", "manager", "operator"].includes(e.role)) : null} onClose={() => setEdit(null)}
         onSave={(profile, merged) => { onSaveCustomer(profile, merged); setEdit(null); setOpenId(profile.id); }} />}
       {payFor && (
         <PaymentsModal order={orders.find((o) => o.id === payFor.id) || payFor} transactions={transactions} currentUser={currentUser} isAdmin={isAdmin}
@@ -101,7 +104,7 @@ function Kpi({ label, value, icon: Icon, color, onClick }) {
 
 // ---------------- Mijozlar ro'yxati ----------------
 const SORTS = [["last", "Oxirgi buyurtma"], ["total", "Aylanma"], ["debt", "Qarz"], ["count", "Buyurtmalar soni"], ["name", "Nomi"]];
-function ListTab({ all, onOpen, onOpenChat }) {
+function ListTab({ all, me, empName, onOpen, onOpenChat }) {
   const isMobile = useIsMobile();
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("last");
@@ -113,14 +116,15 @@ function ListTab({ all, onOpen, onOpenChat }) {
     if (filter === "debt") l = l.filter((c) => c.debt > 0);
     if (filter === "nophone") l = l.filter((c) => !c.phone);
     if (filter === "leads") l = l.filter((c) => !c.count);
+    if (filter === "mine") l = l.filter((c) => c.managerId === me);
     const by = { last: (a, b) => String(b.lastDate || "").localeCompare(String(a.lastDate || "")), total: (a, b) => b.total - a.total, debt: (a, b) => b.debt - a.debt, count: (a, b) => b.count - a.count, name: (a, b) => a.name.localeCompare(b.name) }[sort];
     return [...l].sort(by);
   }, [all, q, sort, filter]);
 
   function exportExcel() {
-    exportRows(list.map((c) => ({ Mijoz: c.name, Telefon: c.phone, Telegram: c.telegram ? `@${c.telegram}` : "", "Buyurtmalar": c.count, "Aylanma (so'm)": c.total, "To'langan (so'm)": c.paid, "Qarz (so'm)": c.debt, "O'rtacha chek": c.avg, "Birinchi buyurtma": c.firstDate || "", "Oxirgi buyurtma": c.lastDate || "", Izoh: c.note })), "Mijozlar", `UVIX_mijozlar_${todayStr()}.xlsx`);
+    exportRows(list.map((c) => ({ Mijoz: c.name, Telefon: c.phone, Telegram: c.telegram ? `@${c.telegram}` : "", "Buyurtmalar": c.count, "Aylanma (so'm)": c.total, "To'langan (so'm)": c.paid, "Qarz (so'm)": c.debt, "O'rtacha chek": c.avg, "Birinchi buyurtma": c.firstDate || "", "Oxirgi buyurtma": c.lastDate || "", "Mas'ul": empName?.(c.managerId) || "", Izoh: c.note })), "Mijozlar", `UVIX_mijozlar_${todayStr()}.xlsx`);
   }
-  const chips = [["all", "Hammasi"], ["debt", "Qarzdor"], ["nophone", "Telefonsiz"], ["leads", "Faqat lid"]];
+  const chips = [["all", "Hammasi"], ["mine", "Meniki"], ["debt", "Qarzdor"], ["nophone", "Telefonsiz"], ["leads", "Faqat lid"]];
   return (
     <>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -282,7 +286,7 @@ function DigestSettings() {
 }
 
 // ---------------- Mijoz kartasi ----------------
-function CustomerCard({ c, onClose, onEdit, onPay, onInvoice, onOpenChat, onOpenOrders }) {
+function CustomerCard({ c, managerName, onClose, onEdit, onPay, onInvoice, onOpenChat, onOpenOrders }) {
   const [tab, setTab] = useState(c.count ? "orders" : "leads");
   const stats = [
     ["Buyurtmalar", c.count], ["Aylanma", moneyCompact(c.total)], ["O'rtacha chek", c.count ? moneyCompact(c.avg) : "—"],
@@ -299,6 +303,7 @@ function CustomerCard({ c, onClose, onEdit, onPay, onInvoice, onOpenChat, onOpen
             <div style={{ fontSize: 13, color: THEME.muted, marginTop: 2, display: "flex", gap: 10, flexWrap: "wrap" }}>
               {c.phone ? <a href={telLink(c.phone)} style={{ color: THEME.text, textDecoration: "none" }}><Phone size={12} style={{ verticalAlign: -1 }} /> {c.phone}</a> : <span>Telefon yo'q</span>}
               {c.telegram && <a href={tgLink(c.telegram)} target="_blank" rel="noreferrer" style={{ color: TG_BLUE, textDecoration: "none", fontWeight: 600 }}>@{c.telegram}</a>}
+              {managerName && <span data-testid="cust-manager">Mas'ul: <b style={{ color: THEME.text, fontWeight: 600 }}>{managerName}</b></span>}
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -357,8 +362,9 @@ function CustomerCard({ c, onClose, onEdit, onPay, onInvoice, onOpenChat, onOpen
 }
 
 // ---------------- Tahrirlash / yangi mijoz ----------------
-function EditCustomer({ c, all, onClose, onSave }) {
+function EditCustomer({ c, all, managers, onClose, onSave }) {
   const p = c?.profile || {};
+  const [managerId, setManagerId] = useState(c?.managerId || "");
   const [name, setName] = useState(c?.name || "");
   const [phone, setPhone] = useState(c?.phone || "");
   const [telegram, setTelegram] = useState(c?.telegram ? `@${c.telegram}` : "");
@@ -378,7 +384,7 @@ function EditCustomer({ c, all, onClose, onSave }) {
     const clash = all.find((x) => x.id !== c?.id && !merge.some((m) => m.id === x.id) && x.keys.includes(key));
     if (clash) return setErr(`«${clash.name}» nomli mijoz allaqachon bor — uni pastdagi «Birlashtirish» orqali qo'shing`);
     const aliases = [...new Set([...(c?.keys || []), ...merge.flatMap((m) => m.keys)].filter((k) => k && k !== key))];
-    const profile = { ...p, id: p.id || `cu_${uid()}`, key, name: n, phone: phone.trim(), telegram: telegram.trim().replace(/^@/, ""), note: note.trim(), aliases };
+    const profile = { ...p, id: p.id || `cu_${uid()}`, key, name: n, phone: phone.trim(), telegram: telegram.trim().replace(/^@/, ""), note: note.trim(), aliases, ...(managers ? { managerId: managerId || null } : {}) };
     onSave(profile, merge.filter((m) => m.profile).map((m) => m.profile.id));
   }
   return (
@@ -389,6 +395,14 @@ function EditCustomer({ c, all, onClose, onSave }) {
           <Field label="Telefon"><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+998 90 123 45 67" inputMode="tel" style={getInputStyle()} data-testid="cust-phone" /></Field>
           <Field label="Telegram"><input value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="@username" style={getInputStyle()} /></Field>
         </div>
+        {managers && (
+          <Field label="Mas'ul menejer">
+            <select value={managerId} onChange={(e) => setManagerId(e.target.value)} style={getInputStyle()} data-testid="cust-manager-select">
+              <option value="">— Biriktirilmagan (hamma ko'radi)</option>
+              {managers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Izoh"><textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Masalan: faqat naqd to'laydi, buxgalteri — Dilnoza" style={{ ...getInputStyle(), resize: "vertical" }} /></Field>
         {c && c.keys.length > 1 && <div style={{ fontSize: 12, color: THEME.muted }}>Boshqa nomlar: {c.keys.filter((k) => k !== custKey(name)).join(", ")}</div>}
         <Field label="Birlashtirish (bir mijoz turli nomlar bilan yozilgan bo'lsa)">
