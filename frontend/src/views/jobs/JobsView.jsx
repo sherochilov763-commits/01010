@@ -3,12 +3,14 @@
 // Ko'rinishlar: Ro'yxat (guruhlangan qatorlar + o'ng panel), Kalendar. Dizayn/pechat vazifalari (buyurtma ichidagi) — faqat ko'rish.
 // MyJobs — ishchi telefoni uchun «Mening kunim» (MyJobs.jsx).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlarmClock, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, Inbox, List as ListIcon, Loader2, MapPin, Navigation, Play, Plus, Sun, Sunrise, Star, Zap } from "lucide-react";
+import { AlarmClock, AlignLeft, CalendarDays, Columns3, Check, CheckCircle2, ChevronDown, ChevronRight, Inbox, List as ListIcon, Loader2, MapPin, Navigation, Play, Plus, Sun, Sunrise, Star, Zap } from "lucide-react";
 import { ConfirmDialog, useIsMobile } from "../../components/ui.jsx";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 import { useLine } from "../../lib/lines.js";
 import { createJob, fetchJobs, fetchTasks, updateJob } from "../../storage.js";
 import { THEME } from "../../theme.js";
+import { Board } from "./Board.jsx";
+import { Brigade } from "./Brigade.jsx";
 import { WeekCalendar } from "./Calendar.jsx";
 import { JobDrawer } from "./JobDrawer.jsx";
 import { JobForm } from "./JobForm.jsx";
@@ -19,7 +21,7 @@ export { JOB_KINDS } from "./jobsLib.js";
 export { JobForm } from "./JobForm.jsx";
 export { MyJobs } from "./MyJobs.jsx";
 
-const MODES = [["list", "Ro'yxat", ListIcon], ["calendar", "Kalendar", CalendarDays]];
+const MODES = [["list", "Ro'yxat", ListIcon], ["board", "Doska", Columns3], ["brigade", "Brigada", AlignLeft], ["calendar", "Kalendar", CalendarDays]];
 const GROUP_ICON = { late: AlarmClock, today: Sun, tomorrow: Sunrise, later: CalendarDays, nodate: Inbox, done: CheckCircle2 };
 const lsGet = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
@@ -77,6 +79,11 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
     setBusy(true);
     try { await updateJob(j.id, { status }); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
+  async function patchJob(j, body) {
+    setBusy(true); setErr("");
+    try { const r = await updateJob(j.id, body); setJobs((l) => (l || []).map((x) => (x.id === j.id ? r.job : x))); load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  const plan = (j, preset) => setEdit(j ? j : { _preset: preset || {} });
   const people = useMemo(() => (employees || []).filter((e) => e.role !== "admin" && !e.deletedAt), [employees]);
   const isGroupOpen = (k) => {
     if (groupF) return true;
@@ -116,32 +123,32 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
   return (
     <div data-testid="jobs-view" style={{ paddingRight: opened && !isMobile ? 440 : 0, transition: "padding .2s" }}>
       {/* Ko'rinish + qo'shish */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <div role="group" aria-label="Ko'rinish" style={{ display: "inline-flex", background: THEME.chip, borderRadius: 11, padding: 3, gap: 2 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: isMobile ? "nowrap" : "wrap" }}>
+        <div role="group" aria-label="Ko'rinish" style={{ display: "inline-flex", background: THEME.chip, borderRadius: 11, padding: 3, gap: 2, flex: isMobile ? 1 : "0 0 auto", minWidth: 0 }}>
           {MODES.map(([v, l, I]) => (
             <button key={v} type="button" onClick={() => setModeP(v)} aria-pressed={mode === v} data-jobs-mode={v}
-              style={{ height: 34, padding: "0 14px", border: 0, borderRadius: 9, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, background: mode === v ? THEME.card : "transparent", color: mode === v ? THEME.text : THEME.muted, boxShadow: mode === v ? THEME.shadowSm : "none" }}>
-              <I size={15} />{l}
+              style={{ flex: isMobile ? 1 : "0 0 auto", justifyContent: "center", height: 34, padding: isMobile ? "0 4px" : "0 14px", border: 0, borderRadius: 9, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, background: mode === v ? THEME.card : "transparent", color: mode === v ? THEME.text : THEME.muted, boxShadow: mode === v ? THEME.shadowSm : "none" }}>
+              {!isMobile && <I size={15} />}{l}
             </button>
           ))}
         </div>
-        <div style={{ flex: 1 }} />
+        {!isMobile && <div style={{ flex: 1 }} />}
         {canManage && (
-          <button type="button" onClick={() => setEdit({})} data-testid="job-new"
-            style={{ height: 40, padding: "0 18px", borderRadius: 11, border: 0, background: THEME.primarySolid || THEME.violet, color: "#fff", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <Plus size={17} /> Vazifa
+          <button type="button" onClick={() => setEdit({})} data-testid="job-new" aria-label="Yangi vazifa"
+            style={{ height: 40, padding: isMobile ? "0 11px" : "0 18px", borderRadius: 11, border: 0, background: THEME.primarySolid || THEME.violet, color: "#fff", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <Plus size={17} />{!isMobile && " Vazifa"}
           </button>
         )}
       </div>
 
       {/* Holat kartalari */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 12, overflowX: isMobile ? "auto" : "visible" }} className="uvix-scroll" data-testid="jobs-stats">
+      {mode === "list" && <div style={{ display: "flex", gap: 10, marginBottom: 12, overflowX: isMobile ? "auto" : "visible" }} className="uvix-scroll" data-testid="jobs-stats">
         {stat("late", "Kechikkan", gcount.late || 0, AlarmClock, "rose")}
         {stat("today", "Bugun", gcount.today || 0, Sun)}
         {stat("tomorrow", "Ertaga", gcount.tomorrow || 0, Sunrise)}
         {stat("nodate", "Sanasiz", gcount.nodate || 0, Inbox)}
         {stat("done", "Bu hafta bajarildi", weekDone, CheckCircle2, "green")}
-      </div>
+      </div>}
 
       {/* Filtrlar */}
       <div style={{ background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 14, padding: 6, marginBottom: 12, display: "flex", flexWrap: isMobile ? "nowrap" : "wrap", gap: 4, alignItems: "center", overflowX: isMobile ? "auto" : "visible" }} className="uvix-scroll">
@@ -169,6 +176,10 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
 
       {jobs === null ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 48, color: THEME.muted }}><Loader2 size={22} className="uvix-spin" /></div>
+      ) : mode === "board" ? (
+        <Board list={list} isMobile={isMobile} showLine={showLine} canManage={canManage} employees={people} onOpen={(j) => setOpenId(j.id)} onPatch={patchJob} onDone={(j) => setConfirm(j)} onPlan={(j) => plan(j)} />
+      ) : mode === "brigade" ? (
+        <Brigade list={list} employees={employees} isMobile={isMobile} canManage={canManage} onOpen={(j) => !j.ro && setOpenId(j.id)} onPatch={patchJob} onPlan={plan} />
       ) : mode === "calendar" ? (
         <WeekCalendar list={list} week={week} setWeek={setWeek} isMobile={isMobile} onOpen={(j) => setOpenId(j.id)} showLine={showLine} />
       ) : visibleGroups.length === 0 ? (

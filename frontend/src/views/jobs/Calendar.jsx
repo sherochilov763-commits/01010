@@ -1,9 +1,65 @@
 // Calendar.jsx — haftalik kalendar (kompyuterda 7 ustun, telefonda kunlar ro'yxati).
+import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { THEME } from "../../theme.js";
-import { JOB_KINDS, WD, addDays, dayText, isOpen, mondayOf, today } from "./jobsLib.js";
+import { JOB_KINDS, MONTHS_CAP, WD, WD_FULL, addDays, dayText, isOpen, mondayOf, today, weekdayOf } from "./jobsLib.js";
 
-export function WeekCalendar({ list, week, setWeek, isMobile, onOpen, showLine }) {
+export function WeekCalendar(props) {
+  return props.isMobile ? <MobileCalendar {...props} /> : <DesktopCalendar {...props} />;
+}
+
+// Telefon: tepada hafta tasmasi (nuqta — ish bor kun), pastda tanlangan kun soat tartibida. Chapga/o'ngga surib hafta almashadi.
+function MobileCalendar({ list, week, setWeek, onOpen }) {
+  const t = today();
+  const [day, setDay] = useState(() => (mondayOf(t) === week ? t : week));
+  const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
+  const cur = days.includes(day) ? day : days[0];
+  const items = list.filter((j) => j.date === cur).sort((a, b) => (a.time || "99").localeCompare(b.time || "99"));
+  let sx = null;
+  const go = (n) => { const w = addDays(week, n * 7); setWeek(w); setDay(n > 0 ? w : addDays(w, 6)); };
+  return (
+    <div data-testid="jobs-calendar" onTouchStart={(e) => { sx = e.touches[0].clientX; }} onTouchEnd={(e) => { if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 60) go(dx < 0 ? 1 : -1); sx = null; }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <b style={{ fontSize: 20, flex: 1 }}>{MONTHS_CAP[Number(cur.slice(5, 7)) - 1]}</b>
+        <button type="button" onClick={() => go(-1)} aria-label="Oldingi hafta" style={navB}><ChevronLeft size={16} /></button>
+        <button type="button" onClick={() => go(1)} aria-label="Keyingi hafta" style={navB}><ChevronRight size={16} /></button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 5, marginBottom: 12 }}>
+        {days.map((d, i) => {
+          const on = d === cur; const has = list.some((j) => j.date === d && isOpen(j));
+          return (
+            <button key={d} type="button" onClick={() => setDay(d)} aria-pressed={on} data-cal-day={d}
+              style={{ height: 60, borderRadius: 12, border: `1px solid ${on ? THEME.text : THEME.border}`, background: on ? THEME.text : THEME.card, color: on ? THEME.card : THEME.text, fontFamily: "inherit", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: 0 }}>
+              <span style={{ fontSize: 11.5, opacity: 0.7 }}>{WD[i]}</span><b style={{ fontSize: 17 }}>{Number(d.slice(8))}</b>
+              <span style={{ width: 5, height: 5, borderRadius: 3, background: has ? (on ? THEME.card : THEME.blue) : "transparent" }} />
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: 0.5, color: THEME.muted, textTransform: "uppercase", marginBottom: 8 }}>{WD_FULL[weekdayOf(cur)]} · {items.length} ta ish</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {!items.length && <div style={{ color: THEME.muted, fontSize: 14, padding: 18, textAlign: "center", border: `1.5px dashed ${THEME.border}`, borderRadius: 14 }}>Bu kunga ish yo'q</div>}
+        {items.map((j) => {
+          const k = JOB_KINDS[j.kind] || JOB_KINDS.other;
+          return (
+            <div key={j.id} style={{ display: "grid", gridTemplateColumns: "48px 1fr", gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: THEME.muted, paddingTop: 12 }}>{j.time || "—"}</span>
+              <button type="button" onClick={() => !j.ro && onOpen(j)} data-cal-job={j.id}
+                style={{ textAlign: "left", border: `1px solid ${THEME.border}`, borderLeft: `4px solid ${k.c}`, borderRadius: 13, background: THEME.card, color: THEME.text, padding: "10px 12px", fontFamily: "inherit", cursor: j.ro ? "default" : "pointer", opacity: isOpen(j) ? 1 : 0.55 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: k.c, background: k.c + "1A", borderRadius: 6, padding: "2px 6px", textTransform: "uppercase" }}>{k.l}</span>
+                <div style={{ fontSize: 15, fontWeight: 700, marginTop: 5 }}>{j.title}</div>
+                <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 2 }}>{(j.assignees || []).map((a) => a.name.split(" ")[0]).join(", ") || "mas'ulsiz"}</div>
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+const navB = { width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, display: "grid", placeItems: "center", cursor: "pointer" };
+
+function DesktopCalendar({ list, week, setWeek, isMobile, onOpen, showLine }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
   const t = today();
   const byDay = Object.fromEntries(days.map((d) => [d, list.filter((j) => j.date === d).sort((a, b) => (a.time || "99").localeCompare(b.time || "99"))]));
