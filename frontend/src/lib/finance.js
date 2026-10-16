@@ -18,9 +18,9 @@ export function orderAddedValue(order, transactions) {
   const brak = orderBrakSum(order, transactions);
   return (order.agreementUzs || 0) - (order.kraskaSum || 0) - (order.materialSum || 0) - brak;
 }
-export function generateOrderNumber(existingOrders, dateStr) {
+export function generateOrderNumber(existingOrders, dateStr, line) {
   const datePart = (dateStr || todayStr()).replace(/-/g, "").slice(2); // YYMMDD
-  const prefix = `UV-${datePart}-`;
+  const prefix = `${line === "UVONYX" ? "ON" : "UV"}-${datePart}-`; // yo'nalish bo'yicha: UV-… / ON-…
   const sameDay = existingOrders.filter((o) => (o.orderNumber || "").startsWith(prefix));
   const seq = String(sameDay.length + 1).padStart(3, "0");
   return `${prefix}${seq}`;

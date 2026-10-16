@@ -7,6 +7,8 @@ import { dateLabel, fmt, localDateStr, money, monthKey, monthLabel, todayStr, us
 import { THEME, CHART_COLORS } from "../theme.js";
 import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardConfig, useDragReorder } from "./dashboard/DashboardEditor.jsx";
 import { CardStyleContext } from "../components/CardStyleMenu.jsx";
+import { useLine } from "../lib/lines.js";
+import { LineTag } from "../components/LineSwitcher.jsx";
 
 // Grafiklar alohida bo'lakda — dashboard raqamlari grafik kutubxonasini kutmasdan chiqadi
 const MoneyBarChart = lazy(() => import("./dashboard/Charts.jsx").then((m) => ({ default: m.MoneyBarChart })));
@@ -20,7 +22,8 @@ function Chart({ kind, ...props }) {
 }
 
 export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onSaveSettings }) {
-  const [subFilter, setSubFilter] = useState("all");
+  const { line } = useLine();
+  const subFilter = "all"; // yo'nalish endi butun ilova bo'yicha tanlanadi (LineSwitcher)
   const [editMode, setEditMode] = useState(false);
   const [periodMode, setPeriodMode] = useState("month"); // "all" | "month" | "range" — standart: joriy oy
   const [periodMonth, setPeriodMonth] = useState(() => todayStr().slice(0, 7));
@@ -193,24 +196,7 @@ export function Dashboard({ orders, expenses, isAdmin, onNavigate, settings, onS
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={{ fontSize: 13, color: THEME.muted, fontWeight: 500 }}>Buyurtmalar summasi</div>
-              <div role="group" aria-label="Yo'nalish" style={{ display: "flex", gap: 2, background: THEME.chip, borderRadius: 8, padding: 2 }}>
-                {[{ v: "all", l: "Barchasi" }, { v: "UVIXPRINT", l: "UVIXPRINT" }, { v: "UVONYX", l: "UVONYX" }].map((opt) => (
-                  <button
-                    key={opt.v}
-                    type="button"
-                    onClick={() => setSubFilter(opt.v)}
-                    aria-pressed={subFilter === opt.v}
-                    style={{
-                      padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600,
-                      background: subFilter === opt.v ? THEME.card : "transparent",
-                      color: subFilter === opt.v ? THEME.text : THEME.muted,
-                      boxShadow: subFilter === opt.v ? THEME.shadowSm : "none",
-                    }}
-                  >
-                    {opt.l}
-                  </button>
-                ))}
-              </div>
+              {line !== "all" ? <LineTag line={line} /> : <span data-line-tag="all" style={{ fontSize: 11.5, fontWeight: 700, color: THEME.muted, background: THEME.chip, borderRadius: 6, padding: "2px 8px" }}>Ikkala yo'nalish</span>}
             </div>
             <div className="uvix-hero-big" style={{ fontSize: "clamp(26px, 6vw, 34px)", fontFamily: THEME.fontNum, fontWeight: 600, letterSpacing: -0.8, margin: "6px 0 4px", fontVariantNumeric: "tabular-nums", color: THEME.text, lineHeight: 1.15 }}>
               {money(stats.totalOrderValue)}

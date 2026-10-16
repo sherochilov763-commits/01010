@@ -3,6 +3,8 @@ import LoginScreen from "./auth/LoginScreen.jsx";
 import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
 import { TodayView } from "./views/dashboard/TodayView.jsx";
+import { LineContext, lineColor, lineOfOrder, scopeByLine, useLineState } from "./lib/lines.js";
+import { LineSwitcher, LINE_CSS } from "./components/LineSwitcher.jsx";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
 import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
@@ -718,6 +720,8 @@ function AppInner() {
   }, [view, currentUser?.id]);
   // Telefon: «Bugun» bosh ekrani (to'liq hisobot — so'rov bilan) va QR yorliqdan buyurtmani ochish
   const phoneUi = useIsMobile();
+  // Ikki yo'nalish: joriy ish maydoni (UVIXPRINT / UVONYX / admin — ikkalasi)
+  const lineState = useLineState(currentUser && !isWorkerRole(currentUser.role) ? currentUser : null);
   const [fullReport, setFullReport] = useState(() => { try { return localStorage.getItem("uvix_today_report") === "1"; } catch { return false; } });
   const toggleReport = () => setFullReport((v) => { try { localStorage.setItem("uvix_today_report", v ? "0" : "1"); } catch { /* */ } return !v; });
   const legacyIdx = useMemo(() => legacyLeadIndex(leads), [leads]);
@@ -794,18 +798,26 @@ function AppInner() {
   }
 
   const isAdmin = currentUser.role === "admin";
-  const visibleNav = navCfg.items;
+  // Bo'yoq ombori — faqat UVIXPRINT
+  const visibleNav = lineState.line === "UVONYX" ? navCfg.items.filter((n) => n.key !== "paint") : navCfg.items;
   const goView = (v) => { setNavFilter(null); setView(v); };
   const logout = () => { authLogout(); resetAttendance(); clearLockState(); idle.unlock(); setCurrentUser(null); };
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
   const myTx = isAdmin ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
   const myOrders = isAdmin ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
+  // Yo'nalish bo'yicha: buyurtmalar, rasxodlar ro'yxati (to'liq) va hisob-kitob uchun (umumiy rasxod — ulushi bilan)
+  const scope = scopeByLine(lineState.line, myOrders, myTx, activeOrders);
+  const lOrders = scope.orders;
+  const reportScope = isAdmin ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
+  const openByLine = myOrders.reduce((m, o) => { if (o.prodStage !== "delivered") m[lineOfOrder(o)] = (m[lineOfOrder(o)] || 0) + 1; return m; }, {});
+  const onLineSwitched = (v) => { if (v === "UVONYX" && view === "paint") goView("dashboard"); };
 
   return (
     <TelegramOnboard user={currentUser} onLogout={logout}>
     <AttendanceGate user={currentUser} onLogout={logout}>
     <ApprovalsProvider value={approvalsCtx}>
+    <LineContext.Provider value={lineState}>
     {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
     <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
@@ -970,22 +982,24 @@ function AppInner() {
         ${MORE_SHEET_CSS}
         ${APPROVALS_CSS}
         ${LOCK_CSS}
+        ${LINE_CSS}
       `}</style>
+      {lineState.line !== "all" && <div className="uvix-line-stripe no-print" data-testid="line-stripe" data-line={lineState.line} style={{ background: lineColor(lineState.line) }} />}
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
         <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} badges={navBadges}
-          top={<><SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} /><QrScanButton full onClick={() => setSidebarOpen(false)} /></>} />
+          top={<><LineSwitcher counts={openByLine} onSwitched={onLineSwitched} /><SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} /><QrScanButton full onClick={() => setSidebarOpen(false)} /></>} />
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
+          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><LineSwitcher variant="pill" counts={openByLine} onSwitched={onLineSwitched} /><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
             <ErrorBoundary inline onHome={() => goView("dashboard")}>
             <CrashProbe view={view} />
             <Suspense fallback={<ViewFallback />}>
             {view === "dashboard" && phoneUi && (
-              <TodayView user={currentUser} orders={myOrders} employees={employees} stageOf={stageOfOrder}
+              <TodayView user={currentUser} orders={lOrders} employees={employees} stageOf={stageOfOrder}
                 chatsEnabled={visibleNav.some((n) => n.key === "chats")} canExpense={visibleNav.some((n) => n.key === "expense")}
                 onOpenChat={(id) => { if (id) setOpenChatId(id); goView("chats"); }}
                 onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id, n: Date.now() })}
@@ -1000,14 +1014,14 @@ function AppInner() {
                 {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
               </button>
             )}
-            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={myOrders} expenses={myTx} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
                 onQuickAddHandled={() => setQuickAdd(null)}
-                orders={myOrders}
+                orders={lOrders}
                 allOrders={orders}
-                transactions={myTx}
+                transactions={scope.txList}
                 currentUser={currentUser}
                 isAdmin={isAdmin}
                 categories={categories}
@@ -1082,7 +1096,7 @@ function AppInner() {
               <ExpenseView
                 quickAddNonce={quickAdd?.kind === "expense" ? quickAdd.n : 0}
                 onQuickAddHandled={() => setQuickAdd(null)}
-                transactions={myTx}
+                transactions={scope.txList}
                 orders={myOrders}
                 currentUser={currentUser}
                 categories={categories}
@@ -1094,8 +1108,8 @@ function AppInner() {
             )}
             {view === "operations" && (
               <OperationsView
-                orders={myOrders}
-                transactions={myTx}
+                orders={lOrders}
+                transactions={scope.txStats}
                 isAdmin={isAdmin}
                 onDeletePayment={deletePayment}
                 onDeleteExpense={deleteTransaction}
@@ -1106,7 +1120,7 @@ function AppInner() {
             )}
             {view === "attendance" && <AttendanceView currentUser={currentUser} isAdmin={isAdmin} />}
             {view === "customers" && (
-              <CustomersView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} leads={leads} profiles={customers} transactions={myTx}
+              <CustomersView currentUser={currentUser} isAdmin={isAdmin} orders={lOrders} leads={leads} profiles={customers} transactions={scope.txList}
                 onSaveCustomer={saveCustomer} onAddPayment={addPayment} onDeletePayment={deletePayment}
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
@@ -1115,7 +1129,7 @@ function AppInner() {
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
             )}
-            {view === "report" && isAdmin && <ReportView orders={activeOrders} transactions={activeTransactions} categories={categories} />}
+            {view === "report" && isAdmin && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
             {view === "categories" && (
               <CategoriesView
                 transactions={activeTransactions}
@@ -1235,6 +1249,7 @@ function AppInner() {
         </div>
       )}
     </div>
+    </LineContext.Provider>
     </ApprovalsProvider>
     </AttendanceGate>
     </TelegramOnboard>

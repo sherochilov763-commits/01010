@@ -6,6 +6,8 @@ import { Button, Field, Modal, MultiPaymentLines, getInputStyle } from "../../co
 import { THEME } from "../../theme.js";
 import { fmt, money, todayStr, uid } from "../../lib/format.js";
 import { allocate, describeItem, predictNumbers } from "../../lib/production.js";
+import { useLine } from "../../lib/lines.js";
+import { LineTag } from "../../components/LineSwitcher.jsx";
 import { convertQuote } from "../../storage.js";
 import { isWorkerRole } from "../../constants.js";
 
@@ -19,7 +21,8 @@ export function ConvertPanel({ lead, draft, items, salesCfg, employees, allOrder
   const printers = (employees || []).filter((e) => e.role === "printer");
   const managers = (employees || []).filter((e) => !isWorkerRole(e.role)).map((e) => e.name);
   const [date, setDate] = useState(todayStr());
-  const [line, setLine] = useState(lead?.quote?.subcategory || "UVIXPRINT");
+  const cur = useLine();
+  const [line, setLine] = useState(cur.line !== "all" ? cur.line : lead?.quote?.subcategory || "UVIXPRINT");
   const [manager, setManager] = useState(draft?.manager || lead?.manager || currentUser?.name || managers[0] || "");
   const [lines, setLines] = useState([{ id: uid(), methodType: "naqd", amountStr: need ? fmt(need) : "" }]);
   const [mode, setMode] = useState("prop");
@@ -30,7 +33,7 @@ export function ConvertPanel({ lead, draft, items, salesCfg, employees, allOrder
   const paid = lines.reduce((s, l) => s + amountOf(l), 0);
   const over = paid > total;
   const enough = paid >= need;
-  const numbers = useMemo(() => predictNumbers(allOrders, date, items.length), [allOrders, date, items.length]);
+  const numbers = useMemo(() => predictNumbers(allOrders, date, items.length, line), [allOrders, date, items.length, line]);
   const share = useMemo(() => (paid > 0 && !over ? allocate(paid, items.map((i) => ({ id: i.id, due: i.total })), mode) || {} : {}), [paid, over, items, mode]);
   const no = lead?.quote?.status === "open" ? lead.quote.no : null;
   const customer = lead?.customer || draft?.customer || "";
@@ -65,9 +68,9 @@ export function ConvertPanel({ lead, draft, items, salesCfg, employees, allOrder
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
         <Field label="Sana"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inp} /></Field>
         <Field label="Yo'nalish">
-          <div style={{ display: "flex", gap: 4, background: THEME.surface, borderRadius: 10, padding: 3 }}>
+          {cur.line !== "all" ? <div data-testid="convert-line" style={{ height: 38, display: "flex", alignItems: "center" }}><LineTag line={line} /></div> : <div style={{ display: "flex", gap: 4, background: THEME.surface, borderRadius: 10, padding: 3 }}>
             {["UVIXPRINT", "UVONYX"].map((o) => <button key={o} type="button" onClick={() => setLine(o)} aria-pressed={line === o} style={{ flex: 1, height: 32, borderRadius: 8, border: 0, cursor: "pointer", fontSize: 12, fontWeight: 600, background: line === o ? THEME.card : "transparent", color: line === o ? THEME.text : THEME.muted, boxShadow: line === o ? THEME.shadowSm : "none" }}>{o}</button>)}
-          </div>
+          </div>}
         </Field>
         <Field label="Menejer">
           <select value={manager} onChange={(e) => setManager(e.target.value)} style={inp}>{[...new Set([manager, ...managers].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}</select>

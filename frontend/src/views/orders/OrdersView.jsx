@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Wallet, Download, FileBarChar
 import { Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile } from "../../components/ui.jsx";
 import { exportWorkbook, loadXLSX } from "../../lib/excel.js";
 import { generateOrderNumber, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
+import { useLine } from "../../lib/lines.js";
 import { fmt, money, todayStr, uid, usd, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { OrderForm } from "./OrderForm.jsx";
@@ -101,6 +102,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const [onlyDebt, setOnlyDebt] = useState(!!initialFilter?.onlyDebt);
   const [onlyPaid, setOnlyPaid] = useState(false);
   const [line, setLine] = useState("all"); // UVIXPRINT / UVONYX bo'yicha ko'rinish filtri
+  const globalLine = useLine();
   const [selectedId, setSelectedId] = useState(null); // o'ng paneldagi buyurtma (kompyuterda)
   const [sheetId, setSheetId] = useState(null); // telefonda pastki varaqdagi buyurtma
   const [swiped, setSwiped] = useState(null); // telefonda surib ochilgan qator: { id, side }
@@ -239,7 +241,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           const agreementUsd = areaNum * priceUsdNum;
           const order = {
             id: uid(),
-            orderNumber: generateOrderNumber([...allOrders, ...newOrders], dateStr),
+            orderNumber: generateOrderNumber([...allOrders, ...newOrders], dateStr, bizLine === "UVONYX" ? "UVONYX" : "UVIXPRINT"),
             date: dateStr,
             customer,
             subcategory: bizLine === "UVONYX" ? "UVONYX" : "UVIXPRINT",
@@ -290,7 +292,8 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     { k: "debt", l: "Qarzdorlar", n: counts.debt, on: onlyDebt, set: () => { setOnlyDebt(true); setOnlyPaid(false); } },
     { k: "paid", l: "To'langan", n: counts.paid, on: onlyPaid, set: () => { setOnlyDebt(false); setOnlyPaid(true); } },
   ];
-  const lineChips = [{ v: "UVIXPRINT", l: "UVIXPRINT" }, { v: "UVONYX", l: "UVONYX" }];
+  // Yo'nalish chiplari — faqat «Ikkalasi» rejimida (aks holda butun ilova bitta yo'nalishda)
+  const lineChips = globalLine.line === "all" ? [{ v: "UVIXPRINT", l: "UVIXPRINT" }, { v: "UVONYX", l: "UVONYX" }] : [];
   const stageChips = PROD_STAGES.filter((k) => stageCounts[k] || stageF === k);
   const stageChip = (k) => {
     const c = prodColors(k); const on = stageF === k;

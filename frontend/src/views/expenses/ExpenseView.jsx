@@ -5,6 +5,8 @@ import { exportWorkbook } from "../../lib/excel.js";
 import { money, paymentTypeBadgeColors, paymentTypeLabel, todayStr, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { TransactionForm } from "./TransactionForm.jsx";
+import { lineOfOrder, txLine, useLine } from "../../lib/lines.js";
+import { LineTag } from "../../components/LineSwitcher.jsx";
 
 /* ---------------- EXPENSE VIEW ---------------- */
 export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, orders, currentUser, categories, onAddCategory, onAddSubcategory, onSave, onDelete }) {
@@ -26,6 +28,11 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
     return map;
   }, [orders]);
 
+  // Yo'nalish belgisi: «Ikkalasi» rejimida hammasiga, bitta yo'nalishda — faqat «Umumiy»ga
+  const { line: curLine } = useLine();
+  const lineById = useMemo(() => new Map((orders || []).map((o) => [o.id, lineOfOrder(o)])), [orders]);
+  const tagOf = (t) => { const l = txLine(t, lineById); return curLine === "all" || l === "common" ? <LineTag line={l} /> : null; };
+
   function exportExcel() {
     exportWorkbook([], list, categories, "Rasxodlar", `UVIX_rasxodlar_${todayStr()}.xlsx`);
   }
@@ -46,7 +53,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                 <MobileRow key={t.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700 }}>{t.category}{t.subcategory && t.subcategory !== "Umumiy" ? <span style={{ color: THEME.muted, fontWeight: 500 }}> · {t.subcategory}</span> : null}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{t.category}{t.subcategory && t.subcategory !== "Umumiy" ? <span style={{ color: THEME.muted, fontWeight: 500 }}> · {t.subcategory}</span> : null} {tagOf(t)}</div>
                       <div style={{ fontSize: 12, color: THEME.muted, marginTop: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         {shortDateUz(t.date)}
                         <Badge color={pc.color} bg={pc.bg}>{paymentTypeLabel(t.paymentType)}</Badge>
@@ -86,7 +93,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                 return (
                 <tr key={t.id} className="uvix-row" style={{ borderBottom: `1px solid ${THEME.border}` }}>
                   <td style={{ padding: "13px 16px", whiteSpace: "nowrap" }}>{t.date}</td>
-                  <td style={{ padding: "13px 16px", fontWeight: 600 }}>{t.category}</td>
+                  <td style={{ padding: "13px 16px", fontWeight: 600 }}>{t.category} {tagOf(t)}</td>
                   <td style={{ padding: "13px 16px", color: THEME.muted }}>{t.subcategory}{t.paintLines?.length ? <div style={{ fontSize: 11.5, color: THEME.violet, fontWeight: 700 }}>+{t.paintLines.reduce((s, l) => s + l.liters, 0).toLocaleString("ru-RU")} L omborga</div> : null}</td>
                   <td style={{ padding: "13px 16px" }}>
                     {linkedOrder ? (

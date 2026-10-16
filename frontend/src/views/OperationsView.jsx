@@ -30,7 +30,9 @@ export function OperationsView({ orders, transactions, isAdmin, onDeletePayment,
     });
     const expenseOps = transactions.map((t) => ({
       opId: `exp-${t.id}`, type: "chiqim", date: t.date, category: t.category, customer: "",
-      orderNumber: "", txId: t.id, paymentType: t.paymentType, amount: t.amount, note: t.note, createdBy: t.createdBy,
+      orderNumber: "", txId: t.id, paymentType: t.paymentType, amount: t.amount, createdBy: t.createdBy,
+      // Umumiy rasxod (yo'nalish ko'rinishida) — faqat shu yo'nalish ulushi
+      note: t._share != null ? `Umumiy rasxod · ${Math.round(t._share * 100)}% ulush (to'liq ${Number(t._fullAmount || 0).toLocaleString("ru-RU")} so'm)${t.note ? ` · ${t.note}` : ""}` : t.note,
     }));
     return [...paymentOps, ...expenseOps];
   }, [orders, transactions]);

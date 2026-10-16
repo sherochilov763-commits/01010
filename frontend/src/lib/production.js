@@ -141,8 +141,8 @@ export function allocate(amount, targets, mode = "prop") {
 }
 
 // Keyingi buyurtma raqamlari (oldindan ko'rsatish; yakuniy raqamni server beradi)
-export function predictNumbers(allOrders, dateStr, n) {
-  const prefix = `UV-${String(dateStr).replace(/-/g, "").slice(2)}-`;
+export function predictNumbers(allOrders, dateStr, n, line) {
+  const prefix = `${line === "UVONYX" ? "ON" : "UV"}-${String(dateStr).replace(/-/g, "").slice(2)}-`;
   const max = (allOrders || []).reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0);
   return Array.from({ length: n }, (_, i) => `${prefix}${String(max + i + 1).padStart(3, "0")}`);
 }

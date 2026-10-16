@@ -4,6 +4,7 @@ import { guessPaintItem, loadPaintItems } from "../../lib/paintStore.js";
 import { Button, Field, Modal, PaymentTypeSelector, getIconBtn, getInputStyle } from "../../components/ui.jsx";
 import { fmt, todayStr, uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
+import { LINE_META, lineColor, useLine } from "../../lib/lines.js";
 
 /* ---------------- RASXOD FORMASI (faqat chiqim uchun) ---------------- */
 export function TransactionForm({ initial, preset, currentUser, categories, orders, onAddCategory, onAddSubcategory, onClose, onSave }) {
@@ -14,6 +15,10 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   const [amountStr, setAmountStr] = useState(initial ? fmt(initial.amount) : "");
   const [paymentType, setPaymentType] = useState(initial?.paymentType || "karta");
   const [note, setNote] = useState(initial?.note || "");
+  // Kimga tegishli: joriy yo'nalish yoki «Umumiy» (ikkalasiga — oylik tushum ulushiga qarab bo'linadi)
+  const curLine = useLine();
+  const [txLineSel, setTxLineSel] = useState(initial?.line || (initial ? "common" : curLine.line !== "all" ? curLine.line : "common"));
+  const lineOptions = [...new Set([...(curLine.line === "all" ? ["UVIXPRINT", "UVONYX"] : [curLine.line]), ...(initial?.line && initial.line !== "common" ? [initial.line] : []), "common"])];
   const [error, setError] = useState("");
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState("");
@@ -117,6 +122,8 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
       category,
       subcategory,
       relatedOrderId: isBrak ? linkedOrderId : (initial?.relatedOrderId || undefined),
+      // Brak — yo'nalishni buyurtmadan oladi
+      line: isBrak ? undefined : txLineSel,
       ...(cleanPaint.length ? { paintLines: cleanPaint } : {}),
     };
     onSave(tx);
@@ -128,6 +135,24 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
         <Field label="Sana">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={getInputStyle()} />
         </Field>
+        {!isBrak && (
+          <Field label="Kimga tegishli">
+            <div role="group" aria-label="Kimga tegishli" data-testid="tx-line" style={{ display: "flex", gap: 4, background: THEME.surface, borderRadius: 11, padding: 3 }}>
+              {lineOptions.map((v) => {
+                const on = txLineSel === v;
+                const c = v === "common" ? THEME.text : lineColor(v, THEME.isDark);
+                return (
+                  <button key={v} type="button" onClick={() => setTxLineSel(v)} aria-pressed={on} data-line={v}
+                    style={{ flex: 1, minHeight: 36, borderRadius: 9, border: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, padding: "4px 6px",
+                      background: on ? THEME.card : "transparent", color: on ? c : THEME.muted, boxShadow: on ? THEME.shadowSm : "none" }}>
+                    {v === "common" ? "Umumiy (ikkalasi)" : curLine.line === "all" ? LINE_META[v].name : `Faqat ${LINE_META[v].name}`}
+                  </button>
+                );
+              })}
+            </div>
+            {txLineSel === "common" && <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>Ijara, svet, internet kabi — yo'nalishlarga oylik tushum ulushiga qarab bo'linadi.</div>}
+          </Field>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <Field label="Kategoriya">
             <div style={{ display: "flex", gap: 6 }}>

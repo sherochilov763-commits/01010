@@ -996,3 +996,11 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 
 ### 💬 «Javob shart emas» (2026-10)
 «Javob kutmoqda» chatni ochish bilan o'chmaydi — mijozga javob yozilgandagina o'chadi (aks holda ochib ko'rib, javob unutilardi). Javob kerak bo'lmagan chatlar uchun («Rahmat», «Xo'p»): ochiq chatdagi «Mijoz … javob kutmoqda» qatoridagi yoki ro'yxatda chatni bosib turganda (kompyuterda — o'ng tugma) chiqadigan **«Javob shart emas»**. Shundan keyin chat «Javob kutmoqda», «Bugun» ekrani va kechikish haqidagi Telegram eslatmalaridan chiqadi; mijoz yana yozsa — avtomatik qaytadi.
+
+## 🔀 Ikki yo'nalish: UVIXPRINT / UVONYX — 1-qadam (2026-10)
+- **Yo'nalish kartasi** chap menyu tepasida (telefonda va ixcham menyuda — tepa paneldagi yorliq, bosilsa pastdan varaq). Tanlov har xodimga shu qurilmada eslab qolinadi. Tezkor tugmalar: **Ctrl 1** — UVIXPRINT, **Ctrl 2** — UVONYX, **Ctrl 3** — ikkalasi (faqat rahbar).
+- Tanlangan yo'nalishda **Bugun, Dashboard, Buyurtmalar, Rasxod, Operatsiyalar, Mijozlar va Hisobot** faqat shu yo'nalish ma'lumotlarini ko'rsatadi; ekran tepasida yo'nalish rangidagi ingichka chiziq.
+- **Rasxod**: «Faqat UVONYX / Umumiy (ikkalasi)». Umumiy rasxod ro'yxatda to'liq summasi bilan, qoldiq/foyda hisobida esa shu oydagi tushum ulushiga qarab bo'linadi (tushum bo'lmasa — teng). Eski rasxodlar: buyurtmaga bog'langan bo'lsa — o'sha buyurtma yo'nalishi, aks holda «Umumiy».
+- **Raqamlash**: UVONYX buyurtmalari `ON-YYMMDD-NNN`, UVIXPRINT — `UV-…` (serverdagi smeta → buyurtma ham).
+- **Bo'yoq ombori** faqat UVIXPRINT yo'nalishida. Rahbar standart holatda «Ikkalasi»ni ko'radi (avvalgidek), boshqa xodimlar — UVIXPRINT. Ishchi ilovasi, Chatlar va CRM o'zgarmadi.
+- Fayllar: `frontend/src/lib/lines.js`, `frontend/src/components/LineSwitcher.jsx`; testlar: `tests/unit/lines.test.mjs`, `tests/e2e/test_lines.py`.

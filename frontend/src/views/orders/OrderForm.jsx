@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus, Upload, X } from "lucide-react";
 import { Button, Field, Modal, MultiPaymentLines, PaymentTypeSelector, getIconBtn, getInputStyle } from "../../components/ui.jsx";
 import { generateOrderNumber, orderBrakSum, orderTotalPaid } from "../../lib/finance.js";
+import { useLine } from "../../lib/lines.js";
 import { fmt, money, todayStr, uid, usd } from "../../lib/format.js";
 import { isWorkerRole } from "../../constants.js";
 import { THEME } from "../../theme.js";
@@ -63,7 +64,8 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
 
   const [date, setDate] = useState(initial?.date || todayStr());
   const [customer, setCustomer] = useState(initial?.customer || prefillCustomer || "");
-  const [bizLine, setBizLine] = useState(initial?.subcategory || BIZ_LINES[0]);
+  const curLine = useLine();
+  const [bizLine, setBizLine] = useState(initial?.subcategory || (curLine.line !== "all" ? curLine.line : BIZ_LINES[0]));
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
 
   const [materialLines, setMaterialLines] = useState(
@@ -185,7 +187,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
       // Tahrirlashda formada bo'lmagan maydonlar (smeta guruhi, holat, vazifalar, lid) saqlanib qoladi
       ...(initial || {}),
       id: orderId,
-      orderNumber: initial?.orderNumber || generateOrderNumber(allOrders, date),
+      orderNumber: initial?.orderNumber || generateOrderNumber(allOrders, date, bizLine),
       date,
       customer: customer.trim(),
       subcategory: bizLine,

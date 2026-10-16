@@ -303,7 +303,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const orders = (() => { try { const v = ordersRaw ? JSON.parse(ordersRaw) : []; return Array.isArray(v) ? v : []; } catch { return []; } })();
     const settings = readJson("uvix:settings", {}) || {};
     const rate = Math.round(Number(settings.usdRate) || 12700);
-    const prefix = `UV-${date.replace(/-/g, "").slice(2)}-`;
+    const prefix = `${subcategory === "UVONYX" ? "ON" : "UV"}-${date.replace(/-/g, "").slice(2)}-`; // yo'nalish: UV-… / ON-…
     let seq = orders.reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0);
 
     const created = items.map((it, i) => {
