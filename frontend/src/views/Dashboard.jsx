@@ -9,7 +9,6 @@ import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardCon
 import { CardStyleContext } from "../components/CardStyleMenu.jsx";
 import { scopeByLine, useLine } from "../lib/lines.js";
 import { LineTag } from "../components/LineSwitcher.jsx";
-import { ProfitLoss } from "./dashboard/ProfitLoss.jsx";
 
 // Grafiklar alohida bo'lakda — dashboard raqamlari grafik kutubxonasini kutmasdan chiqadi
 const MoneyBarChart = lazy(() => import("./dashboard/Charts.jsx").then((m) => ({ default: m.MoneyBarChart })));
@@ -540,9 +539,6 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         )}
       </div>
 
-      {isAdmin && line === "all" && !editMode && (
-        <ProfitLoss orders={ordersIn} transactions={expensesIn} month={periodMode === "month" && periodMonth ? periodMonth : todayStr().slice(0, 7)} />
-      )}
       <style>{EDITOR_CSS}</style>
       {editMode && (
         <EditToolbar isAdmin={isAdmin} cfg={cfg} onDone={() => setEditMode(false)} onAdd={() => setGalleryOpen(true)} hiddenCount={cfg.editing.layout.filter((w) => !w.visible).length} />

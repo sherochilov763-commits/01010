@@ -5,7 +5,7 @@ import { exportWorkbook } from "../../lib/excel.js";
 import { money, paymentTypeBadgeColors, paymentTypeLabel, todayStr, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { TransactionForm } from "./TransactionForm.jsx";
-import { LINE_META, lineColor, lineOfOrder, txLine, useLine } from "../../lib/lines.js";
+import { lineOfOrder, txLine, useLine } from "../../lib/lines.js";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 
 /* ---------------- EXPENSE VIEW ---------------- */
@@ -20,19 +20,17 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickAddNonce]);
   const [confirmDel, setConfirmDel] = useState(null);
-  // Yo'nalish belgisi: «Ikkalasi» rejimida hammasiga, bitta yo'nalishda — faqat «Umumiy»ga
-  const { line: curLine } = useLine();
-  const lineById = useMemo(() => new Map((orders || []).map((o) => [o.id, lineOfOrder(o)])), [orders]);
-  // Rahbar: Barchasi / UVIXPRINT / UVONYX / Umumiy filtri (tanlov shu qurilmada eslab qolinadi)
-  const [lineF, setLineFRaw] = useState(() => { try { return localStorage.getItem("uvix_exp_line") || "all"; } catch { return "all"; } });
-  const setLineF = (v) => { setLineFRaw(v); try { localStorage.setItem("uvix_exp_line", v); } catch { /* */ } };
-  const list = transactions.filter((t) => t.type === "chiqim" && (curLine !== "all" || lineF === "all" || txLine(t, lineById) === lineF)).sort((a, b) => (a.date < b.date ? 1 : -1));
-  const { page, setPage, totalPages, pageItems } = usePagination(list, [transactions.length, lineF]);
+  const list = transactions.filter((t) => t.type === "chiqim").sort((a, b) => (a.date < b.date ? 1 : -1));
+  const { page, setPage, totalPages, pageItems } = usePagination(list, [transactions.length]);
   const orderById = useMemo(() => {
     const map = {};
     (orders || []).forEach((o) => { map[o.id] = o; });
     return map;
   }, [orders]);
+
+  // Yo'nalish belgisi: «Ikkalasi» rejimida hammasiga, bitta yo'nalishda — faqat «Umumiy»ga
+  const { line: curLine } = useLine();
+  const lineById = useMemo(() => new Map((orders || []).map((o) => [o.id, lineOfOrder(o)])), [orders]);
   const tagOf = (t) => { const l = txLine(t, lineById); return curLine === "all" || l === "common" ? <LineTag line={l} /> : null; };
 
   function exportExcel() {
@@ -41,21 +39,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        {curLine === "all" && (
-          <div role="group" aria-label="Yo'nalish" data-testid="exp-line" style={{ display: "flex", gap: 6, marginRight: "auto", flexWrap: "wrap" }}>
-            {[["all", "Barchasi"], ["UVIXPRINT", "UVIXPRINT"], ["UVONYX", "UVONYX"], ["common", "Umumiy"]].map(([v, l]) => {
-              const on = lineF === v;
-              return (
-                <button key={v} type="button" onClick={() => setLineF(v)} aria-pressed={on} data-line={v} className="uvix-fchip"
-                  style={{ height: 32, padding: "0 12px", borderRadius: 16, whiteSpace: "nowrap", cursor: "pointer", fontSize: 13, fontWeight: 500, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6,
-                    border: `1px solid ${on ? THEME.text : THEME.border2}`, background: on ? THEME.text : THEME.card, color: on ? THEME.card : THEME.mutedDark }}>
-                  {LINE_META[v] && <span style={{ width: 7, height: 7, borderRadius: "50%", background: lineColor(v, THEME.isDark) }} />}{l}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
         <Button variant="ghost" onClick={exportExcel} disabled={list.length === 0}><Download size={14} /> Excel</Button>
         <Button onClick={() => setModal({})}><Plus size={15} /> Yangi rasxod</Button>
       </div>
