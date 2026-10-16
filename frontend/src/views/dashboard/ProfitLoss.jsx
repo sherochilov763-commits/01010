@@ -31,7 +31,7 @@ export function ProfitLoss({ orders, transactions, month }) {
     { k: "profit", l: "Sof foyda", f: (c) => num(c.profit), strong: true },
     { k: "margin", l: "Marja", f: (c) => pct(c.margin) },
     { k: "change", l: "O'tgan oyga nisbatan", f: (c) => <Change v={c.change} /> },
-    { k: "debt", l: "Qarzdorlik (hozir)", f: (c) => num(c.debt) },
+    { k: "debt", l: "Qarzdorlik (barcha davr)", f: (c) => num(c.debt) },
   ];
   const incTot = p.total.income;
   const th = { padding: "8px 12px", fontSize: 12, fontWeight: 600, color: THEME.muted, textAlign: "right", whiteSpace: "nowrap" };
