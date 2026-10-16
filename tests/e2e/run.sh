@@ -9,11 +9,11 @@ PORT="${E2E_PORT:-4990}"
 mkdir -p "$OUT"
 export E2E_BASE="http://localhost:$PORT" E2E_OUT="$OUT"
 [ -f "$ROOT/frontend/dist/index.html" ] || { echo "frontend/dist yo'q — avval: npm run build"; exit 1; }
-SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_themes}"
+SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_themes}"
 fail=0
 for s in $SUITES; do
   TMP="$(mktemp -d)"; export E2E_DB="$TMP/uvix.db"
-  (cd "$ROOT/backend" && exec env DB_PATH="$E2E_DB" PORT="$PORT" JWT_SECRET="e2e-test-secret" node server.js) > "$OUT/$s.server.log" 2>&1 &
+  (cd "$ROOT/backend" && exec env DB_PATH="$E2E_DB" PORT="$PORT" JWT_SECRET="e2e-test-secret" UVIX_JOBS_MS=1500 node server.js) > "$OUT/$s.server.log" 2>&1 &
   PID=$!
   up=0; for _ in $(seq 1 100); do curl -sf "$E2E_BASE/api/health" > /dev/null && { up=1; break; }; sleep 0.2; done
   if [ $up = 0 ]; then echo "Server ishga tushmadi ($s)"; cat "$OUT/$s.server.log"; kill $PID 2>/dev/null; exit 1; fi

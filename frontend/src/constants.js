@@ -1,5 +1,5 @@
 import { THEME, mixColors } from "./theme.js";
-import { Banknote, Clock, Contact, Droplets, CreditCard, FileBarChart2, FolderTree, Landmark, LayoutDashboard, ListChecks, MessageCircle, Package, Settings, TrendingDown, Users, Users2 } from "lucide-react";
+import { Banknote, ClipboardCheck, Clock, Contact, Droplets, CreditCard, FileBarChart2, FolderTree, Landmark, LayoutDashboard, ListChecks, MessageCircle, Package, Settings, TrendingDown, Users, Users2 } from "lucide-react";
 
 export const DEFAULT_CATEGORIES = {
   "Material": ["Shisha", "MDF", "Plastik", "Alyuminiy", "Qog'oz", "Boshqa material"],
@@ -37,8 +37,8 @@ export const LEAD_STAGES = [
 export const ORDER_READY_STAGES = ["design", "printing", "ready", "won"];
 
 // Rollar: admin va operator — to'liq tizim; dizayner va pechatchi — faqat o'z vazifalari (pulsiz)
-export const ROLE_LABELS = { admin: "Administrator", operator: "Operator", designer: "Dizayner", printer: "Pechatchi" };
-export const WORKER_ROLES = ["designer", "printer"];
+export const ROLE_LABELS = { admin: "Administrator", operator: "Operator", designer: "Dizayner", printer: "Pechatchi", installer: "Montajchi" };
+export const WORKER_ROLES = ["designer", "printer", "installer"];
 export const isWorkerRole = (role) => WORKER_ROLES.includes(role);
 export const roleLabel = (role) => ROLE_LABELS[role] || "Operator";
 
@@ -51,6 +51,7 @@ export const NAV = [
   { key: "expense", label: "Rasxod", icon: TrendingDown },
   { key: "operations", label: "Operatsiyalar", icon: ListChecks },
   { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true },
+  { key: "jobs", label: "Vazifalar", icon: ClipboardCheck },
   { key: "categories", label: "Kategoriyalar", icon: FolderTree },
   { key: "employees", label: "Xodimlar", icon: Users, adminOnly: true },
   { key: "paint", label: "Bo'yoq ombori", icon: Droplets },
@@ -62,7 +63,7 @@ export const NAV = [
 export const NAV_GROUP = {
   orders: "Savdo", crm: "Savdo", chats: "Savdo", customers: "Savdo",
   expense: "Moliya", operations: "Moliya", report: "Moliya",
-  paint: "Ishlab chiqarish", attendance: "Ishlab chiqarish", employees: "Ishlab chiqarish", categories: "Ishlab chiqarish",
+  jobs: "Ishlab chiqarish", paint: "Ishlab chiqarish", attendance: "Ishlab chiqarish", employees: "Ishlab chiqarish", categories: "Ishlab chiqarish",
 };
 
 export const PAYMENT_TYPES = [

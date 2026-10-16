@@ -5,6 +5,7 @@ import { ArrowLeft, CalendarClock, Check, CircleUser, FileImage, LayoutGrid, Lis
 import { Button, Card, ConfirmDialog, Field, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { roleLabel } from "../../constants.js";
 import { LINE_META, lineColor } from "../../lib/lines.js";
+import { MyJobs } from "../jobs/JobsView.jsx";
 import { SC, THEME, readableOn } from "../../theme.js";
 import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
@@ -47,6 +48,7 @@ export function WorkerApp({ currentUser, onLogout }) {
   const [confirmDone, setConfirmDone] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const isDesigner = currentUser.role === "designer";
+  const isInstaller = currentUser.role === "installer";
   // QR yorliq: skanerlangan buyurtma (telefon kamerasi havolasi yoki ilovadagi «Skaner»)
   const [scanned, setScanned] = useState(() => takePendingOrder());
   useEffect(() => {
@@ -144,6 +146,9 @@ export function WorkerApp({ currentUser, onLogout }) {
           <WorkerSettings currentUser={currentUser} onLogout={onLogout} />
         ) : (
           <>
+            {isInstaller ? <h1 style={{ margin: "0 0 14px", fontSize: 22, fontWeight: 700 }}>Mening vazifalarim</h1> : null}
+            <MyJobs currentUser={currentUser} hideEmpty={!isInstaller} />
+            {!isInstaller && <>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
               <div>
                 <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>Mening vazifalarim</h1>
@@ -207,6 +212,7 @@ export function WorkerApp({ currentUser, onLogout }) {
                 ))}
               </div>
             )}
+            </>}
           </>
         )}
       </main>

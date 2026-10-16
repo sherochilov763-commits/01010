@@ -15,11 +15,13 @@ const ROLE_DESCRIPTIONS = {
   operator: "Faqat o'z tushum/rasxodlarini kiritadi va ko'radi",
   designer: "Faqat o'ziga biriktirilgan dizayn vazifalarini ko'radi — pul ma'lumotlarisiz",
   printer: "Faqat o'ziga biriktirilgan pechat vazifalarini ko'radi — pul ma'lumotlarisiz",
+  installer: "Faqat o'ziga berilgan o'lchov, montaj, yetkazish vazifalarini ko'radi — pul ma'lumotlarisiz",
 };
 const ROLE_BADGE = (role) => ({
   admin: { color: THEME.violet, bg: THEME.violetSoft },
   designer: { color: THEME.blue, bg: THEME.blueBg },
   printer: { color: THEME.cyan, bg: THEME.cyanBg },
+  installer: { color: THEME.amber || "#B45309", bg: THEME.amberBg || "#FDF3E3" },
 }[role] || { color: THEME.greenText, bg: THEME.greenBg });
 
 export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
@@ -169,10 +171,11 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
               <input value={name} onChange={(e) => setName(e.target.value)} style={getInputStyle()} placeholder="Ism familiya" />
             </Field>
             <Field label="Rol">
-              <select value={role} onChange={(e) => { setRole(e.target.value); setLine(["designer", "printer"].includes(e.target.value) ? "common" : "UVIXPRINT"); }} style={getInputStyle()}>
+              <select value={role} onChange={(e) => { setRole(e.target.value); setLine(["designer", "printer", "installer"].includes(e.target.value) ? "common" : "UVIXPRINT"); }} style={getInputStyle()}>
                 <option value="operator">Operator</option>
                 <option value="designer">Dizayner</option>
                 <option value="printer">Pechatchi</option>
+                <option value="installer">Montajchi</option>
                 <option value="admin">Administrator</option>
               </select>
               <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]}</div>

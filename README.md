@@ -1015,3 +1015,12 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 ## 📊 Yo'nalishlar — 2-etap: «Foyda va zarar» (2026-10)
 - Rahbar Dashboard'i tepasida jadval: **UVIXPRINT | UVONYX | Jami** — tushum (shu oydagi to'lovlar), to'g'ridan-to'g'ri rasxod, umumiy rasxod ulushi (tushum nisbatida), sof foyda, marja, o'tgan oyga nisbatan o'zgarish, hozirgi qarzdorlik va tushum ulushi chizig'i. Oy — Dashboard'dagi «Oy» tanlovi (aks holda joriy oy). Hisob: `frontend/src/lib/pnl.js`.
 - Rasxod ro'yxatida rahbar uchun filtr: Barchasi / UVIXPRINT / UVONYX / Umumiy (shu qurilmada eslab qolinadi).
+
+## ✅ Yo'nalishlar — 3-etap: «Vazifalar» (2026-10)
+- Menyuda **Vazifalar** (Ishlab chiqarish guruhi): o'lchov, montaj, yetkazish, boshqa. Har vazifada: turi, buyurtma (ixtiyoriy), nomi, sana, vaqt, manzil, mijoz telefoni, bir yoki bir nechta mas'ul, izoh, holat (Yangi / Jarayonda / Bajarildi / Bekor).
+- Ko'rinish: **Ro'yxat** (Kechikkan, Bugun, Ertaga, Keyinroq, Sanasiz, Bajarilgan) va **hafta kalendari**; turi bo'yicha filtr, «Faqat menga». Dizayn/pechat vazifalari ham shu yerda (faqat ko'rish).
+- **Zanjir**: buyurtma «Tayyor» → avtomatik «Yetkazish» (UVIXPRINT) yoki «Montaj» (UVONYX), mas'ulsiz — menejer tayinlaydi. Buyurtmaga bog'langan montaj/yetkazish «Bajarildi» → buyurtma «Topshirildi» (lid ham yangilanadi).
+- **Ishchi telefoni**: «Joydagi ishlar» — Bugun / Ertaga / Keyin / Kechikkan, «Yo'l» (xarita), «Qo'ng'iroq», «Bajarildi». Yangi rol **Montajchi** (faqat o'z vazifalari, pulsiz).
+- **Huquqlar**: rahbar — hammasi; yo'nalish xodimi — o'z yo'nalishi; ishchi — faqat o'ziga berilgani (faqat holat va izoh). Vazifani menejer/rahbar qo'shadi.
+- **Telegram**: tayinlanganda mas'ulga xabar; sana va vaqt bo'lsa — 1 soat oldin eslatma.
+- Server: `backend/jobs.js` (`/api/jobs`), ma'lumot `uvix:jobs` (KV orqali yopiq). Test: `tests/e2e/test_jobs.py`.

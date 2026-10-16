@@ -665,3 +665,16 @@ export async function revokeSession(id) {
 // ---- So'nggi xatolar (admin) ----
 export const fetchSystemErrors = () => apiReq("/system/errors");
 export const clearSystemErrors = () => apiReq("/system/errors", "DELETE");
+
+// ---------- Vazifalar (o'lchov, montaj, yetkazish) ----------
+async function jobsCall(path, method = "GET", body) {
+  const res = await fetch(`${API_BASE}/jobs${path}`, { method, headers: { ...authHeaders(), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Vazifani saqlab bo'lmadi");
+  return data;
+}
+export const fetchJobs = () => jobsCall("");
+export const createJob = (job) => jobsCall("", "POST", job);
+export const updateJob = (id, patch) => jobsCall(`/${encodeURIComponent(id)}`, "PATCH", patch);
+export const deleteJob = (id) => jobsCall(`/${encodeURIComponent(id)}`, "DELETE");

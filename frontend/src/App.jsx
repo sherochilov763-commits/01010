@@ -3,6 +3,7 @@ import LoginScreen from "./auth/LoginScreen.jsx";
 import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
 import { TodayView } from "./views/dashboard/TodayView.jsx";
+import { JobsView } from "./views/jobs/JobsView.jsx";
 import { LineContext, scopeByLine, useLineState } from "./lib/lines.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
 import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
@@ -1121,6 +1122,7 @@ function AppInner() {
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
             )}
+            {view === "jobs" && <JobsView employees={employees} orders={activeOrders} currentUser={currentUser} />}
             {view === "paint" && (
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
