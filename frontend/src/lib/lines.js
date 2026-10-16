@@ -12,9 +12,28 @@ export const LINE_META = {
   UVIXPRINT: { key: "UVIXPRINT", name: "UVIXPRINT", short: "UV", prefix: "UV", sub: "UV bosma", color: "#1F5FD6", colorDark: "#6E9BF0" },
   UVONYX: { key: "UVONYX", name: "UVONYX", short: "ON", prefix: "ON", sub: "Oniks / shisha", color: "#0E7C6B", colorDark: "#3FB8A3" },
 };
+// Yo'nalish sozlamalari (rahbar: Sozlamalar → Savdo → «Yo'nalishlar»): rang va raqam prefiksi.
+// settings.lineProfiles = { UVIXPRINT: { color, prefix, logo, companyLine, cardNumber, cardHolder, managerPhone, managerName }, UVONYX: {...} }
+const LINE_DEFAULTS = Object.fromEntries(Object.entries(LINE_META).map(([k, v]) => [k, { ...v }]));
+const HEX = /^#[0-9a-fA-F]{6}$/;
+export const cleanPrefix = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+const lighten = (hex, k = 0.4) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(hex.slice(i, i + 2), 16) + (255 - parseInt(hex.slice(i, i + 2), 16)) * k).toString(16).padStart(2, "0")).join("");
+export function applyLineProfiles(profiles) {
+  const pfx = {};
+  for (const l of LINES) {
+    const p = (profiles && profiles[l]) || {};
+    const d = LINE_DEFAULTS[l];
+    const color = HEX.test(p.color || "") ? p.color : d.color;
+    pfx[l] = cleanPrefix(p.prefix).length >= 2 ? cleanPrefix(p.prefix) : d.prefix;
+    Object.assign(LINE_META[l], { color, colorDark: color === d.color ? d.colorDark : lighten(color), prefix: pfx[l], short: pfx[l].slice(0, 2) });
+  }
+  // Ikkala yo'nalish prefiksi bir xil bo'lib qolmasin (raqamlar aralashadi)
+  if (LINE_META.UVIXPRINT.prefix === LINE_META.UVONYX.prefix) { LINE_META.UVONYX.prefix = LINE_DEFAULTS.UVONYX.prefix; LINE_META.UVONYX.short = LINE_DEFAULTS.UVONYX.short; }
+}
+export const lineProfileOf = (settings, line) => ({ ...((settings?.lineProfiles || {})[line] || {}) });
 export const lineColor = (line, dark) => (LINE_META[line] ? (dark ? LINE_META[line].colorDark : LINE_META[line].color) : dark ? "#A1A1AA" : "#52525B");
 export const lineOfOrder = (o) => (o?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
-export const numberPrefix = (line) => (line === "UVONYX" ? "ON" : "UV");
+export const numberPrefix = (line) => LINE_META[line === "UVONYX" ? "UVONYX" : "UVIXPRINT"].prefix;
 
 export function txLine(t, orderLineById) {
   if (t?.line === COMMON || LINES.includes(t?.line)) return t.line;

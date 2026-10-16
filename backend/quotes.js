@@ -177,6 +177,17 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
   }
   const { lineOfLead } = require("./lines");
   const leadOk = (req, l) => !req.lineScope || lineOfLead(l) === req.lineScope;
+  // Buyurtma raqami prefiksi: rahbar sozlagan (settings.lineProfiles[line].prefix, 2–4 belgi), aks holda UV / ON
+  function linePrefix(line) {
+    const def = line === "UVONYX" ? "ON" : "UV";
+    let st = {};
+    try { st = readJson("uvix:settings", {}) || {}; } catch { st = {}; }
+    const clean = (p) => String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    const mine = clean(st.lineProfiles?.[line]?.prefix);
+    const other = clean(st.lineProfiles?.[line === "UVONYX" ? "UVIXPRINT" : "UVONYX"]?.prefix) || (line === "UVONYX" ? "UV" : "ON");
+    if (mine.length < 2) return def;
+    return line === "UVONYX" && mine === other ? def : mine;
+  }
   const findOrderAny = (orders, id) => (Array.isArray(orders) ? orders.find((o) => o && o.id === id && !o.deletedAt) : null);
   // Yo'nalish: xodim faqat o'z yo'nalishidagi buyurtma bilan ishlaydi (boshqasi «topilmadi»)
   const findOrder = (orders, id, req) => { const o = findOrderAny(orders, id); return o && (!req?.lineScope || (o.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") === req.lineScope) ? o : null; };
@@ -307,7 +318,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const orders = (() => { try { const v = ordersRaw ? JSON.parse(ordersRaw) : []; return Array.isArray(v) ? v : []; } catch { return []; } })();
     const settings = readJson("uvix:settings", {}) || {};
     const rate = Math.round(Number(settings.usdRate) || 12700);
-    const prefix = `${subcategory === "UVONYX" ? "ON" : "UV"}-${date.replace(/-/g, "").slice(2)}-`; // yo'nalish: UV-… / ON-…
+    const prefix = `${linePrefix(subcategory)}-${date.replace(/-/g, "").slice(2)}-`; // yo'nalish: UV-… / ON-… (prefiks — Sozlamalar → Yo'nalishlar)
     let seq = orders.reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0);
 
     const created = items.map((it, i) => {

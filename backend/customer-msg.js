@@ -63,6 +63,15 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     if (u) return { peer: u, label: `@${u}`, via: "username", name };
     return null;
   }
+  // Yo'nalish rekvizitlari (Sozlamalar → Yo'nalishlar): to'ldirilgan maydonlar umumiy rekvizitlar o'rniga ishlatiladi
+  const PROFILE_FIELDS = ["companyLine", "cardNumber", "cardHolder", "managerPhone", "managerName"];
+  function withLine(cfg, order) {
+    const line = order?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT";
+    const prof = (readJson("uvix:settings", {}) || {}).lineProfiles?.[line] || {};
+    const out = { ...cfg };
+    for (const k of PROFILE_FIELDS) if (typeof prof[k] === "string" && prof[k].trim()) out[k] = prof[k].trim();
+    return out;
+  }
   const cardLine = (cfg) => (cfg.cardNumber ? `Karta: ${cfg.cardNumber}${cfg.cardHolder ? ` (${cfg.cardHolder})` : ""}` : "");
 
   async function deliver(type, rcp, fn, extra) {
@@ -140,12 +149,13 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     const what = list.length > 1
       ? list.map((o) => `• ${o.title || o.materialType || "Buyurtma"} (${o.orderNumber})`).join("\n")
       : `${list[0].title || list[0].materialType || "Buyurtma"} (${list[0].orderNumber})`;
+    const lc = withLine(cfg, list[0]);
     const text = [
       list.length > 1 ? `✅ Buyurtmalaringiz tayyor!` : `✅ Buyurtmangiz tayyor!`,
       what,
       `Olib ketishingiz mumkin.`,
       debt > 0 ? `To'lanishi kerak: ${money(debt)}` : "",
-      cfg.managerPhone ? `Savollar bo'yicha: ${cfg.managerPhone}${cfg.managerName ? ` (${cfg.managerName})` : ""}` : "",
+      (lc.managerPhone ? `Savollar bo'yicha: ${lc.managerPhone}${lc.managerName ? ` (${lc.managerName})` : ""}` : ""),
     ].filter(Boolean).join("\n");
     return deliver("ready", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: list.map((o) => o.orderNumber).join(", ") });
   }
@@ -176,7 +186,7 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
       `UVIX'dan eslatma: buyurtmalaringiz bo'yicha ${money(g.debt)} to'lov qolgan.`,
       list,
       "",
-      cardLine(cfg) || null,
+      cardLine(withLine(cfg, g.orders[0])) || null,
       `Agar to'lagan bo'lsangiz, iltimos chek rasmini shu yerga yuboring. Rahmat!`,
     ].filter((x) => x != null).join("\n");
   }

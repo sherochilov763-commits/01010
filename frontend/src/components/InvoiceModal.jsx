@@ -6,6 +6,21 @@ import { THEME } from "../theme.js";
 import { TG_BLUE } from "./LeadSource.jsx";
 import { fetchCustMsgConfig, fetchInvoiceRecipient, sendInvoice } from "../storage.js";
 import { drawInvoice, ensureInvoiceFonts, invoiceCaption } from "../lib/invoiceCanvas.js";
+import { storageGet } from "../lib/kv.js";
+import { lineOfOrder } from "../lib/lines.js";
+
+// Yo'nalish rekvizitlari va logosi (Sozlamalar → Savdo → Yo'nalishlar) — to'ldirilganlari umumiysini almashtiradi
+const PROFILE_FIELDS = ["companyLine", "cardNumber", "cardHolder", "managerPhone", "managerName"];
+async function lineCfg(base, order) {
+  const st = await storageGet("uvix:settings", true, null).catch(() => null);
+  const prof = st?.lineProfiles?.[lineOfOrder(order)] || {};
+  const out = { ...base };
+  for (const k of PROFILE_FIELDS) if (typeof prof[k] === "string" && prof[k].trim()) out[k] = prof[k].trim();
+  if (typeof prof.logo === "string" && prof.logo.startsWith("data:image/")) {
+    out.logoImg = await new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = prof.logo; });
+  }
+  return out;
+}
 
 export function InvoiceModal({ order, customer, isAdmin, onClose }) {
   const [cfg, setCfg] = useState(null);
@@ -18,7 +33,7 @@ export function InvoiceModal({ order, customer, isAdmin, onClose }) {
 
   useEffect(() => {
     let alive = true;
-    fetchCustMsgConfig().then((d) => { if (!alive) return; setCfg(d.config || {}); setConnected(d.connected); }).catch(() => alive && setCfg({}));
+    fetchCustMsgConfig().then(async (d) => { const c = await lineCfg(d.config || {}, order); if (!alive) return; setCfg(c); setConnected(d.connected); }).catch(() => alive && setCfg({}));
     fetchInvoiceRecipient(order.id).then((d) => { if (!alive) return; setRcp(d.recipient); setConnected(d.connected); }).catch(() => alive && setRcp(null));
     return () => { alive = false; };
   }, [order.id]);

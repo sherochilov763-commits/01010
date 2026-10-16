@@ -1,6 +1,7 @@
 // production.js — buyurtma holati, smeta hisob-kitobi va to'lov taqsimoti (brauzer tomoni).
 // Server (backend/production.js, backend/quotes.js) bilan bir xil qoidalar: bu yerda faqat oldindan ko'rsatish uchun,
 // yakuniy hisob serverda qayta bajariladi.
+import { numberPrefix } from "./lines.js";
 import { THEME } from "../theme.js";
 import { fmt, money } from "./format.js";
 
@@ -149,7 +150,7 @@ export function allocate(amount, targets, mode = "prop") {
 
 // Keyingi buyurtma raqamlari (oldindan ko'rsatish; yakuniy raqamni server beradi)
 export function predictNumbers(allOrders, dateStr, n, line) {
-  const prefix = `${line === "UVONYX" ? "ON" : "UV"}-${String(dateStr).replace(/-/g, "").slice(2)}-`;
+  const prefix = `${numberPrefix(line)}-${String(dateStr).replace(/-/g, "").slice(2)}-`;
   const max = (allOrders || []).reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0);
   return Array.from({ length: n }, (_, i) => `${prefix}${String(max + i + 1).padStart(3, "0")}`);
 }

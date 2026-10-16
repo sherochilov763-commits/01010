@@ -1,3 +1,4 @@
+import { numberPrefix } from "./lines.js";
 import { DASHBOARD_WIDGET_CATALOG, DEFAULT_DASHBOARD_LAYOUT } from "../constants.js";
 import { localDateStr, monthKey, todayStr } from "./format.js";
 
@@ -20,7 +21,7 @@ export function orderAddedValue(order, transactions) {
 }
 export function generateOrderNumber(existingOrders, dateStr, line) {
   const datePart = (dateStr || todayStr()).replace(/-/g, "").slice(2); // YYMMDD
-  const prefix = `${line === "UVONYX" ? "ON" : "UV"}-${datePart}-`; // yo'nalish bo'yicha: UV-… / ON-…
+  const prefix = `${numberPrefix(line)}-${datePart}-`; // yo'nalish bo'yicha: UV-… / ON-… (prefiks — sozlamadan)
   const sameDay = existingOrders.filter((o) => (o.orderNumber || "").startsWith(prefix));
   const seq = String(sameDay.length + 1).padStart(3, "0");
   return `${prefix}${seq}`;

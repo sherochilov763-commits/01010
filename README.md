@@ -1058,3 +1058,8 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Umumiy rasxod: `tx.paidFrom` — qaysi kassadan to'langan (belgilanmagan eski umumiy rasxod — UVIXPRINT). Foyda/zarar hisobida umumiy rasxod avvalgidek ulush bo'yicha.
 - Ichki o'tkazma: `uvix:transfers` (faqat rahbar yozadi; xodimga faqat o'z yo'nalishiga tegishlisi beriladi). O'chirish — belgilanadi (`deletedAt`), tarix saqlanadi.
 - Test: `tests/e2e/test_kassa.py`.
+
+## ⚙️ Yo'nalishlar — 10-etap: yo'nalish sozlamalari (2026-10)
+- Sozlamalar → Savdo → «Yo'nalishlar» (`settings.lineProfiles[line]`): `color`, `prefix` (2–4 belgi, ikkalasi har xil), `logo` (PNG data URL, ≤480px), `companyLine`, `cardNumber`, `cardHolder`, `managerPhone`, `managerName`.
+- Rang va prefiks: `applyLineProfiles()` (`frontend/src/lib/lines.js`), server — `linePrefix()` (`backend/quotes.js`). Rekvizitlar: hisob-faktura (`InvoiceModal`), «tayyor» va qarz eslatmasi (`backend/customer-msg.js` → `withLine`).
+- Test: `tests/e2e/test_lineprof.py`.

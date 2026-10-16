@@ -4,7 +4,7 @@ import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
 import { TodayView } from "./views/dashboard/TodayView.jsx";
 import { JobsView } from "./views/jobs/JobsView.jsx";
-import { LineContext, WorkStatsContext, scopeByLine, useLineState } from "./lib/lines.js";
+import { LineContext, WorkStatsContext, applyLineProfiles, scopeByLine, useLineState } from "./lib/lines.js";
 import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
 import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos, fetchWorkStats } from "./storage.js";
@@ -729,6 +729,8 @@ function AppInner() {
   // Ikki yo'nalish: joriy ish maydoni (UVIXPRINT / UVONYX / admin — ikkalasi)
   const meEmp = currentUser ? employees.find((e) => e.id === currentUser.id) : null;
   const expenseRules = useMemo(() => rulesFrom(settings), [settings]);
+  // Yo'nalish rangi va raqam prefiksi (Sozlamalar → Yo'nalishlar) — bolalar chizilishidan oldin qo'llanadi
+  useMemo(() => applyLineProfiles(settings?.lineProfiles), [settings?.lineProfiles]);
   // Umumiy xodim oyligini bo'lish uchun bajarilgan ish statistikasi (faqat rahbar)
   const [workStats, setWorkStats] = useState(null);
   const wsAdmin = currentUser?.role === "admin";
