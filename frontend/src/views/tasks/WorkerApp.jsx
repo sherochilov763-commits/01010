@@ -146,7 +146,6 @@ export function WorkerApp({ currentUser, onLogout }) {
           <WorkerSettings currentUser={currentUser} onLogout={onLogout} />
         ) : (
           <>
-            {isInstaller ? <h1 style={{ margin: "0 0 14px", fontSize: 22, fontWeight: 700 }}>Mening vazifalarim</h1> : null}
             <MyJobs currentUser={currentUser} hideEmpty={!isInstaller} />
             {!isInstaller && <>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
@@ -234,7 +233,7 @@ export function WorkerApp({ currentUser, onLogout }) {
       {isMobile && (
         <nav className="uvix-worker-nav" aria-label="Asosiy menyu" style={{ background: THEME.card, borderTop: `1px solid ${THEME.border}` }}>
           {[
-            { k: "tasks", l: "Vazifalar", I: ListChecks, on: () => (screen === "settings" ? goBack() : null), active: screen !== "settings" },
+            { k: "tasks", l: isInstaller ? "Ishlarim" : "Vazifalar", I: ListChecks, on: () => (screen === "settings" ? goBack() : null), active: screen !== "settings" },
             { k: "scan", l: "Skaner", I: ScanLine, on: () => openScanner("order"), active: false, main: true },
             { k: "profile", l: "Profil", I: CircleUser, on: () => (screen === "settings" ? null : goScreen("settings")), active: screen === "settings" },
           ].map((t) => (

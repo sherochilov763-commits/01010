@@ -42,10 +42,12 @@ async def main():
         ok("buyurtma «Tayyor» → avtomatik «Yetkazish» vazifasi", len(auto) == 1 and auto[0]["kind"] == "deliver" and auto[0]["auto"] and auto[0]["line"] == "UVIXPRINT", auto)
         await d.reload(); await d.wait_for_timeout(2000)
         card = d.locator(f"[data-job='{auto[0]['id']}']") if auto else None
-        ok("ro'yxatda avtomatik vazifa (mas'ulsiz)", card is not None and await card.count() == 1 and "mas'ul tayinlanmagan" in await card.inner_text())
+        ok("ro'yxatda avtomatik vazifa (mas'ulsiz)", card is not None and await card.count() == 1 and "mas'ulsiz" in await card.inner_text())
         await card.click(); await d.wait_for_timeout(400)
+        await d.locator("[data-testid=job-drawer] [data-testid=drawer-edit]").click(); await d.wait_for_timeout(400)
         await d.locator("[data-testid=job-form] [data-person=jasur]").click()
         await d.locator("[data-testid=job-form] [data-testid=job-save]").click(); await d.wait_for_timeout(1000)
+        await d.locator("[data-testid=drawer-close]").click(); await d.wait_for_timeout(300)
         ok("Jasurga tayinlandi", jobs(adm) and [x for x in jobs(adm) if x["id"] == auto[0]["id"]][0]["assigneeIds"] == ["jasur"])
         # Kalendar
         await d.locator("[data-jobs-mode=calendar]").click(); await d.wait_for_timeout(500)

@@ -680,6 +680,14 @@ export const fetchJobs = () => jobsCall("");
 export const createJob = (job) => jobsCall("", "POST", job);
 export const updateJob = (id, patch) => jobsCall(`/${encodeURIComponent(id)}`, "PATCH", patch);
 export const deleteJob = (id) => jobsCall(`/${encodeURIComponent(id)}`, "DELETE");
+export async function uploadJobPhotos(id, files) {
+  const form = new FormData();
+  for (const f of files) form.append("photos", f);
+  const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(id)}/photos`, { method: "POST", headers: authHeaders(), body: form });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Rasmni yuklab bo'lmadi");
+  return data.job;
+}
 export async function fetchWorkStats() {
   const res = await fetch(`${API_BASE}/work-stats`, { headers: authHeaders() });
   if (!res.ok) return null;

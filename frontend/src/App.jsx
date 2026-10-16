@@ -1147,7 +1147,7 @@ function AppInner() {
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
             )}
-            {view === "jobs" && <JobsView employees={employees} orders={activeOrders} currentUser={currentUser} />}
+            {view === "jobs" && <JobsView employees={employees} orders={activeOrders} currentUser={currentUser} onGo={setView} />}
             {view === "paint" && (
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />

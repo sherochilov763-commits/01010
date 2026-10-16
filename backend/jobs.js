@@ -16,6 +16,16 @@ const SEEN = "uvix:jobsAutoSeen";
 const REM = "uvix:jobsReminded";
 const KINDS = { measure: "📏 O'lchov", install: "🛠 Montaj", deliver: "🚚 Yetkazish", other: "📌 Vazifa" };
 const STATUSES = ["new", "doing", "done", "cancelled"];
+const STATUS_L = { new: "Yangi", doing: "Jarayonda", done: "Bajarildi", cancelled: "Bekor" };
+// Tekshiruv ro'yxati — tur bo'yicha standart bandlar (vazifa yaratilganda qo'yiladi, keyin tahrirlanadi)
+const CHECKLIST = {
+  measure: ["Mijoz bilan kelishildi", "O'lchamlar olindi", "Joy rasmi olindi"],
+  install: ["Material yuklandi", "Joy o'lchami tekshirildi", "O'rnatildi", "Mijoz qabul qildi (rasm)"],
+  deliver: ["Yuklandi", "Mijozga topshirildi", "Rasm / imzo olindi"],
+  other: [],
+};
+// Taxminiy davomiylik (daqiqa) — Brigada jadvali uchun
+const DURATION = { measure: 60, install: 120, deliver: 40, other: 60 };
 const lineOfOrder = (o) => (o?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
 const { lineOfLead } = require("./lines");
 const rid = () => crypto.randomBytes(8).toString("hex");
@@ -30,7 +40,7 @@ function tashkent(d = new Date()) {
 // Vazifa vaqti (Toshkent, UTC+5) → ms
 const jobTime = (j) => (j.date && j.time ? Date.parse(`${j.date}T${j.time}:00+05:00`) : null);
 
-module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, sendToEmployee = async () => false, appUrl = () => "", now = () => new Date(), interval = 20000 }) {
+module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, upload = null, sendToEmployee = async () => false, appUrl = () => "", now = () => new Date(), interval = 20000 }) {
   const read = (k, fb) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
   const write = (k, v) => upsertStmt.run(k, JSON.stringify(v));
   const jobs = () => { const v = read(KEY, []); return Array.isArray(v) ? v : []; };
@@ -85,8 +95,26 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       address: b.address === undefined ? prev?.address || "" : str(b.address, 200),
       phone: b.phone === undefined ? prev?.phone || "" : str(b.phone, 40),
       note: b.note === undefined ? prev?.note || "" : str(b.note, 1000),
+      duration: b.duration === undefined ? prev?.duration || DURATION[kind] : Math.max(15, Math.min(720, Math.round(Number(b.duration) || DURATION[kind]))),
+      checklist: Array.isArray(b.checklist) ? cleanChecklist(b.checklist, prev?.checklist) : prev?.checklist || CHECKLIST[kind].map((text) => ({ id: rid(), text, done: false })),
       assigneeIds,
     };
+  }
+
+  function cleanChecklist(list, prev) {
+    const old = new Map((prev || []).map((c) => [c.id, c]));
+    return list.slice(0, 30).map((c) => {
+      const text = str(c?.text, 120);
+      if (!text) return null;
+      const id = typeof c.id === "string" && /^[a-z0-9]{4,24}$/.test(c.id) ? c.id : rid();
+      const o = old.get(id);
+      const done = !!c.done;
+      return { id, text, done, ...(done ? { doneBy: o?.done ? o.doneBy : c.doneBy || null, doneAt: o?.done ? o.doneAt : c.doneAt || null } : {}) };
+    }).filter(Boolean);
+  }
+  // Tarix: kim, nima, qachon (oxirgi 100 ta)
+  function logIt(j, who, text, at) {
+    j.log = [...(Array.isArray(j.log) ? j.log : []), { at, who, text: String(text).slice(0, 500) }].slice(-100);
   }
 
   // Bajarildi → buyurtma «Topshirildi» (shu buyurtmaning boshqa montaj/yetkazish vazifalari ham tugagan bo'lsa)
@@ -142,6 +170,8 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       const orders = read("uvix:orders", []);
       const at = now().toISOString();
       const j = { id: rid(), ...clean(req.body || {}, null, req.user, req.lineScope, orders), status: "new", createdBy: req.user.name, createdAt: at, updatedAt: at, auto: false, photos: [] };
+      const emps0 = empMap();
+      logIt(j, req.user.name, `vazifa yaratildi${j.assigneeIds.length ? ` · ${j.assigneeIds.map((id) => emps0.get(id)?.name || id).join(", ")}` : ""}`, at);
       write(KEY, [j, ...jobs()]);
       if (j.kind === "measure" && j.line === "UVONYX") leadStage(j, at, ["new"], "measure");
       notifyAssigned(j, j.assigneeIds, empMap());
@@ -158,13 +188,37 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
     const at = now().toISOString();
     try {
       const before = new Set(j.assigneeIds || []);
+      const prevWhen = `${j.date || ""} ${j.time || ""}`;
       if (isStaffManager(req.user)) Object.assign(j, clean(b, j, req.user, req.lineScope, orders));
       else if (b.note !== undefined) j.note = str(b.note, 1000); // mas'ul: faqat izoh
-      if (Array.isArray(b.photos)) j.photos = b.photos.filter((p) => p && /^\/api\/photos\/[a-zA-Z0-9.]+$/.test(String(p.url || ""))).slice(0, 10).map((p) => ({ url: p.url }));
+      if (Array.isArray(b.photos)) j.photos = b.photos.filter((p) => p && /^\/api\/photos\/[a-zA-Z0-9.]+$/.test(String(p.url || ""))).slice(0, 20).map((p) => ({ url: p.url, by: p.by || null, at: p.at || null }));
+      // Tekshiruv bandini belgilash — mas'ul ham qila oladi
+      if (b.check && typeof b.check.id === "string") {
+        if (!Array.isArray(j.checklist)) j.checklist = [];
+        const c = j.checklist.find((x) => x.id === b.check.id);
+        if (c && !!b.check.done !== !!c.done) {
+          c.done = !!b.check.done;
+          if (c.done) { c.doneBy = req.user.name; c.doneAt = at; } else { delete c.doneBy; delete c.doneAt; }
+          logIt(j, req.user.name, `${c.done ? "✓" : "✗"} ${c.text}`, at);
+        }
+      }
+      const comment = str(b.comment, 1000);
+      if (comment) logIt(j, req.user.name, `💬 ${comment}`, at);
+      if (isStaffManager(req.user)) {
+        const emps1 = empMap();
+        const addedIds = (j.assigneeIds || []).filter((id) => !before.has(id));
+        const removed = [...before].filter((id) => !(j.assigneeIds || []).includes(id));
+        if (addedIds.length) logIt(j, req.user.name, `biriktirildi: ${addedIds.map((id) => emps1.get(id)?.name || id).join(", ")}`, at);
+        if (removed.length) logIt(j, req.user.name, `olib tashlandi: ${removed.map((id) => emps1.get(id)?.name || id).join(", ")}`, at);
+        const nowWhen = `${j.date || ""} ${j.time || ""}`;
+        if (nowWhen !== prevWhen) logIt(j, req.user.name, `vaqt: ${nowWhen.trim() || "sanasiz"}`, at);
+      }
       let order = null;
       if (b.status && STATUSES.includes(b.status) && b.status !== j.status) {
         if (b.status === "cancelled" && !isStaffManager(req.user)) return res.status(403).json({ error: "forbidden", message: "Bekor qilishni menejer qiladi" });
         j.status = b.status;
+        logIt(j, req.user.name, `«${STATUS_L[b.status]}»`, at);
+        if (b.status === "doing") { j.startedAt = at; j.startedBy = req.user.name; }
         if (b.status === "done") { j.doneAt = at; j.doneBy = req.user.name; } else { delete j.doneAt; delete j.doneBy; }
         if (b.status === "done") order = chainDone(j, all, at);
         if (b.status === "done" && j.kind === "measure") leadStage(j, at, ["new", "measure"], "negotiation");
@@ -176,6 +230,27 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       if (added.length) notifyAssigned(j, added, empMap());
       res.json({ job: publicJob(j, empMap(), read("uvix:orders", [])), order });
     } catch (e) { res.status(e.status || 400).json({ error: "bad_request", message: e.message }); }
+  });
+
+  // Vazifa rasmi — mas'ul xodim ham yuklay oladi (umumiy /api/photos/upload faqat ofis xodimlariga)
+  app.post("/api/jobs/:id/photos", requireAuth, (req, res) => {
+    const j0 = jobs().find((x) => x.id === req.params.id);
+    if (!j0 || !canSee(req.user, req.lineScope, j0)) return res.status(404).json({ error: "not_found", message: "Vazifa topilmadi" });
+    if (!upload) return res.status(501).json({ error: "no_upload" });
+    upload.array("photos", 10)(req, res, (err) => {
+      if (err) return res.status(400).json({ error: "upload_failed", message: err.message });
+      const files = req.files || [];
+      if (!files.length) return res.status(400).json({ error: "no_files" });
+      const all = jobs();
+      const j = all.find((x) => x.id === req.params.id);
+      if (!j) return res.status(404).json({ error: "not_found" });
+      const at = now().toISOString();
+      j.photos = [...(j.photos || []), ...files.map((f) => ({ url: `/api/photos/${f.filename}`, by: req.user.name, at }))].slice(-20);
+      logIt(j, req.user.name, `📷 ${files.length} ta rasm`, at);
+      j.updatedAt = at;
+      write(KEY, all);
+      res.json({ job: publicJob(j, empMap(), read("uvix:orders", [])) });
+    });
   });
 
   app.delete("/api/jobs/:id", requireAuth, (req, res) => {
@@ -229,7 +304,8 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       seenSet.add(o.id);
       if (all.some((j) => j.orderId === o.id && ["install", "deliver"].includes(j.kind))) continue;
       const kind = lineOfOrder(o) === "UVONYX" ? "install" : "deliver";
-      all.unshift({ id: rid(), kind, title: `${o.orderNumber} · ${o.title || o.customer || ""}`.trim(), line: lineOfOrder(o), orderId: o.id, date: null, time: null, address: "", phone: "", note: "", assigneeIds: [], status: "new", createdBy: "Tizim", createdAt: at, updatedAt: at, auto: true, photos: [] });
+      all.unshift({ id: rid(), kind, title: `${o.orderNumber} · ${o.title || o.customer || ""}`.trim(), line: lineOfOrder(o), orderId: o.id, date: null, time: null, address: "", phone: "", note: "", assigneeIds: [], status: "new", createdBy: "Tizim", createdAt: at, updatedAt: at, auto: true, photos: [],
+        duration: DURATION[kind], checklist: CHECKLIST[kind].map((text) => ({ id: rid(), text, done: false })), log: [{ at, who: "Tizim", text: `buyurtma «Tayyor» — ${KINDS[kind]} yaratildi` }] });
       n++;
     }
     if (n) write(KEY, all);
@@ -250,6 +326,32 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
         try { await sendToEmployee(id, `⏰ 1 soatdan keyin: ${KINDS[j.kind]} · ${j.time}\n<b>${esc(j.title)}</b>${j.address ? `\n📍 ${esc(j.address)}` : ""}`); } catch { /* */ }
       }
     }
+    // Kechikdi (30 daqiqa o'tdi, hali boshlanmagan) — rahbar va shu yo'nalish katta menejeriga, bir marta
+    const emps = readEmployees().filter((e) => !e.deletedAt);
+    const bosses = (line) => emps.filter((e) => e.role === "admin" || (e.role === "manager" && (!e.line || e.line === line || e.line === "common")));
+    for (const j of jobs()) {
+      const ts = jobTime(j);
+      if (!ts || j.status !== "new" || t - ts < 30 * 60 * 1000 || t - ts > 24 * 3600 * 1000) continue;
+      const k = `late:${j.id}:${j.date}:${j.time}`;
+      if (done.has(k)) continue;
+      done.add(k); changed = true;
+      const who = (j.assigneeIds || []).map((id) => emps.find((e) => e.id === id)?.name).filter(Boolean).join(", ") || "mas'ulsiz";
+      for (const e of bosses(j.line)) {
+        try { await sendToEmployee(e.id, `⏰ Kechikmoqda: ${KINDS[j.kind]} · ${j.time}\n<b>${esc(j.title)}</b>\n👤 ${esc(who)}`); } catch { /* */ }
+      }
+    }
+    // Kun yakuni (19:00) — rahbarga qisqa hisobot
+    const tk = tashkent(new Date(t));
+    if (tk.hm >= "19:00" && !done.has(`day:${tk.date}`)) {
+      done.add(`day:${tk.date}`); changed = true;
+      const todays = jobs().filter((j) => j.date === tk.date && j.status !== "cancelled");
+      if (todays.length) {
+        const ok = todays.filter((j) => j.status === "done").length;
+        for (const e of emps.filter((x) => x.role === "admin")) {
+          try { await sendToEmployee(e.id, `📋 Bugungi vazifalar: <b>${todays.length} tadan ${ok} tasi bajarildi</b>${todays.length - ok ? `\nQolgani: ${todays.length - ok}` : ""}`); } catch { /* */ }
+        }
+      }
+    }
     if (changed) write(REM, [...done].slice(-3000));
   }
   async function tick() {
@@ -259,3 +361,5 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
   return { reconcile, remind, tashkent, workStats };
 };
 module.exports.KINDS = KINDS;
+module.exports.CHECKLIST = CHECKLIST;
+module.exports.DURATION = DURATION;

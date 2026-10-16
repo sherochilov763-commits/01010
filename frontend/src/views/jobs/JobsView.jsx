@@ -1,194 +1,211 @@
 // JobsView.jsx — «Vazifalar»: o'lchov, montaj, yetkazish va boshqa ishlar (kim, nima, qachon, qayerda).
-// Ro'yxat (Kechikkan / Bugun / Ertaga / Keyinroq / Sanasiz) va hafta kalendari.
-// Dizayn/pechat vazifalari (buyurtma ichidagi) — shu yerda ham ko'rinadi (faqat ko'rish).
-// MyJobs — ishchi telefoni uchun «Mening vazifalarim» (Yo'l / Qo'ng'iroq / Bajarildi).
+// Tepada holat kartalari (Kechikkan / Bugun / Ertaga / Sanasiz / Bu hafta bajarildi), tur filtrlari, tezkor qo'shish satri.
+// Ko'rinishlar: Ro'yxat (guruhlangan qatorlar + o'ng panel), Kalendar. Dizayn/pechat vazifalari (buyurtma ichidagi) — faqat ko'rish.
+// MyJobs — ishchi telefoni uchun «Mening kunim» (MyJobs.jsx).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ClipboardCheck, List as ListIcon, MapPin, Navigation, Phone, Plus, Ruler, Trash2, Truck, Wrench, Palette, Printer, Loader2 } from "lucide-react";
-import { Button, Card, ConfirmDialog, EmptyState, Field, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
+import { AlarmClock, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, Inbox, List as ListIcon, Loader2, MapPin, Navigation, Play, Plus, Sun, Sunrise, Star, Zap } from "lucide-react";
+import { ConfirmDialog, useIsMobile } from "../../components/ui.jsx";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 import { useLine } from "../../lib/lines.js";
-import { createJob, deleteJob, fetchJobs, fetchTasks, updateJob } from "../../storage.js";
+import { createJob, fetchJobs, fetchTasks, updateJob } from "../../storage.js";
 import { THEME } from "../../theme.js";
+import { WeekCalendar } from "./Calendar.jsx";
+import { JobDrawer } from "./JobDrawer.jsx";
+import { JobForm } from "./JobForm.jsx";
+import { Avatars, JobsEmpty, KindBadge, StatusPill } from "./JobParts.jsx";
+import { FIELD_KINDS, JOB_KINDS, groupJobs, isLate, isOpen, mapsUrl, mondayOf, parseQuick, today, weekDoneCount, whenText, fromTask } from "./jobsLib.js";
 
-export const JOB_KINDS = {
-  measure: { l: "O'lchov", I: Ruler, c: "#6D28D9" },
-  install: { l: "Montaj", I: Wrench, c: "#0E7C6B" },
-  deliver: { l: "Yetkazish", I: Truck, c: "#B45309" },
-  other: { l: "Boshqa", I: ClipboardCheck, c: "#52525B" },
-  design: { l: "Dizayn", I: Palette, c: "#1F5FD6", ro: true },
-  print: { l: "Pechat", I: Printer, c: "#0E7490", ro: true },
-};
-const STATUS = { new: "Yangi", doing: "Jarayonda", done: "Bajarildi", cancelled: "Bekor", in_progress: "Jarayonda" };
-const WD = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
-const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
-const pad = (n) => String(n).padStart(2, "0");
-const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const addDays = (s, n) => { const d = new Date(s + "T00:00:00"); d.setDate(d.getDate() + n); return iso(d); };
-const today = () => iso(new Date());
-const mondayOf = (s) => { const d = new Date(s + "T00:00:00"); const w = (d.getDay() + 6) % 7; d.setDate(d.getDate() - w); return iso(d); };
-const dayText = (s) => { if (!s) return ""; const d = new Date(s + "T00:00:00"); return `${d.getDate()}-${MONTHS[d.getMonth()]}`; };
-const isOpen = (j) => !["done", "cancelled"].includes(j.status);
-const isLate = (j) => isOpen(j) && !!j.date && (j.date < today() || (j.date === today() && j.time && j.time < new Date().toTimeString().slice(0, 5)));
-const mapsUrl = (a) => `https://yandex.uz/maps/?text=${encodeURIComponent(a)}`;
+export { JOB_KINDS } from "./jobsLib.js";
+export { JobForm } from "./JobForm.jsx";
+export { MyJobs } from "./MyJobs.jsx";
 
-// Dizayn/pechat vazifasini umumiy ko'rinishga keltirish
-const fromTask = (t) => ({ id: t.id, kind: t.kind, ro: true, title: `${t.taskNo} · ${t.jobTitle}`, line: t.line, date: t.deadline || null, time: null, status: t.status === "done" ? "done" : t.status === "in_progress" ? "doing" : "new", assignees: t.assigneeName ? [{ id: t.assigneeId, name: t.assigneeName }] : [], assigneeIds: t.assigneeId ? [t.assigneeId] : [], address: "", order: null, customer: t.customer });
+const MODES = [["list", "Ro'yxat", ListIcon], ["calendar", "Kalendar", CalendarDays]];
+const GROUP_ICON = { late: AlarmClock, today: Sun, tomorrow: Sunrise, later: CalendarDays, nodate: Inbox, done: CheckCircle2 };
+const lsGet = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
 
-function KindBadge({ kind, small }) {
-  const k = JOB_KINDS[kind] || JOB_KINDS.other;
-  return (
-    <span data-job-kind={kind} style={{ display: "inline-flex", alignItems: "center", gap: 5, height: small ? 20 : 24, padding: small ? "0 6px" : "0 8px", borderRadius: 7, fontSize: small ? 11 : 12, fontWeight: 800, letterSpacing: 0.3, textTransform: "uppercase", color: k.c, background: k.c + "1A", whiteSpace: "nowrap" }}>
-      <k.I size={small ? 12 : 13} />{k.l}
-    </span>
-  );
-}
-function People({ list }) {
-  if (!list?.length) return <span style={{ color: THEME.amber || "#B45309", fontWeight: 600 }}>mas'ul tayinlanmagan</span>;
-  return <span>{list.map((a) => a.name).join(", ")}</span>;
-}
-
-function JobCard({ j, showLine, onOpen, onDone, busy }) {
-  const late = isLate(j);
-  return (
-    <div data-job={j.id} onClick={() => !j.ro && onOpen(j)} role={j.ro ? undefined : "button"} tabIndex={j.ro ? undefined : 0}
-      onKeyDown={(e) => { if (!j.ro && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(j); } }}
-      style={{ background: THEME.card, border: `1px solid ${late ? THEME.rose + "66" : THEME.border}`, borderRadius: 14, padding: "11px 13px", display: "flex", gap: 12, alignItems: "flex-start", cursor: j.ro ? "default" : "pointer", opacity: j.status === "done" || j.status === "cancelled" ? 0.62 : 1 }}>
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <KindBadge kind={j.kind} small />
-          {showLine && j.line && <LineTag line={j.line} />}
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: late ? THEME.rose : THEME.muted }}>
-            {late ? "Kechikdi · " : ""}{j.date ? dayText(j.date) : "Sanasiz"}{j.time ? ` · ${j.time}` : ""}
-          </span>
-          {j.status !== "new" && <span style={{ fontSize: 12, color: j.status === "done" ? THEME.greenText : THEME.muted, fontWeight: 600 }}>· {STATUS[j.status]}</span>}
-          {j.auto && j.status === "new" && <span title="Buyurtma «Tayyor» bo'lganda o'zi yaratildi" style={{ fontSize: 11, color: THEME.dim }}>· avtomatik</span>}
-        </div>
-        <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.3, textDecoration: j.status === "cancelled" ? "line-through" : "none" }}>{j.title}</div>
-        <div style={{ fontSize: 12.5, color: THEME.muted, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {j.address && <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><MapPin size={12} />{j.address}</span>}
-          <People list={j.assignees} />
-        </div>
-      </div>
-      {!j.ro && isOpen(j) && onDone && (
-        <button type="button" onClick={(e) => { e.stopPropagation(); onDone(j); }} disabled={busy} data-job-done={j.id} aria-label="Bajarildi" title="Bajarildi"
-          style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 11, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.greenText, display: "grid", placeItems: "center", cursor: "pointer" }}>
-          <Check size={18} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function groupJobs(list) {
-  const t = today(), tm = addDays(t, 1);
-  const g = { late: [], today: [], tomorrow: [], later: [], nodate: [], done: [] };
-  for (const j of list) {
-    if (!isOpen(j)) g.done.push(j);
-    else if (isLate(j)) g.late.push(j);
-    else if (!j.date) g.nodate.push(j);
-    else if (j.date === t) g.today.push(j);
-    else if (j.date === tm) g.tomorrow.push(j);
-    else g.later.push(j);
-  }
-  const byTime = (a, b) => `${a.date || "9"}${a.time || "99"}`.localeCompare(`${b.date || "9"}${b.time || "99"}`);
-  Object.values(g).forEach((x) => x.sort(byTime));
-  g.done.sort((a, b) => String(b.doneAt || b.date || "").localeCompare(String(a.doneAt || a.date || "")));
-  g.done = g.done.slice(0, 20);
-  return [["late", "Kechikkan", g.late], ["today", "Bugun", g.today], ["tomorrow", "Ertaga", g.tomorrow], ["later", "Keyinroq", g.later], ["nodate", "Sanasi belgilanmagan", g.nodate], ["done", "Bajarilgan", g.done]];
-}
-
-export function JobsView({ employees, orders, currentUser }) {
+export function JobsView({ employees, orders, currentUser, onGo }) {
   const isMobile = useIsMobile();
   const { line } = useLine();
   const [jobs, setJobs] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [canManage, setCanManage] = useState(true);
   const [err, setErr] = useState("");
-  const [mode, setMode] = useState(() => { try { return localStorage.getItem("uvix_jobs_mode") || "list"; } catch { return "list"; } });
+  const [mode, setMode] = useState(() => { const m = lsGet("uvix_jobs_mode2", "list"); return MODES.some((x) => x[0] === m) ? m : "list"; });
   const [kindF, setKindF] = useState("all");
+  const [groupF, setGroupF] = useState(null);
+  const [personF, setPersonF] = useState("");
+  const [lineF, setLineF] = useState("");
   const [mine, setMine] = useState(false);
   const [week, setWeek] = useState(() => mondayOf(today()));
   const [edit, setEdit] = useState(null);
+  const [openId, setOpenId] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
-  const setModeP = (m) => { setMode(m); try { localStorage.setItem("uvix_jobs_mode", m); } catch { /* */ } };
+  const [open, setOpen] = useState(() => lsGet("uvix_jobs_groups", {}));
+  const setModeP = (m) => { setMode(m); lsSet("uvix_jobs_mode2", m); };
 
   const load = useCallback(async () => {
     try {
       const [r, t] = await Promise.all([fetchJobs(), fetchTasks().catch(() => [])]);
-      setJobs(r.jobs || []); setTasks(t || []); setErr("");
+      setJobs(r.jobs || []); setTasks(t || []); setCanManage(r.canManage !== false); setErr("");
     } catch (e) { setErr(e.message); setJobs((x) => x || []); }
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
 
   const all = useMemo(() => [...(jobs || []), ...tasks.filter((t) => t.status).map(fromTask)], [jobs, tasks]);
-  const list = useMemo(() => all.filter((j) => (kindF === "all" || (kindF === "late" ? isLate(j) : j.kind === kindF)) && (!mine || (j.assigneeIds || []).includes(currentUser.id))), [all, kindF, mine, currentUser.id]);
+  const base = useMemo(() => all.filter((j) =>
+    (!personF || (personF === "none" ? !(j.assigneeIds || []).length : (j.assigneeIds || []).includes(personF))) &&
+    (!lineF || j.line === lineF) &&
+    (!mine || (j.assigneeIds || []).includes(currentUser.id))), [all, personF, lineF, mine, currentUser.id]);
+  const list = useMemo(() => base.filter((j) => kindF === "all" || j.kind === kindF), [base, kindF]);
+  const groups = useMemo(() => groupJobs(list), [list]);
+  const gcount = Object.fromEntries(groups.map(([k, , arr]) => [k, arr.length]));
   const counts = useMemo(() => {
-    const c = { late: all.filter(isLate).length };
-    for (const k of Object.keys(JOB_KINDS)) c[k] = all.filter((j) => j.kind === k && isOpen(j)).length;
+    const c = { all: base.filter(isOpen).length };
+    for (const k of Object.keys(JOB_KINDS)) c[k] = base.filter((j) => j.kind === k && isOpen(j)).length;
     return c;
-  }, [all]);
+  }, [base]);
+  const weekDone = useMemo(() => weekDoneCount(list), [list]);
+  const opened = openId ? (jobs || []).find((j) => j.id === openId) : null;
 
   async function markDone(j) {
     setBusy(true);
     try { await updateJob(j.id, { status: "done" }); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); setConfirm(null); }
   }
+  async function quickStatus(j, status) {
+    setBusy(true);
+    try { await updateJob(j.id, { status }); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  const people = useMemo(() => (employees || []).filter((e) => e.role !== "admin" && !e.deletedAt), [employees]);
+  const isGroupOpen = (k) => {
+    if (groupF) return true;
+    if (open[k] !== undefined) return open[k];
+    if (k === "done" || k === "later") return false;
+    if (k === "tomorrow") return !(gcount.late || gcount.today || gcount.nodate);
+    return true;
+  };
+  const toggleGroup = (k) => { const next = { ...open, [k]: !isGroupOpen(k) }; setOpen(next); lsSet("uvix_jobs_groups", next); };
 
-  const chip = (k, label, n, color) => {
+  const chip = (k, label, n, I) => {
     const on = kindF === k;
     return (
-      <button key={k} type="button" onClick={() => setKindF(on && k !== "all" ? "all" : k)} aria-pressed={on} data-kind-filter={k} className="uvix-fchip"
-        style={{ height: 32, padding: "0 12px", borderRadius: 16, whiteSpace: "nowrap", cursor: "pointer", fontSize: 13, fontWeight: 500, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6,
-          border: `1px solid ${on ? THEME.text : THEME.border2}`, background: on ? THEME.text : THEME.card, color: on ? THEME.card : color || THEME.mutedDark }}>
-        {label}{n ? <b style={{ fontWeight: 700 }}>{n}</b> : null}
+      <button key={k} type="button" onClick={() => setKindF(on && k !== "all" ? "all" : k)} aria-pressed={on} data-kind-filter={k}
+        style={{ height: 34, padding: "0 12px", borderRadius: 10, whiteSpace: "nowrap", cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6,
+          border: 0, background: on ? THEME.text : "transparent", color: on ? THEME.card : THEME.text }}>
+        {I && <I size={15} />}{label}{n ? <span style={{ fontWeight: 600, color: on ? THEME.card : THEME.muted }}>{n}</span> : null}
+      </button>
+    );
+  };
+  const stat = (k, label, n, I, tone) => {
+    const on = groupF === k;
+    const c = tone === "rose" ? THEME.rose : tone === "green" ? THEME.green : THEME.text;
+    return (
+      <button key={k} type="button" onClick={() => setGroupF(on ? null : k)} aria-pressed={on} data-stat={k}
+        style={{ flex: isMobile ? "0 0 auto" : 1, minWidth: isMobile ? 104 : 0, textAlign: "left", padding: isMobile ? "10px 12px" : "12px 16px", borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+          border: `1.5px solid ${on ? THEME.text : tone === "rose" && n ? THEME.roseBorder : THEME.border}`, background: on ? THEME.chip : THEME.card, color: THEME.text, boxShadow: on ? THEME.shadowMd : "none" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: tone === "rose" && n ? THEME.rose : THEME.muted }}><I size={15} />{label}</div>
+        <div style={{ fontSize: isMobile ? 22 : 26, fontWeight: 800, marginTop: 4, color: n ? c : THEME.dim, fontVariantNumeric: "tabular-nums" }}>{n}</div>
       </button>
     );
   };
   const showLine = line === "all";
+  const selStyle = { height: 34, borderRadius: 10, border: `1px dashed ${THEME.border2}`, background: THEME.card, color: THEME.text, fontFamily: "inherit", fontSize: 13.5, padding: "0 10px", cursor: "pointer" };
+  const visibleGroups = groups.filter(([k, , arr]) => arr.length && (!groupF || groupF === k));
 
   return (
-    <div data-testid="jobs-view">
+    <div data-testid="jobs-view" style={{ paddingRight: opened && !isMobile ? 440 : 0, transition: "padding .2s" }}>
+      {/* Ko'rinish + qo'shish */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <div role="group" aria-label="Ko'rinish" style={{ display: "inline-flex", background: THEME.chip, borderRadius: 9, padding: 3, gap: 2 }}>
-          {[["list", "Ro'yxat", ListIcon], ["calendar", "Kalendar", CalendarDays]].map(([v, l, I]) => (
+        <div role="group" aria-label="Ko'rinish" style={{ display: "inline-flex", background: THEME.chip, borderRadius: 11, padding: 3, gap: 2 }}>
+          {MODES.map(([v, l, I]) => (
             <button key={v} type="button" onClick={() => setModeP(v)} aria-pressed={mode === v} data-jobs-mode={v}
-              style={{ height: 30, padding: "0 12px", border: 0, borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, background: mode === v ? THEME.card : "transparent", color: mode === v ? THEME.text : THEME.muted, boxShadow: mode === v ? THEME.shadowSm : "none" }}>
-              <I size={14} />{l}
+              style={{ height: 34, padding: "0 14px", border: 0, borderRadius: 9, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, background: mode === v ? THEME.card : "transparent", color: mode === v ? THEME.text : THEME.muted, boxShadow: mode === v ? THEME.shadowSm : "none" }}>
+              <I size={15} />{l}
             </button>
           ))}
         </div>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, color: THEME.muted, cursor: "pointer" }}>
-          <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} data-testid="jobs-mine" /> Faqat menga
-        </label>
         <div style={{ flex: 1 }} />
-        <Button onClick={() => setEdit({})} data-testid="job-new"><Plus size={15} /> Vazifa</Button>
+        {canManage && (
+          <button type="button" onClick={() => setEdit({})} data-testid="job-new"
+            style={{ height: 40, padding: "0 18px", borderRadius: 11, border: 0, background: THEME.primarySolid || THEME.violet, color: "#fff", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <Plus size={17} /> Vazifa
+          </button>
+        )}
       </div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", paddingBottom: 2 }} className="uvix-scroll">
-        {chip("all", "Hammasi")}
-        {["measure", "install", "deliver", "print", "design", "other"].map((k) => chip(k, JOB_KINDS[k].l, counts[k]))}
-        {counts.late > 0 && chip("late", "Kechikkan", counts.late, THEME.rose)}
+
+      {/* Holat kartalari */}
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, overflowX: isMobile ? "auto" : "visible" }} className="uvix-scroll" data-testid="jobs-stats">
+        {stat("late", "Kechikkan", gcount.late || 0, AlarmClock, "rose")}
+        {stat("today", "Bugun", gcount.today || 0, Sun)}
+        {stat("tomorrow", "Ertaga", gcount.tomorrow || 0, Sunrise)}
+        {stat("nodate", "Sanasiz", gcount.nodate || 0, Inbox)}
+        {stat("done", "Bu hafta bajarildi", weekDone, CheckCircle2, "green")}
       </div>
+
+      {/* Filtrlar */}
+      <div style={{ background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 14, padding: 6, marginBottom: 12, display: "flex", flexWrap: isMobile ? "nowrap" : "wrap", gap: 4, alignItems: "center", overflowX: isMobile ? "auto" : "visible" }} className="uvix-scroll">
+        {chip("all", "Hammasi", counts.all)}
+        {["measure", "install", "deliver", "print", "design", "other"].map((k) => chip(k, JOB_KINDS[k].l, counts[k], JOB_KINDS[k].I))}
+        <span style={{ width: 1, height: 22, background: THEME.border, margin: "0 4px", flexShrink: 0 }} />
+        <select value={personF} onChange={(e) => setPersonF(e.target.value)} style={selStyle} aria-label="Mas'ul" data-testid="jobs-person">
+          <option value="">Mas'ul: hammasi</option>
+          <option value="none">Mas'ulsiz</option>
+          {people.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+        {showLine && (
+          <select value={lineF} onChange={(e) => setLineF(e.target.value)} style={selStyle} aria-label="Yo'nalish" data-testid="jobs-line">
+            <option value="">Yo'nalish: hammasi</option><option value="UVIXPRINT">UVIXPRINT</option><option value="UVONYX">UVONYX</option>
+          </select>
+        )}
+        <button type="button" onClick={() => setMine((v) => !v)} aria-pressed={mine} data-testid="jobs-mine"
+          style={{ ...selStyle, display: "inline-flex", alignItems: "center", gap: 6, borderStyle: mine ? "solid" : "dashed", borderColor: mine ? THEME.text : THEME.border2, fontWeight: mine ? 700 : 500, whiteSpace: "nowrap" }}>
+          <Star size={14} fill={mine ? "currentColor" : "none"} /> Mening ishlarim
+        </button>
+      </div>
+
+      {canManage && mode === "list" && <QuickAdd employees={people} orders={orders} lineDefault={lineF || (line !== "all" ? line : "UVIXPRINT")} onCreated={load} isMobile={isMobile} />}
       {err && <div role="alert" style={{ padding: "10px 14px", borderRadius: 12, background: THEME.roseBg, color: THEME.roseText || THEME.rose, fontSize: 13.5, marginBottom: 12 }}>{err}</div>}
 
       {jobs === null ? (
         <div style={{ display: "flex", justifyContent: "center", padding: 48, color: THEME.muted }}><Loader2 size={22} className="uvix-spin" /></div>
       ) : mode === "calendar" ? (
-        <WeekCalendar list={list} week={week} setWeek={setWeek} isMobile={isMobile} onOpen={setEdit} showLine={showLine} />
-      ) : list.length === 0 ? (
-        <Card style={{ padding: 0 }}><EmptyState text="Vazifa yo'q. «+ Vazifa» bilan qo'shing — buyurtma «Tayyor» bo'lganda yetkazish/montaj o'zi paydo bo'ladi." /></Card>
+        <WeekCalendar list={list} week={week} setWeek={setWeek} isMobile={isMobile} onOpen={(j) => setOpenId(j.id)} showLine={showLine} />
+      ) : visibleGroups.length === 0 ? (
+        <JobsEmpty kind={kindF !== "all" ? kindF : null} group={groupF} canManage={canManage} onAdd={(k) => setEdit({ _preset: { kind: FIELD_KINDS.includes(k) ? k : "measure" } })} onGo={onGo} />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {groupJobs(list).filter(([, , arr]) => arr.length).map(([k, label, arr]) => (
-            <section key={k} data-job-group={k}>
-              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: k === "late" ? THEME.rose : THEME.muted, marginBottom: 8 }}>{label} · {arr.length}</div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(330px, 1fr))", gap: 10 }}>
-                {arr.map((j) => <JobCard key={j.id} j={j} showLine={showLine} onOpen={setEdit} onDone={setConfirm} busy={busy} />)}
-              </div>
-            </section>
-          ))}
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {visibleGroups.map(([k, label, arr]) => {
+            const I = GROUP_ICON[k]; const isOpenG = isGroupOpen(k);
+            const shown = k === "done" && !groupF ? arr.slice(0, 30) : arr;
+            return (
+              <section key={k} data-job-group={k}>
+                <button type="button" onClick={() => toggleGroup(k)} aria-expanded={isOpenG} data-group-toggle={k}
+                  style={{ display: "flex", alignItems: "center", gap: 8, border: 0, background: "none", padding: "2px 0", marginBottom: 8, cursor: "pointer", fontFamily: "inherit", color: k === "late" ? THEME.rose : THEME.mutedDark || THEME.muted }}>
+                  <I size={16} />
+                  <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase" }}>{label}{k === "today" ? ` · ${new Date().getDate()}-${["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"][new Date().getMonth()]}` : ""}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: k === "late" ? THEME.roseBg : THEME.chip }}>{arr.length}</span>
+                  {isOpenG ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  {!isOpenG && <span style={{ fontSize: 12.5, color: THEME.dim, fontWeight: 500 }}>— bosilsa ochiladi</span>}
+                </button>
+                {isOpenG && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {shown.map((j) => <JobRow key={j.id} j={j} isMobile={isMobile} showLine={showLine} selected={openId === j.id} busy={busy}
+                      onOpen={() => !j.ro && setOpenId(j.id)} onDone={() => setConfirm(j)} onStart={() => quickStatus(j, "doing")} />)}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
 
-      {edit && <JobForm job={edit.id ? edit : null} employees={employees} orders={orders} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
+      {opened && (
+        <JobDrawer job={opened} canManage={canManage} isMobile={isMobile} onClose={() => setOpenId(null)}
+          onChanged={(nj) => setJobs((l) => (l || []).map((x) => (x.id === nj.id ? nj : x)))}
+          onEdit={(j) => setEdit(j)} onDone={(j) => setConfirm(j)} />
+      )}
+      {edit && <JobForm job={edit.id ? edit : null} preset={edit._preset} employees={employees} orders={orders} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
       {confirm && (
         <ConfirmDialog title="Bajarildimi?" message={`«${confirm.title}» bajarildi deb belgilansinmi?${confirm.orderId && ["install", "deliver"].includes(confirm.kind) ? " Buyurtma «Topshirildi» bo'ladi." : ""}`}
           confirmLabel="Ha, bajarildi" tone="primary" icon={Check} onCancel={() => setConfirm(null)} onConfirm={() => markDone(confirm)} />
@@ -197,212 +214,96 @@ export function JobsView({ employees, orders, currentUser }) {
   );
 }
 
-function WeekCalendar({ list, week, setWeek, isMobile, onOpen, showLine }) {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
-  const t = today();
-  const byDay = Object.fromEntries(days.map((d) => [d, list.filter((j) => j.date === d).sort((a, b) => (a.time || "99").localeCompare(b.time || "99"))]));
-  const noDate = list.filter((j) => !j.date && isOpen(j));
-  const navBtn = { width: 34, height: 34, borderRadius: 9, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, display: "grid", placeItems: "center", cursor: "pointer" };
+// ---------- Ro'yxat qatori ----------
+function JobRow({ j, isMobile, showLine, selected, busy, onOpen, onDone, onStart }) {
+  const late = isLate(j);
+  const done = !isOpen(j);
+  const circle = (
+    <button type="button" onClick={(e) => { e.stopPropagation(); if (!done && !j.ro) onDone(); }} disabled={busy || done || j.ro} data-job-done={!done && !j.ro ? j.id : undefined}
+      aria-label={done ? "Bajarilgan" : "Bajarildi deb belgilash"} title={j.ro ? "Buyurtma ichida belgilanadi" : done ? "Bajarilgan" : "Bajarildi"}
+      style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, padding: 0, display: "grid", placeItems: "center", cursor: done || j.ro ? "default" : "pointer",
+        border: `2px solid ${done ? THEME.green : THEME.border2}`, background: done ? THEME.green : THEME.card, color: "#fff" }}>
+      {done && <Check size={14} strokeWidth={3} />}
+    </button>
+  );
+  const sub = (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 4, minWidth: 0 }}>
+      <KindBadge kind={j.kind} small />
+      {showLine && j.line && <LineTag line={j.line} />}
+      {j.address && <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, color: THEME.muted, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}><MapPin size={13} />{j.address}</span>}
+      {j.checklist?.length > 0 && <span style={{ fontSize: 12.5, color: THEME.muted }}>☑ {j.checklist.filter((c) => c.done).length}/{j.checklist.length}</span>}
+      {j.auto && j.status === "new" && <span title="Buyurtma «Tayyor» bo'lganda o'zi yaratildi" style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, color: THEME.dim }}><Zap size={12} />avtomatik</span>}
+      {j.ro && <span style={{ fontSize: 12, color: THEME.dim }}>buyurtma ichida</span>}
+    </div>
+  );
+  const when = <span style={{ fontSize: 14, fontWeight: 700, color: late ? THEME.rose : THEME.text, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{whenText(j)}</span>;
+  const action = !j.ro && !done ? (
+    j.status === "new"
+      ? <button type="button" onClick={(e) => { e.stopPropagation(); onStart(); }} disabled={busy} aria-label="Boshlash" title="Boshlash" data-job-start={j.id} style={iconBtn}><Play size={16} /></button>
+      : j.address ? <a href={mapsUrl(j.address)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} aria-label="Yo'l" title="Yo'l" style={iconBtn}><Navigation size={16} /></a> : <span style={{ width: 38 }} />
+  ) : <span style={{ width: 38 }} />;
+  const rowStyle = { background: THEME.card, border: `1.5px solid ${selected ? THEME.blue : late ? THEME.roseBorder : THEME.border}`, borderRadius: 14, cursor: j.ro ? "default" : "pointer", opacity: done ? 0.62 : 1, boxShadow: selected ? `0 0 0 3px ${THEME.blueBg}` : "none" };
+  const title = <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.3, textDecoration: j.status === "cancelled" ? "line-through" : "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isMobile ? "normal" : "nowrap" }}>{j.title}</div>;
+  const onKey = (e) => { if (!j.ro && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(); } };
+
+  if (isMobile) {
+    return (
+      <div data-job={j.id} onClick={onOpen} role={j.ro ? undefined : "button"} tabIndex={j.ro ? undefined : 0} onKeyDown={onKey} style={{ ...rowStyle, padding: "11px 12px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ paddingTop: 2 }}>{circle}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {title}{sub}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>{when}<div style={{ flex: 1 }} /><Avatars list={j.assignees} size={26} /><StatusPill j={j} small /></div>
+        </div>
+      </div>
+    );
+  }
   return (
-    <div data-testid="jobs-calendar">
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <button type="button" style={navBtn} onClick={() => setWeek(addDays(week, -7))} aria-label="Oldingi hafta"><ChevronLeft size={16} /></button>
-        <button type="button" style={navBtn} onClick={() => setWeek(addDays(week, 7))} aria-label="Keyingi hafta"><ChevronRight size={16} /></button>
-        <b style={{ fontSize: 15 }}>{dayText(days[0])} — {dayText(days[6])}</b>
-        {week !== mondayOf(t) && <button type="button" onClick={() => setWeek(mondayOf(t))} style={{ border: 0, background: "none", color: THEME.violet, fontWeight: 600, cursor: "pointer", fontSize: 13 }}>Bugun</button>}
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(7, minmax(0, 1fr))", gap: 8 }}>
-        {days.map((d, i) => (
-          <div key={d} data-cal-day={d} style={{ background: d === t ? THEME.violetSoft || THEME.chip : THEME.chip, borderRadius: 12, padding: 8, minHeight: isMobile ? 0 : 180, display: isMobile && !byDay[d].length ? "none" : "block" }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: d === t ? THEME.violet : THEME.mutedDark || THEME.muted, marginBottom: 6 }}>{WD[i]} {Number(d.slice(8))}</div>
-            {byDay[d].map((j) => {
-              const k = JOB_KINDS[j.kind] || JOB_KINDS.other;
-              return (
-                <button key={j.id} type="button" data-cal-job={j.id} onClick={() => !j.ro && onOpen(j)}
-                  style={{ display: "block", width: "100%", textAlign: "left", border: 0, borderLeft: `3px solid ${k.c}`, borderRadius: 8, padding: "6px 8px", marginBottom: 6, fontFamily: "inherit", cursor: j.ro ? "default" : "pointer",
-                    background: THEME.card, color: THEME.text, opacity: isOpen(j) ? 1 : 0.55, fontSize: 12.5, lineHeight: 1.3 }}>
-                  <b style={{ color: k.c }}>{j.time ? `${j.time} ` : ""}{k.l}</b>{showLine && j.line ? <span style={{ color: THEME.dim }}> · {j.line === "UVONYX" ? "ON" : "UV"}</span> : null}
-                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{j.title}</div>
-                  <div style={{ color: THEME.muted, fontSize: 11.5 }}>{(j.assignees || []).map((a) => a.name.split(" ")[0]).join(", ") || "mas'ulsiz"}</div>
-                </button>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-      {noDate.length > 0 && <div style={{ marginTop: 12, fontSize: 13, color: THEME.muted }}>Sanasi belgilanmagan: <b>{noDate.length}</b> ta — «Ro'yxat»da.</div>}
+    <div data-job={j.id} onClick={onOpen} role={j.ro ? undefined : "button"} tabIndex={j.ro ? undefined : 0} onKeyDown={onKey}
+      style={{ ...rowStyle, padding: "11px 14px", display: "grid", gridTemplateColumns: "28px minmax(0,1fr) 110px 92px 118px 38px", gap: 12, alignItems: "center" }}>
+      {circle}
+      <div style={{ minWidth: 0 }}>{title}{sub}</div>
+      {when}
+      <Avatars list={j.assignees} />
+      <span><StatusPill j={j} /></span>
+      {action}
     </div>
   );
 }
+const iconBtn = { width: 38, height: 38, borderRadius: 11, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, display: "grid", placeItems: "center", cursor: "pointer" };
 
-export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId, preset }) {
-  const { line } = useLine();
-  const [f, setF] = useState(() => ({
-    kind: job?.kind || preset?.kind || "measure", orderId: job?.orderId || presetOrderId || "", leadId: job?.leadId || preset?.leadId || null, title: job?.title || preset?.title || "", date: job ? job.date || "" : today(), time: job?.time || "",
-    address: job?.address || preset?.address || "", phone: job?.phone || preset?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || [], line: job?.line || preset?.line || (line !== "all" ? line : "UVIXPRINT"),
-  }));
-  const [err, setErr] = useState("");
+// ---------- Tezkor qo'shish: bitta satr ----------
+function QuickAdd({ employees, orders, lineDefault, onCreated, isMobile }) {
+  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [del, setDel] = useState(false);
-  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const openOrders = useMemo(() => (orders || []).filter((o) => !o.deletedAt && (o.prodStage !== "delivered" || o.id === f.orderId)).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 300), [orders, f.orderId]);
-  const people = (employees || []).filter((e) => e.role !== "admin" || e.id === job?.createdById);
-  const toggle = (id) => set("assigneeIds", f.assigneeIds.includes(id) ? f.assigneeIds.filter((x) => x !== id) : [...f.assigneeIds, id]);
-
-  async function save(extra = {}) {
-    setBusy(true); setErr("");
+  const [msg, setMsg] = useState("");
+  const p = useMemo(() => parseQuick(text, { employees, orders }), [text, employees, orders]);
+  const TONE = { kind: [THEME.violet, THEME.violetSoft], order: [THEME.greenText, THEME.greenBg], date: [THEME.blueText, THEME.blueBg], time: [THEME.blueText, THEME.blueBg], person: ["#6D28D9", "#6D28D91A"] };
+  async function submit(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    if (!p.title && !p.orderId) { setMsg("Nomini yozing: masalan «Montaj ON-261016-001 ertaga 14:00 @Bekzod»"); return; }
+    setBusy(true); setMsg("");
     try {
-      const body = { ...f, orderId: f.orderId || null, time: f.time || null, ...extra };
-      if (job) await updateJob(job.id, body); else await createJob(body);
-      onSaved();
-    } catch (e) { setErr(e.message); setBusy(false); }
+      await createJob({ kind: p.kind || "other", title: p.title, orderId: p.orderId, date: p.date, time: p.time, assigneeIds: p.assigneeIds, line: lineDefault });
+      setText(""); setMsg("✓ Qo'shildi"); onCreated?.();
+      setTimeout(() => setMsg(""), 2500);
+    } catch (er) { setMsg(er.message); } finally { setBusy(false); }
   }
-  async function remove() {
-    setBusy(true);
-    try { await deleteJob(job.id); onSaved(); } catch (e) { setErr(e.message); setBusy(false); }
-  }
-  const inp = getInputStyle();
   return (
-    <Modal title={job ? "Vazifa" : "Yangi vazifa"} onClose={onClose} width={520}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }} data-testid="job-form">
-        <div role="group" aria-label="Turi" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {["measure", "install", "deliver", "other"].map((k) => {
-            const K = JOB_KINDS[k]; const on = f.kind === k;
-            return (
-              <button key={k} type="button" onClick={() => set("kind", k)} aria-pressed={on} data-kind={k}
-                style={{ flex: 1, minWidth: 92, height: 40, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  border: `1.5px solid ${on ? K.c : THEME.border}`, background: on ? K.c + "14" : THEME.card, color: on ? K.c : THEME.text }}>
-                <K.I size={15} />{K.l}
-              </button>
-            );
-          })}
-        </div>
-        {f.leadId && <div data-testid="job-lead" style={{ fontSize: 12.5, color: THEME.muted }}>CRM lidi bilan bog'langan — o'lchov bajarilsa, lid «Smeta» bosqichiga o'tadi.</div>}
-        <Field label="Buyurtma (ixtiyoriy)">
-          <select value={f.orderId} onChange={(e) => set("orderId", e.target.value)} style={inp} data-testid="job-order">
-            <option value="">— Buyurtmasiz (masalan, yangi mijoz o'lchovi)</option>
-            {openOrders.map((o) => <option key={o.id} value={o.id}>{o.orderNumber} · {o.customer}{o.title ? ` · ${o.title}` : ""}</option>)}
-          </select>
-        </Field>
-        <Field label="Nomi">
-          <input value={f.title} onChange={(e) => set("title", e.target.value)} style={inp} placeholder={f.orderId ? "Bo'sh qolsa — buyurtma nomi" : "Masalan: Yunusobod, yangi mijoz — o'lchov"} data-testid="job-title" />
-        </Field>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <Field label="Sana"><input type="date" value={f.date || ""} onChange={(e) => set("date", e.target.value)} style={inp} data-testid="job-date" /></Field>
-          <Field label="Vaqt"><input type="time" value={f.time || ""} onChange={(e) => set("time", e.target.value)} style={inp} data-testid="job-time" /></Field>
-        </div>
-        <Field label="Manzil"><input value={f.address} onChange={(e) => set("address", e.target.value)} style={inp} placeholder="Chilonzor 9, 12-uy" data-testid="job-address" /></Field>
-        <Field label="Telefon (mijoz)"><input value={f.phone} onChange={(e) => set("phone", e.target.value)} style={inp} placeholder="+998 90 123 45 67" inputMode="tel" /></Field>
-        {line === "all" && !f.orderId && !f.leadId && (
-          <Field label="Yo'nalish">
-            <div style={{ display: "flex", gap: 6 }}>
-              {["UVIXPRINT", "UVONYX"].map((l) => (
-                <button key={l} type="button" onClick={() => set("line", l)} aria-pressed={f.line === l} style={{ flex: 1, height: 36, borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12.5, border: `1.5px solid ${f.line === l ? THEME.text : THEME.border}`, background: THEME.card, color: THEME.text }}>{l}</button>
-              ))}
-            </div>
-          </Field>
-        )}
-        <Field label="Mas'ul (bir yoki bir nechta)">
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} data-testid="job-people">
-            {people.map((e) => {
-              const on = f.assigneeIds.includes(e.id);
-              return (
-                <button key={e.id} type="button" onClick={() => toggle(e.id)} aria-pressed={on} data-person={e.id}
-                  style={{ height: 34, padding: "0 12px", borderRadius: 17, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, border: `1px solid ${on ? THEME.violet : THEME.border2}`, background: on ? THEME.violet : THEME.card, color: on ? THEME.onPrimary || "#fff" : THEME.text }}>
-                  {on ? "✓ " : ""}{e.name}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-        <Field label="Izoh"><textarea value={f.note} onChange={(e) => set("note", e.target.value)} style={{ ...inp, minHeight: 60, resize: "vertical" }} /></Field>
-        {job && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }} data-testid="job-status">
-            <span style={{ fontSize: 12.5, color: THEME.muted }}>Holat:</span>
-            {["new", "doing", "done", "cancelled"].map((s) => (
-              <button key={s} type="button" onClick={() => save({ status: s })} disabled={busy} aria-pressed={job.status === s} data-status={s}
-                style={{ height: 32, padding: "0 12px", borderRadius: 16, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, border: `1px solid ${job.status === s ? THEME.text : THEME.border2}`, background: job.status === s ? THEME.text : THEME.card, color: job.status === s ? THEME.card : THEME.text }}>
-                {STATUS[s]}
-              </button>
-            ))}
-          </div>
-        )}
-        {err && <div style={{ color: THEME.rose, fontSize: 13 }}>{err}</div>}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {job && <button type="button" onClick={() => setDel(true)} style={{ border: 0, background: "none", color: THEME.rose, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5, fontSize: 13, fontFamily: "inherit" }}><Trash2 size={14} /> O'chirish</button>}
-          <div style={{ flex: 1 }} />
-          <Button variant="ghost" onClick={onClose}>Bekor qilish</Button>
-          <Button onClick={() => save()} disabled={busy} data-testid="job-save">Saqlash</Button>
-        </div>
+    <form onSubmit={submit} style={{ marginBottom: 14 }} data-testid="quick-add">
+      <div style={{ display: "flex", alignItems: "center", gap: 8, background: THEME.card, border: `1.5px solid ${text ? THEME.blue : THEME.border}`, borderRadius: 12, padding: "0 12px", minHeight: 46 }}>
+        {busy ? <Loader2 size={17} className="uvix-spin" style={{ color: THEME.muted }} /> : <Plus size={17} style={{ color: THEME.muted }} />}
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder={isMobile ? "Montaj ertaga 14:00 @Bekzod" : "Tezkor qo'shish: «Montaj ON-261016-001 ertaga 14:00 @Bekzod» — Enter"} aria-label="Tezkor qo'shish" data-testid="quick-input"
+          style={{ flex: 1, minWidth: 0, height: 44, border: 0, outline: "none", background: "transparent", fontFamily: "inherit", fontSize: 14.5, color: THEME.text }} />
+        {text && !isMobile && <span style={{ fontSize: 12, color: THEME.dim, fontFamily: "ui-monospace, monospace" }}>Enter</span>}
       </div>
-      {del && <ConfirmDialog message="Vazifa o'chirilsinmi?" onCancel={() => setDel(false)} onConfirm={remove} />}
-    </Modal>
-  );
-}
-
-// ---------- Ishchi telefoni: «Mening vazifalarim» (joydagi ishlar) ----------
-export function MyJobs({ currentUser, hideEmpty }) {
-  const [jobs, setJobs] = useState(null);
-  const [tab, setTab] = useState("today");
-  const [confirm, setConfirm] = useState(null);
-  const [err, setErr] = useState("");
-  const load = useCallback(async () => { try { const r = await fetchJobs(); setJobs((r.jobs || []).filter((j) => (j.assigneeIds || []).includes(currentUser.id))); } catch (e) { setErr(e.message); setJobs((x) => x || []); } }, [currentUser.id]);
-  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
-  if (jobs === null) return null;
-  const open = jobs.filter(isOpen);
-  const t = today();
-  const tabs = [
-    ["today", "Bugun", open.filter((j) => !isLate(j) && (j.date === t || !j.date))],
-    ["tomorrow", "Ertaga", open.filter((j) => j.date === addDays(t, 1))],
-    ["later", "Keyin", open.filter((j) => j.date && j.date > addDays(t, 1))],
-    ["late", "Kechikkan", open.filter(isLate)],
-  ];
-  if (hideEmpty && !open.length) return null;
-  const cur = tabs.find((x) => x[0] === tab) || tabs[0];
-  const sorted = [...cur[2]].sort((a, b) => `${a.date}${a.time || "99"}`.localeCompare(`${b.date}${b.time || "99"}`));
-  async function done(j) {
-    try { await updateJob(j.id, { status: "done" }); setConfirm(null); load(); } catch (e) { setErr(e.message); setConfirm(null); }
-  }
-  const btn = { flex: 1, height: 44, borderRadius: 12, border: 0, cursor: "pointer", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, textDecoration: "none" };
-  return (
-    <section data-testid="my-jobs" style={{ marginBottom: 18 }}>
-      <h2 style={{ margin: "0 0 10px", fontSize: 18, fontWeight: 700 }}>Joydagi ishlar</h2>
-      <div style={{ display: "flex", gap: 6, marginBottom: 10, overflowX: "auto" }}>
-        {tabs.map(([k, l, arr]) => (
-          <button key={k} type="button" onClick={() => setTab(k)} aria-pressed={tab === k} data-myjobs-tab={k}
-            style={{ height: 36, padding: "0 14px", borderRadius: 18, whiteSpace: "nowrap", cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, border: `1px solid ${tab === k ? THEME.text : THEME.border}`, background: tab === k ? THEME.text : THEME.card, color: tab === k ? THEME.card : k === "late" && arr.length ? THEME.rose : THEME.text }}>
-            {l} {arr.length}
-          </button>
-        ))}
-      </div>
-      {err && <div role="alert" style={{ color: THEME.rose, fontSize: 13, marginBottom: 8 }}>{err}</div>}
-      {sorted.length === 0 ? <div style={{ color: THEME.muted, fontSize: 14, padding: "8px 2px" }}>Bu yerda ish yo'q</div> : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {sorted.map((j) => {
-            const k = JOB_KINDS[j.kind] || JOB_KINDS.other;
-            return (
-              <Card key={j.id} data-myjob={j.id} style={{ padding: 14, borderColor: isLate(j) ? THEME.rose + "88" : undefined }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-                  <KindBadge kind={j.kind} small />
-                  {j.line && <LineTag line={j.line} />}
-                  <span style={{ fontSize: 13, fontWeight: 700, color: isLate(j) ? THEME.rose : k.c }}>{j.date ? dayText(j.date) : ""}{j.time ? ` · ${j.time}` : ""}</span>
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.3 }}>{j.title}</div>
-                {j.address && <div style={{ fontSize: 14, color: THEME.muted, marginTop: 4, display: "flex", gap: 6, alignItems: "center" }}><MapPin size={14} />{j.address}</div>}
-                {j.phone && <div style={{ fontSize: 14, color: THEME.muted, marginTop: 2, display: "flex", gap: 6, alignItems: "center" }}><Phone size={14} />{j.phone}</div>}
-                {j.note && <div style={{ fontSize: 13.5, marginTop: 6, color: THEME.text }}>{j.note}</div>}
-                {j.assignees?.length > 1 && <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 4 }}>Brigada: {j.assignees.map((a) => a.name).join(", ")}</div>}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  {j.address && <a href={mapsUrl(j.address)} target="_blank" rel="noreferrer" style={{ ...btn, background: THEME.chip, color: THEME.text }}><Navigation size={17} /> Yo'l</a>}
-                  {j.phone && <a href={`tel:${j.phone.replace(/[^\d+]/g, "")}`} style={{ ...btn, background: THEME.chip, color: THEME.text }}><Phone size={17} /> Qo'ng'iroq</a>}
-                  <button type="button" onClick={() => setConfirm(j)} data-myjob-done={j.id} style={{ ...btn, background: k.c, color: "#fff" }}><Check size={18} /> Bajarildi</button>
-                </div>
-              </Card>
-            );
-          })}
+      {(p.tokens.length > 0 || msg) && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6, fontSize: 12.5 }} data-testid="quick-tokens">
+          {p.tokens.map((t, i) => <span key={i} data-qt={t.t} style={{ padding: "2px 8px", borderRadius: 6, fontWeight: 700, color: TONE[t.t][0], background: TONE[t.t][1] }}>{t.v}</span>)}
+          {p.title && <span style={{ color: THEME.muted }}>nomi: «{p.title}»</span>}
+          {msg && <span style={{ color: msg.startsWith("✓") ? THEME.greenText : THEME.rose, fontWeight: 600 }}>{msg}</span>}
         </div>
       )}
-      {confirm && <ConfirmDialog title="Bajarildimi?" message={`«${confirm.title}» bajarildi deb belgilansinmi?`} confirmLabel="Ha, bajarildi" tone="primary" icon={Check} onCancel={() => setConfirm(null)} onConfirm={() => done(confirm)} />}
-    </section>
+    </form>
   );
 }

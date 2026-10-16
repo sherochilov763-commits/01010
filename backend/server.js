@@ -481,7 +481,7 @@ registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWor
 
 // ==================== Vazifalar (o'lchov, montaj, yetkazish) ====================
 jobsApi = require("./jobs")(app, {
-  getStmt, upsertStmt, readEmployees, requireAuth, isWorker,
+  getStmt, upsertStmt, readEmployees, requireAuth, isWorker, upload,
   sendToEmployee: (id, text) => (tgAllowed(id, "tasks") ? staffBot.sendToEmployee(id, text) : Promise.resolve(false)),
   appUrl: () => { try { return JSON.parse(getStmt.get("uvix:attConfig")?.value || "{}").appUrl || ""; } catch { return ""; } },
   interval: process.env.UVIX_JOBS_MS ? Number(process.env.UVIX_JOBS_MS) : 20000,
