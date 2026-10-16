@@ -1011,3 +1011,7 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - **Server himoyasi** (`backend/lines.js`): `/api/kv/uvix:orders` va `uvix:transactions` xodimga yo'nalish bo'yicha filtrlangan holda beriladi; boshqa yo'nalish yozuvini o'zgartirish/o'chirish, umumiy rasxodni tahrirlash e'tiborsiz qoladi; xodim yozgan yangi buyurtma/rasxod uning yo'nalishiga yoziladi; smeta→buyurtma, holat, to'lov, hisob-faktura — faqat o'z yo'nalishi buyurtmalari.
 - Yo'nalishni almashtirish kartasi, telefondagi yorliq va rangli chiziq **olib tashlandi**. Rahbar hammasini ko'radi; Dashboard'da «Barchasi / UVIXPRINT / UVONYX» tugmalari buyurtma va rasxodni birga ajratadi.
 - Testlar: `tests/unit/lines-server.test.mjs`, `tests/e2e/test_lines.py`.
+
+## 📊 Yo'nalishlar — 2-etap: «Foyda va zarar» (2026-10)
+- Rahbar Dashboard'i tepasida jadval: **UVIXPRINT | UVONYX | Jami** — tushum (shu oydagi to'lovlar), to'g'ridan-to'g'ri rasxod, umumiy rasxod ulushi (tushum nisbatida), sof foyda, marja, o'tgan oyga nisbatan o'zgarish, hozirgi qarzdorlik va tushum ulushi chizig'i. Oy — Dashboard'dagi «Oy» tanlovi (aks holda joriy oy). Hisob: `frontend/src/lib/pnl.js`.
+- Rasxod ro'yxatida rahbar uchun filtr: Barchasi / UVIXPRINT / UVONYX / Umumiy (shu qurilmada eslab qolinadi).

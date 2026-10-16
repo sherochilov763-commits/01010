@@ -14,7 +14,7 @@ const esbuild = req("esbuild");
 const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "uvix-lines-")), "l.mjs");
 const src = (p) => JSON.stringify(path.join(front, "src", p));
 await esbuild.build({
-  stdin: { contents: `export * from ${src("lib/lines.js")}; export { generateOrderNumber } from ${src("lib/finance.js")}; export { predictNumbers } from ${src("lib/production.js")};`, resolveDir: front, loader: "js" },
+  stdin: { contents: `export * from ${src("lib/lines.js")}; export { generateOrderNumber } from ${src("lib/finance.js")}; export { predictNumbers } from ${src("lib/production.js")}; export { computePnl } from ${src("lib/pnl.js")};`, resolveDir: front, loader: "js" },
   bundle: true, platform: "node", format: "esm", outfile: out, jsx: "automatic", loader: { ".js": "jsx" }, logLevel: "error",
   define: { "import.meta.env": JSON.stringify({ VITE_API_BASE: "/api", BASE_URL: "/" }) },
 });
@@ -61,4 +61,27 @@ test("raqamlash: UVONYX — ON-, UVIXPRINT — UV-, har biri o'z ketma-ketligida
   assert.equal(M.generateOrderNumber(ex, "2026-10-16", "UVIXPRINT"), "UV-261016-003");
   assert.equal(M.generateOrderNumber(ex, "2026-10-16"), "UV-261016-003");
   assert.deepEqual(M.predictNumbers(ex, "2026-10-16", 2, "UVONYX"), ["ON-261016-002", "ON-261016-003"]);
+});
+
+test("Foyda va zarar: yo'nalishlar, umumiy ulush, o'tgan oy, qarz", async () => {
+  const { computePnl } = await import(out);
+  const orders = [
+    { id: "a", subcategory: "UVIXPRINT", agreementUzs: 1000, payments: [{ amount: 600, date: "2026-10-02" }, { amount: 100, date: "2026-09-02" }] },
+    { id: "b", subcategory: "UVONYX", agreementUzs: 500, payments: [{ amount: 400, date: "2026-10-03" }] },
+  ];
+  const tx = [
+    { id: "1", line: "UVONYX", amount: 50, date: "2026-10-01" },
+    { id: "2", line: "common", amount: 1000, date: "2026-10-01" },
+    { id: "3", relatedOrderId: "a", amount: 70, date: "2026-10-05" },
+    { id: "4", line: "UVIXPRINT", amount: 20, date: "2026-09-05" },
+  ];
+  const p = computePnl(orders, tx, "2026-10");
+  assert.equal(p.UVIXPRINT.income, 600); assert.equal(p.UVONYX.income, 400);
+  assert.equal(p.UVIXPRINT.direct, 70); assert.equal(p.UVONYX.direct, 50);
+  assert.equal(p.UVIXPRINT.common, 600); assert.equal(p.UVONYX.common, 400);
+  assert.equal(p.UVIXPRINT.profit, -70); assert.equal(p.UVONYX.profit, -50);
+  assert.equal(p.total.profit, -120); assert.equal(p.total.common, 1000);
+  assert.equal(p.UVIXPRINT.change, (-70 - 80) / 80);
+  assert.equal(p.UVONYX.change, null);
+  assert.equal(p.UVIXPRINT.debt, 300); assert.equal(p.UVONYX.debt, 100); assert.equal(p.total.debt, 400);
 });
