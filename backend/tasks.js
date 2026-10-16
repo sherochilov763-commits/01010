@@ -133,6 +133,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
         const t = lead[kind];
         if (!t || !t.status) continue;
         if (worker && t.assigneeId !== req.user.id) continue;
+        if (!worker && req.lineScope && require("./lines").lineOfLead(lead) !== req.lineScope) continue;
         if (lead.stage === "lost" && t.status !== "done") continue; // bekor qilingan ish
         tasks.push(publicTask(lead, kind, orders, empById));
       }
@@ -145,7 +146,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
         if (worker && t.assigneeId !== req.user.id) continue;
         if (!worker && req.lineScope && (order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") !== req.lineScope) continue;
         // Xodim buyurtmani qo'lda keyingi holatga o'tkazgan bo'lsa — ochiq qolgan vazifa ro'yxatdan chiqadi
-        const passed = kind === "design" ? ["printing", "ready", "delivered"] : ["ready", "delivered"];
+        const passed = kind === "design" ? ["material", "printing", "ready", "install", "delivered"] : ["ready", "install", "delivered"];
         if (t.status !== "done" && passed.includes(order.prodStage)) continue;
         tasks.push(publicOrderTask(order, kind, empById));
       }

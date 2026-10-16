@@ -23,6 +23,7 @@ import { PriceListSection } from "./PriceListSection.jsx";
 import { loadSales, useSales } from "../quotes/useSales.js";
 import { rateText } from "../../lib/production.js";
 import { SaveBarProvider, useDirty, useSaveBar } from "./saveBar.jsx";
+import { LineProfilesSection } from "./LineProfilesSection.jsx";
 import { buildStatusItems, ModulesSection, SettingsJournal, SystemStatus, SETTINGS_SECTIONS } from "./settingsParts.jsx";
 import { SETTINGS_EVENT } from "../../lib/deeplink.js";
 import { TgPrefsCard } from "../../components/TgPrefsCard.jsx";
@@ -334,6 +335,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
       <TgPrefsCard Card={Card} />
     </>,
     savdo: isAdmin && <>
+      <LineProfilesSection settings={settings} onSaveSettings={onSaveSettings} />
       <PriceListSection categories={categories} />
         {isAdmin && (
           <Card data-testid="rate-card">
@@ -434,7 +436,8 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
         )}
 
 
-      {onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} />}
+      {onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} line="UVIXPRINT" />}
+      {onConnectTelegramUser && isAdmin && <div data-testid="tg-onyx"><TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} line="UVONYX" /></div>}
     </>,
     bolimlar: isAdmin && <ModulesSection onOpenView={onOpenView} />,
     malumotlar: isAdmin && <>

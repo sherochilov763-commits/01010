@@ -8,6 +8,7 @@ import { addChatNote, deleteChatNote, fetchChatNotes, searchChatMessages, sendCh
 import { chatCss, Composer, MessageList } from "./ChatConversation.jsx";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
+import { useLine } from "../../lib/lines.js";
 import { THEME } from "../../theme.js";
 import { AssigneePicker, CustomerBox, RowMenu, avatarColor, useChatCustomer, useChatTools, waitLabel, waitingMinutes } from "./chatExtras.jsx";
 import { ChatQuote } from "../quotes/ChatQuote.jsx";
@@ -46,6 +47,7 @@ function listTime(iso) {
 const lastKey = (list) => (list.length ? `${list[list.length - 1].id}|${list.length}` : "");
 
 export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMoveLead, onLeadCreated, initialChatId, onInitialChatHandled, isAdmin, onOpenSettings, currentUser, employees, orders, allOrders, transactions, customerProfiles, onCreateOrderFromLead, onAssignTask, onAddPayment, onDeletePayment, onServerChange }) {
+  const showLineTag = useLine().line === "all";
   applyPalette(); // mavzu (yorug'/grafit) o'zgarsa ranglar shu chizishdayoq yangilanadi
   // Telegram ulanish holati: sessiya tugagan bo'lsa — har so'rovda xato ko'rsatish o'rniga bitta tushunarli ogohlantirish
   const [tgStatus, setTgStatus] = useState(null);
@@ -544,6 +546,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                       <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                         <div style={{ fontSize: 13.5, fontWeight: 600, color: TG_DARK_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
                         {owner && <span title={`Mas'ul: ${owner.name}`} style={{ fontSize: 9.5, fontWeight: 700, color: C.muted, background: C.hover, borderRadius: 8, padding: "0 5px", lineHeight: "16px", flexShrink: 0 }}>{initials(owner.name)}</span>}
+                        {showLineTag && chat.line === "UVONYX" && <span data-chat-line="UVONYX" title="UVONYX akkaunti" style={{ fontSize: 9.5, fontWeight: 800, color: "#0E7C6B", background: "#0E7C6B1F", borderRadius: 5, padding: "0 4px", lineHeight: "15px", flexShrink: 0 }}>ON</span>}
                         {!lead && <span title="CRM'da yo'q" style={{ fontSize: 9.5, fontWeight: 700, color: C.link, border: `1px solid ${C.link}55`, borderRadius: 5, padding: "0 4px", lineHeight: "15px", flexShrink: 0 }}>CRM'siz</span>}
                       </div>
                       {chat.lastDate && <div style={{ fontSize: 10.5, color: TG_DARK_MUTED, flexShrink: 0, marginLeft: 6 }}>{listTime(chat.lastDate)}</div>}

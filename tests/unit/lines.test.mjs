@@ -14,7 +14,7 @@ const esbuild = req("esbuild");
 const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "uvix-lines-")), "l.mjs");
 const src = (p) => JSON.stringify(path.join(front, "src", p));
 await esbuild.build({
-  stdin: { contents: `export * from ${src("lib/lines.js")}; export { generateOrderNumber } from ${src("lib/finance.js")}; export { predictNumbers } from ${src("lib/production.js")}; export { computePnl } from ${src("lib/pnl.js")};`, resolveDir: front, loader: "js" },
+  stdin: { contents: `export * from ${src("lib/lines.js")}; export { generateOrderNumber } from ${src("lib/finance.js")}; export { predictNumbers } from ${src("lib/production.js")}; export { computePnl } from ${src("lib/pnl.js")}; export { computeKassa } from ${src("lib/kassa.js")};`, resolveDir: front, loader: "js" },
   bundle: true, platform: "node", format: "esm", outfile: out, jsx: "automatic", loader: { ".js": "jsx" }, logLevel: "error",
   define: { "import.meta.env": JSON.stringify({ VITE_API_BASE: "/api", BASE_URL: "/" }) },
 });
@@ -84,4 +84,41 @@ test("Foyda va zarar: yo'nalishlar, umumiy ulush, o'tgan oy, qarz", async () => 
   assert.equal(p.UVIXPRINT.change, (-70 - 80) / 80);
   assert.equal(p.UVONYX.change, null);
   assert.equal(p.UVIXPRINT.debt, 300); assert.equal(p.UVONYX.debt, 100); assert.equal(p.total.debt, 400);
+});
+
+test("Umumiy xodim oyligi — bajargan ishi nisbatida", async () => {
+  const { computePnl, scopeByLine } = await import(out);
+  const orders = [{ id: "a", subcategory: "UVIXPRINT", payments: [{ amount: 900, date: "2026-10-02" }] }, { id: "b", subcategory: "UVONYX", payments: [{ amount: 100, date: "2026-10-02" }] }];
+  const tx = [{ id: "s", line: "common", employeeId: "j", amount: 1000, date: "2026-10-30" }, { id: "r", line: "common", amount: 100, date: "2026-10-01" }];
+  const work = { "2026-10": { j: { UVIXPRINT: 3, UVONYX: 7 } } };
+  const p = computePnl(orders, tx, "2026-10", work);
+  assert.equal(p.UVIXPRINT.staff, 300); assert.equal(p.UVONYX.staff, 700);
+  assert.equal(p.UVIXPRINT.common, 90); assert.equal(p.UVONYX.common, 10);
+  assert.equal(p.hasStaff, true);
+  const sc = scopeByLine("UVONYX", orders, tx, orders, work);
+  assert.equal(sc.txStats.find((t) => t.id === "s").amount, 700);
+  // Ish bo'lmasa — tushum ulushi
+  const p2 = computePnl(orders, tx, "2026-10", null);
+  assert.equal(p2.UVONYX.common, 110); assert.equal(p2.hasStaff, false);
+});
+
+test("Kassalar: kirim, chiqim (umumiy — to'langan kassadan), o'tkazma", async () => {
+  const { computeKassa } = await import(out);
+  const orders = [
+    { id: "a", subcategory: "UVIXPRINT", payments: [{ amount: 600, paymentType: "naqd", date: "2026-10-02" }, { amount: 50, paymentType: "karta", date: "2026-10-02", deletedAt: "x" }] },
+    { id: "b", subcategory: "UVONYX", payments: [{ amount: 400, paymentType: "karta", date: "2026-10-03" }] },
+  ];
+  const tx = [
+    { id: "1", line: "UVONYX", amount: 50, paymentType: "karta", date: "2026-10-01" },
+    { id: "2", line: "common", paidFrom: "UVONYX", amount: 1000, paymentType: "naqd", date: "2026-10-01" },
+    { id: "3", line: "common", amount: 100, paymentType: "naqd", date: "2026-10-01" },
+    { id: "4", relatedOrderId: "b", amount: 5, paymentType: "bank", date: "2026-10-01" },
+  ];
+  const tr = [{ id: "t", date: "2026-10-04", from: { line: "UVIXPRINT", type: "naqd" }, to: { line: "UVONYX", type: "naqd" }, amount: 300 }];
+  const k = computeKassa(orders, tx, tr);
+  assert.equal(k.UVIXPRINT.naqd.bal, 600 - 100 - 300);
+  assert.equal(k.UVONYX.naqd.bal, -1000 + 300);
+  assert.equal(k.UVONYX.karta.bal, 350);
+  assert.equal(k.UVONYX.bank.bal, -5);
+  assert.equal(k.totals.all, 600 + 400 - 50 - 1000 - 100 - 5);
 });

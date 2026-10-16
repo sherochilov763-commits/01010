@@ -20,6 +20,16 @@ function txLine(t, orderLineById) {
   if (t?.relatedOrderId && orderLineById?.has(t.relatedOrderId)) return orderLineById.get(t.relatedOrderId);
   return "common";
 }
+// Lid yo'nalishi: lead.line; bo'lmasa — UVONYX Telegram akkaunti chati («on:») yoki UVIXPRINT
+const lineOfLead = (l) => (LINES.includes(l?.line) ? l.line : String(l?.telegramChatId || "").startsWith("on:") ? "UVONYX" : "UVIXPRINT");
+const custKey = (name) => String(name || "").toLowerCase().replace(/[‘’ʻʼ`´]/g, "'").replace(/\s+/g, " ").trim();
+// Mijoz: o'z yo'nalishida yaratilgan yoki shu yo'nalishda buyurtmasi bor (yo'nalishsiz eski mijoz — UVIXPRINT)
+function customerVisible(c, scope, orders) {
+  const l = LINES.includes(c?.line) ? c.line : "UVIXPRINT";
+  if (l === scope) return true;
+  const k = c?.key || custKey(c?.name);
+  return (orders || []).some((o) => o && !o.deletedAt && lineOfOrder(o) === scope && custKey(o.customer) === k);
+}
 const lineMap = (orders) => new Map((Array.isArray(orders) ? orders : []).filter(Boolean).map((o) => [o.id, lineOfOrder(o)]));
 
 // Oy bo'yicha tushum ulushi: { "2026-10": 0.43 } (tushum bo'lmasa — 0.5)
@@ -40,37 +50,55 @@ function sharesFor(line, orders) {
 }
 
 // Xodimga ko'rinadigan yozuvmi
-function visible(key, item, scope, orderLineById) {
+function visible(key, item, scope, orderLineById, orders) {
   if (!scope || !item) return true;
+  if (key === "uvix:leads") return lineOfLead(item) === scope;
+  if (key === "uvix:customers") return customerVisible(item, scope, orders);
   if (key === "uvix:orders") return lineOfOrder(item) === scope;
   if (key === "uvix:transactions") { const l = txLine(item, orderLineById); return l === scope || l === "common"; }
+  if (key === "uvix:transfers") return item.from?.line === scope || item.to?.line === scope; // kassalar orasidagi o'tkazma
   return true;
 }
 // Xodim o'zgartira oladigan yozuvmi (umumiy rasxod — faqat rahbar)
-function editable(key, item, scope, orderLineById) {
+function editable(key, item, scope, orderLineById, orders) {
   if (!scope || !item) return true;
+  if (key === "uvix:leads") return lineOfLead(item) === scope;
+  if (key === "uvix:customers") return customerVisible(item, scope, orders);
   if (key === "uvix:orders") return lineOfOrder(item) === scope;
   if (key === "uvix:transactions") return txLine(item, orderLineById) === scope;
   return true;
 }
-const SCOPED_KEYS = new Set(["uvix:orders", "uvix:transactions"]);
+const SCOPED_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:customers", "uvix:transfers"]);
 
+// Umumiy xodim oyligi: shu oyda bajargan ishlari nisbatida (ish bo'lmasa — null, ya'ni tushum ulushi)
+function workShare(line, t, work) {
+  if (!t?.employeeId || !work) return null;
+  const r = work[String(t.date || "").slice(0, 7)]?.[t.employeeId];
+  const tot = r ? (r.UVIXPRINT || 0) + (r.UVONYX || 0) : 0;
+  return tot > 0 ? (r[line] || 0) / tot : null;
+}
 // GET uchun: o'z yo'nalishi + umumiy rasxodlar (umumiy rasxodga _lineShare — shu oydagi ulush)
-function filterForClient(key, list, scope, allOrders) {
+function filterForClient(key, list, scope, allOrders, work) {
   if (!scope || !SCOPED_KEYS.has(key) || !Array.isArray(list)) return list;
   const lm = lineMap(allOrders);
-  const out = list.filter((x) => visible(key, x, scope, lm));
+  const out = list.filter((x) => visible(key, x, scope, lm, allOrders));
   if (key !== "uvix:transactions") return out;
   const sh = sharesFor(scope, allOrders);
-  return out.map((t) => (txLine(t, lm) === "common" ? { ...t, _lineShare: sh[String(t.date || "").slice(0, 7)] ?? 0.5 } : t));
+  return out.map((t) => {
+    if (txLine(t, lm) !== "common") return t;
+    const w = workShare(scope, t, work);
+    return { ...t, _lineShare: w ?? sh[String(t.date || "").slice(0, 7)] ?? 0.5 };
+  });
 }
 
 // Yozish uchun: yangi/o'zgargan yozuv shu xodimga tegishli bo'lishi kerak.
 // Yangi rasxod yo'nalishsiz yoki «umumiy» kelsa — xodimning yo'nalishiga yoziladi.
-function prepareUpsert(key, item, oldItem, scope, orderLineById) {
+function prepareUpsert(key, item, oldItem, scope, orderLineById, orders) {
   if (!scope || !SCOPED_KEYS.has(key)) return item;
-  if (oldItem && !editable(key, oldItem, scope, orderLineById)) return null;
+  if (oldItem && !editable(key, oldItem, scope, orderLineById, orders)) return null;
   if (key === "uvix:orders") return { ...item, subcategory: scope };
+  if (key === "uvix:leads") return { ...item, line: scope };
+  if (key === "uvix:customers") return oldItem ? { ...item, line: oldItem.line } : { ...item, line: scope };
   const { _lineShare, ...t } = item;
   if (t.line !== scope) t.line = scope;
   if (t.relatedOrderId && orderLineById.has(t.relatedOrderId) && orderLineById.get(t.relatedOrderId) !== scope) delete t.relatedOrderId;
@@ -89,12 +117,12 @@ function mergeScopedPut(key, incoming, oldList, scope, allOrders) {
     const id = String(it.id);
     seen.add(id);
     const old = oldById.get(id);
-    const p = prepareUpsert(key, it, old, scope, lm);
+    const p = prepareUpsert(key, it, old, scope, lm, allOrders);
     mine.push(p || old);
   }
   // Xodimga ko'rinmagan (yoki tahrir qila olmaydigan va yubormagan) yozuvlar — joyida qoladi
-  const kept = oldList.filter((x) => x && !seen.has(String(x.id)) && !editable(key, x, scope, lm));
+  const kept = oldList.filter((x) => x && !seen.has(String(x.id)) && !editable(key, x, scope, lm, allOrders));
   return [...mine.filter(Boolean), ...kept];
 }
 
-module.exports = { LINES, EMP_LINES, cleanEmpLine, scopeOf, lineOfOrder, txLine, lineMap, sharesFor, visible, editable, filterForClient, prepareUpsert, mergeScopedPut, SCOPED_KEYS };
+module.exports = { lineOfLead, customerVisible, workShare, LINES, EMP_LINES, cleanEmpLine, scopeOf, lineOfOrder, txLine, lineMap, sharesFor, visible, editable, filterForClient, prepareUpsert, mergeScopedPut, SCOPED_KEYS };

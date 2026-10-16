@@ -1,8 +1,8 @@
 // ProfitLoss.jsx — rahbar Dashboard'i tepasidagi «Foyda va zarar» jadvali (UVIXPRINT | UVONYX | Jami)
-import { useMemo } from "react";
+import { useContext, useMemo } from "react";
 import { Columns2 } from "lucide-react";
 import { Card } from "../../components/ui.jsx";
-import { LINE_META, lineColor } from "../../lib/lines.js";
+import { LINE_META, WorkStatsContext, lineColor } from "../../lib/lines.js";
 import { computePnl } from "../../lib/pnl.js";
 import { fmt } from "../../lib/format.js";
 
@@ -19,17 +19,19 @@ function Change({ v }) {
 }
 
 export function ProfitLoss({ orders, transactions, month }) {
-  const p = useMemo(() => computePnl(orders, transactions, month), [orders, transactions, month]);
+  const work = useContext(WorkStatsContext);
+  const p = useMemo(() => computePnl(orders, transactions, month, work), [orders, transactions, month, work]);
   const cols = [p.UVIXPRINT, p.UVONYX, p.total];
   const sh = p.shares;
   const rows = [
     { k: "income", l: "Tushum (to'lovlar)", f: (c) => num(c.income) },
     { k: "direct", l: "To'g'ridan-to'g'ri rasxod", f: (c) => num(c.direct, true) },
+    ...(p.hasStaff ? [{ k: "staff", l: <>Umumiy xodimlar oyligi <span style={{ color: THEME.dim, fontWeight: 400 }}>(bajargan ishi bo'yicha)</span></>, f: (c) => num(c.staff, true) }] : []),
     { k: "common", l: <>Umumiy rasxod ulushi <span style={{ color: THEME.dim, fontWeight: 400 }}>({Math.round(sh.UVIXPRINT * 100)}% / {Math.round(sh.UVONYX * 100)}%)</span></>, f: (c) => num(c.common, true) },
     { k: "profit", l: "Sof foyda", f: (c) => num(c.profit), strong: true },
     { k: "margin", l: "Marja", f: (c) => pct(c.margin) },
     { k: "change", l: "O'tgan oyga nisbatan", f: (c) => <Change v={c.change} /> },
-    { k: "debt", l: "Qarzdorlik (hozir)", f: (c) => num(c.debt) },
+    { k: "debt", l: "Qarzdorlik (barcha davr)", f: (c) => num(c.debt) },
   ];
   const incTot = p.total.income;
   const th = { padding: "8px 12px", fontSize: 12, fontWeight: 600, color: THEME.muted, textAlign: "right", whiteSpace: "nowrap" };

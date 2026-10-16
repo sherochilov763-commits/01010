@@ -30,7 +30,10 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
   const read = (k, def) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : def; } catch { return def; } };
   const write = (k, v) => upsertStmt.run(k, JSON.stringify(v));
   const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-  const okChat = (id) => /^-?\d{1,20}$/.test(String(id || ""));
+  const okChat = (id) => /^(on:)?-?\d{1,20}$/.test(String(id || ""));
+  // Yo'nalish: «on:» — UVONYX akkaunti chati. Xodim faqat o'z yo'nalishi chatlarini ko'radi
+  const chatOk = (req, id) => !req.lineScope || (String(id).startsWith("on:") ? "UVONYX" : "UVIXPRINT") === req.lineScope;
+  const deny = (res) => res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
   const staffOnly = requireStaff || ((req, res, next) => next());
   const adminOnly = requireAdmin || ((req, res, next) => (req.user?.role === "admin" ? next() : res.status(403).json({ error: "forbidden" })));
 
@@ -106,8 +109,9 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
 
   // ---------- API ----------
   app.get("/api/chat-tools/state", requireAuth, staffOnly, (req, res) => {
-    const meta = read(KEY_META, {});
-    const notes = read(KEY_NOTES, {});
+    const keep = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => chatOk(req, k)));
+    const meta = keep(read(KEY_META, {}));
+    const notes = keep(read(KEY_NOTES, {}));
     const noteCount = Object.fromEntries(Object.entries(notes).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]));
     const typingNow = {};
     for (const chatId of typing.keys()) { const t = typingFor(chatId, req.user.id); if (t.length) typingNow[chatId] = t; }
@@ -116,6 +120,7 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
 
   app.put("/api/chat-tools/meta/:chatId", requireAuth, staffOnly, (req, res) => {
     const chatId = String(req.params.chatId);
+    if (!chatOk(req, chatId)) return deny(res);
     if (!okChat(chatId)) return res.status(400).json({ error: "bad_chat" });
     const b = req.body || {};
     const all = read(KEY_META, {});
@@ -136,10 +141,12 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
 
   app.get("/api/chat-tools/notes/:chatId", requireAuth, staffOnly, (req, res) => {
     const chatId = String(req.params.chatId);
+    if (!chatOk(req, chatId)) return deny(res);
     res.json({ notes: (read(KEY_NOTES, {})[chatId] || []) });
   });
   app.post("/api/chat-tools/notes/:chatId", requireAuth, staffOnly, (req, res) => {
     const chatId = String(req.params.chatId);
+    if (!chatOk(req, chatId)) return deny(res);
     const text = String(req.body?.text || "").trim().slice(0, 2000);
     if (!okChat(chatId) || !text) return res.status(400).json({ error: "empty", message: "Izoh matnini yozing" });
     const all = read(KEY_NOTES, {});
@@ -150,6 +157,7 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
   });
   app.delete("/api/chat-tools/notes/:chatId/:noteId", requireAuth, staffOnly, (req, res) => {
     const chatId = String(req.params.chatId);
+    if (!chatOk(req, chatId)) return deny(res);
     const all = read(KEY_NOTES, {});
     const list = all[chatId] || [];
     const n = list.find((x) => x.id === req.params.noteId);
@@ -163,6 +171,7 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
   app.post("/api/chat-tools/typing", requireAuth, staffOnly, (req, res) => {
     const chatId = String(req.body?.chatId || "");
     if (!okChat(chatId)) return res.status(400).json({ error: "bad_chat" });
+    if (!chatOk(req, chatId)) return deny(res);
     let m = typing.get(chatId);
     if (!m) { m = new Map(); typing.set(chatId, m); }
     if (req.body?.stop) m.delete(req.user.id); else m.set(req.user.id, { name: req.user.name, at: Date.now() });
@@ -176,7 +185,7 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
     const msgs = read("uvix:telegramMessages", {});
     const results = [];
     for (const [chatId, list] of Object.entries(msgs)) {
-      if (!Array.isArray(list)) continue;
+      if (!Array.isArray(list) || !chatOk(req, chatId)) continue;
       for (let i = list.length - 1; i >= 0; i--) {
         const m = list[i];
         const txt = String(m.text || m.fileName || "");

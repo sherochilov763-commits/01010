@@ -24,6 +24,7 @@ export const SETTINGS_INDEX = [
   { label: "Mavzu va ranglar", section: "korinish", keys: "mavzu rang tun kun dark qorong'i ko'rinish" },
   { label: "Fon rasmi", section: "korinish", keys: "fon rasm wallpaper" },
   { label: "Bildirishnomalar", section: "bildirish", keys: "bildirishnoma ovoz xabar push", anchor: "notify-settings" },
+  { label: "Yo'nalishlar: rang, prefiks, logo, rekvizitlar", section: "savdo", keys: "yo'nalish uvonyx uvixprint logo prefiks rang rekvizit karta", anchor: "line-profiles", admin: true },
   { label: "Narxlar ro'yxati", section: "savdo", keys: "narx material m2 smeta kalkulyator dollar", anchor: "price-list", admin: true },
   { label: "Avans foizi", section: "savdo", keys: "avans foiz oldindan to'lov", anchor: "price-list", admin: true },
   { label: "Dollar kursi", section: "savdo", keys: "kurs dollar usd markaziy bank cbu valyuta", anchor: "rate-card", admin: true },

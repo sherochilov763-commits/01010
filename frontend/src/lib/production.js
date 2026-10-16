@@ -1,16 +1,24 @@
 // production.js — buyurtma holati, smeta hisob-kitobi va to'lov taqsimoti (brauzer tomoni).
 // Server (backend/production.js, backend/quotes.js) bilan bir xil qoidalar: bu yerda faqat oldindan ko'rsatish uchun,
 // yakuniy hisob serverda qayta bajariladi.
+import { numberPrefix } from "./lines.js";
 import { THEME } from "../theme.js";
 import { fmt, money } from "./format.js";
 
-export const PROD_STAGES = ["new", "design", "printing", "ready", "delivered"];
-export const PROD_LABEL = { new: "Navbatda", design: "Dizaynda", printing: "Pechatda", ready: "Tayyor", delivered: "Topshirildi" };
+// UVONYX'da qo'shimcha bosqichlar: Material (oniks/shisha tayyorlash) va O'rnatish (montaj)
+export const PROD_STAGES = ["new", "design", "material", "printing", "ready", "install", "delivered"];
+export const PROD_LABEL = { new: "Navbatda", design: "Dizaynda", material: "Material", printing: "Pechatda", ready: "Tayyor", install: "O'rnatish", delivered: "Topshirildi" };
+const UV_STAGES = ["new", "design", "printing", "ready", "delivered"];
+// Yo'nalish bo'yicha bosqichlar ro'yxati va nomlari
+export const stagesFor = (line) => (line === "UVONYX" ? PROD_STAGES : UV_STAGES);
+export const prodLabel = (stage, line) => (line === "UVONYX" && stage === "printing" ? "Ishlab chiqarish" : line === "UVONYX" && stage === "design" ? "Dizayn" : PROD_LABEL[stage] || "");
 export function prodColors(stage) {
   switch (stage) {
     case "design": return { color: THEME.isDark ? "#B79CF5" : "#6D28D9", bg: THEME.isDark ? "rgba(139,92,246,.16)" : "#F1EBFC" };
     case "printing": return { color: THEME.isDark ? "#5CC7DA" : "#0E7490", bg: THEME.isDark ? "rgba(14,116,144,.2)" : "#E3F3F6" };
     case "ready": return { color: THEME.green, bg: THEME.greenBg };
+    case "material": return { color: THEME.isDark ? "#E0A86A" : "#9A5B13", bg: THEME.isDark ? "rgba(224,168,106,.16)" : "#FBF0E3" };
+    case "install": return { color: THEME.isDark ? "#3FB8A3" : "#0E7C6B", bg: THEME.isDark ? "rgba(63,184,163,.16)" : "#E3F4F1" };
     case "delivered": return { color: THEME.muted, bg: THEME.chip };
     case "new": return { color: THEME.amber || "#B45309", bg: THEME.amberBg || "#FDF3E3" };
     default: return { color: THEME.dim, bg: "transparent" };
@@ -142,7 +150,7 @@ export function allocate(amount, targets, mode = "prop") {
 
 // Keyingi buyurtma raqamlari (oldindan ko'rsatish; yakuniy raqamni server beradi)
 export function predictNumbers(allOrders, dateStr, n, line) {
-  const prefix = `${line === "UVONYX" ? "ON" : "UV"}-${String(dateStr).replace(/-/g, "").slice(2)}-`;
+  const prefix = `${numberPrefix(line)}-${String(dateStr).replace(/-/g, "").slice(2)}-`;
   const max = (allOrders || []).reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0);
   return Array.from({ length: n }, (_, i) => `${prefix}${String(max + i + 1).padStart(3, "0")}`);
 }

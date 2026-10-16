@@ -11,7 +11,8 @@ const timeOf = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime
 
 export function ApprovalsCard({ approvals, onDecide, showToast }) {
   const [busy, setBusy] = useState(null);
-  if (!approvals.pending.length) return null;
+  const items = approvals.decidable || approvals.pending;
+  if (!items.length) return null;
   async function act(r, action) {
     setBusy(r.id + action);
     try {
@@ -26,11 +27,11 @@ export function ApprovalsCard({ approvals, onDecide, showToast }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: `1px solid ${THEME.border}` }}>
         <ShieldCheck size={18} />
         <b style={{ fontSize: 15 }}>Tasdiqlash so'rovlari</b>
-        <span style={{ fontSize: 12, fontWeight: 700, color: THEME.roseText, background: THEME.roseBg, borderRadius: 10, padding: "1px 8px" }}>{approvals.pending.length}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: THEME.roseText, background: THEME.roseBg, borderRadius: 10, padding: "1px 8px" }}>{items.length}</span>
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: THEME.dim }} className="uvix-hide-mobile">Faqat admin ko'radi</span>
+        <span style={{ fontSize: 12, color: THEME.dim }} className="uvix-hide-mobile">{approvals.isAdmin ? "Faqat admin ko'radi" : "Sizning tasdiqlash chegarangiz doirasida"}</span>
       </div>
-      {approvals.pending.map((r) => {
+      {items.map((r) => {
         const diff = r.kind === "payment_edit" ? r.new.amount - r.old.amount : r.kind === "order_total" ? r.new.agreementUzs - r.old.agreementUzs : null;
         return (
           <div key={r.id} data-approval={r.id} className="uvix-approval-row" style={{ display: "flex", gap: 14, padding: "14px 18px", borderTop: `1px solid ${THEME.border}` }}>

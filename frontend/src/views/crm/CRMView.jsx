@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Send, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Ruler, Send, Trash2, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
-import { LEAD_STAGES, isWorkerRole } from "../../constants.js";
+import { isWorkerRole, leadStagesFor } from "../../constants.js";
+import { useLine } from "../../lib/lines.js";
+import { fetchJobs } from "../../storage.js";
+import { JobForm } from "../jobs/JobsView.jsx";
 import { PROD_LABEL, PROD_STAGES, prodColors } from "../../lib/production.js";
 import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
 import { TaskChips } from "./TaskAssignModal.jsx";
@@ -36,6 +39,9 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
   const [notes, setNotes] = useState(initial?.notes || "");
   const [error, setError] = useState("");
+  // Yo'nalish: xodim — o'zinikida (server ham shunday yozadi); rahbar — tanlaydi
+  const { line: curLine } = useLine();
+  const [leadLine, setLeadLine] = useState(initial?.line || (String(initial?.telegramChatId || "").startsWith("on:") ? "UVONYX" : curLine !== "all" ? curLine : "UVIXPRINT"));
 
   function submit() {
     if (!customer.trim()) return setError("Mijoz ismini kiriting");
@@ -51,6 +57,7 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
       orderId: initial?.orderId || null,
       createdBy: initial?.createdBy,
       createdAt: initial?.createdAt,
+      line: leadLine,
     };
     onSave(lead, isEdit);
   }
@@ -61,6 +68,16 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
         <Field label="Mijoz ismi">
           <input value={customer} onChange={(e) => setCustomer(e.target.value)} style={getInputStyle()} placeholder="Mijoz yoki kompaniya nomi" autoFocus />
         </Field>
+        {curLine === "all" && !initial?.telegramChatId && (
+          <Field label="Yo'nalish">
+            <div role="group" data-testid="lead-line" style={{ display: "flex", gap: 6 }}>
+              {["UVIXPRINT", "UVONYX"].map((l) => (
+                <button key={l} type="button" onClick={() => setLeadLine(l)} aria-pressed={leadLine === l} data-line={l}
+                  style={{ flex: 1, height: 34, borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12.5, border: `1.5px solid ${leadLine === l ? THEME.text : THEME.border}`, background: THEME.card, color: THEME.text }}>{l}</button>
+              ))}
+            </div>
+          </Field>
+        )}
         <Field label="Telefon">
           <input value={phone} onChange={(e) => setPhone(e.target.value)} style={getInputStyle()} placeholder="+998 90 123 45 67" />
         </Field>
@@ -224,7 +241,32 @@ function DealLine({ lead, orders, linkedOrder, onCreate }) {
   );
 }
 
+// Lid kartasida: shu lid yoki uning buyurtmalari bo'yicha eng yaqin ochiq vazifa («O'lchov · ertaga 11:00 · Bekzod»)
+const JOB_SHORT = { measure: "O'lchov", install: "Montaj", deliver: "Yetkazish", other: "Vazifa" };
+function NextJob({ lead, jobs }) {
+  const ids = new Set([...(lead.orderIds || []), lead.orderId].filter(Boolean));
+  const open = (jobs || []).filter((j) => !["done", "cancelled"].includes(j.status) && (j.leadId === lead.id || (j.orderId && ids.has(j.orderId))))
+    .sort((a, b) => `${a.date || "9"}${a.time || ""}`.localeCompare(`${b.date || "9"}${b.time || ""}`));
+  if (!open.length) return null;
+  const j = open[0];
+  const t = new Date().toISOString().slice(0, 10);
+  const tm = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
+  const day = !j.date ? "sanasiz" : j.date === t ? "bugun" : j.date === tm ? "ertaga" : j.date.slice(5).split("-").reverse().join(".");
+  return (
+    <div data-testid="lead-next-job" style={{ fontSize: 12, fontWeight: 600, color: THEME.violet, display: "flex", alignItems: "center", gap: 5 }}>
+      <Ruler size={12} />{JOB_SHORT[j.kind] || "Vazifa"} · {day}{j.time ? ` ${j.time}` : ""}{j.assignees?.length ? ` · ${j.assignees[0].name.split(" ")[0]}` : " · mas'ulsiz"}{open.length > 1 ? ` (+${open.length - 1})` : ""}
+    </div>
+  );
+}
+
 export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
+  // Bosqichlar yo'nalishga qarab (UVONYX: Murojaat → O'lchov → Smeta ...)
+  const LEAD_STAGES = leadStagesFor(useLine().line);
+  // Vazifalar (o'lchov, montaj): lid kartasida keyingi ish ko'rinadi; «O'lchovga yuborish»
+  const [jobs, setJobs] = useState([]);
+  const [jobFor, setJobFor] = useState(null);
+  const loadJobs = useCallback(() => fetchJobs().then((r) => setJobs(r.jobs || [])).catch(() => {}), []);
+  useEffect(() => { loadJobs(); const t = setInterval(loadJobs, 60000); return () => clearInterval(t); }, [loadJobs]);
   const [modal, setModal] = useState(null); // null | true (new) | lead (edit)
   useEffect(() => {
     if (!quickAddNonce) return;
@@ -429,6 +471,7 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
                       {note && <div style={{ fontSize: 12.5, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{note}</div>}
                       <TaskChips lead={lead} employees={employees} compact onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
                       <DealLine lead={lead} orders={orders} linkedOrder={linkedOrder} onCreate={() => onCreateOrderFromLead(lead)} />
+                      <NextJob lead={lead} jobs={jobs} />
                       {(lead.source || lead.telegramUsername || st) && (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
                           {lead.source && <SourceChip source={lead.source} />}
@@ -444,6 +487,7 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
                         ) : null}
                         <button type="button" onClick={() => moveStage(lead, -1)} disabled={idx === 0} title="Oldingi bosqich" aria-label="Oldingi bosqich"><ArrowLeft size={14} /></button>
                         <button type="button" onClick={() => moveStage(lead, 1)} disabled={idx === LEAD_STAGES.length - 1} title="Keyingi bosqich" aria-label="Keyingi bosqich"><ArrowRight size={14} /></button>
+                        <button type="button" onClick={() => setJobFor(lead)} title="O'lchov / vazifa" aria-label="O'lchov / vazifa" data-lead-job={lead.id}><Ruler size={14} /></button>
                         <button type="button" onClick={() => setModal(lead)} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={14} /></button>
                         <button type="button" onClick={() => setConfirmDel(lead)} title="O'chirish" aria-label="O'chirish" className="danger"><Trash2 size={14} /></button>
                       </div>
@@ -471,6 +515,7 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
       </>      )}
       </>)}
 
+      {jobFor && <JobForm job={null} preset={{ kind: "measure", leadId: jobFor.id, line: jobFor.line, title: `${jobFor.customer} — o'lchov`, phone: jobFor.phone || "" }} employees={employees} orders={orders} onClose={() => setJobFor(null)} onSaved={() => { setJobFor(null); loadJobs(); }} />}
       {modal && (
         <LeadForm
           initial={modal === true ? null : modal}
@@ -511,6 +556,7 @@ function telegramLink(lead) {
 }
 
 function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelete, onMove, onChat, onCreateOrder, employees, onAssignTask }) {
+  const LEAD_STAGES = leadStagesFor(useLine().line);
   const list = leadsByStage[stage] || [];
   const total = list.reduce((s, l) => s + (Number(l.estimatedValue) || 0), 0);
   const stageInfo = LEAD_STAGES.find((s) => s.key === stage) || LEAD_STAGES[0];

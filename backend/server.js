@@ -23,6 +23,17 @@ const { mergeOrderState } = require("./production");
 const UPLOADS_DIR = path.join(path.dirname(db.DB_PATH), "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 telegramUserbot.setMediaDir(UPLOADS_DIR);
+// Ikkinchi Telegram akkaunt — UVONYX yo'nalishi. Uning chatlari «on:<id>» ko'rinishida saqlanadi
+// (xabarlar, lidlar, kontaktlar, chat sozlamalari) — birinchi akkaunt chatlari bilan aralashmaydi.
+const ONYX = "on:";
+const tgOnyx = telegramUserbot.createUserbot();
+tgOnyx.setMediaDir(UPLOADS_DIR);
+const telegramLoginOnyx = require("./telegram-login").createLogin();
+const chatLineOf = (chatId) => (String(chatId || "").startsWith(ONYX) ? "UVONYX" : "UVIXPRINT");
+const tgFor = (chatId) => (String(chatId || "").startsWith(ONYX) ? { bot: tgOnyx, id: String(chatId).slice(ONYX.length) } : { bot: telegramUserbot, id: chatId });
+const tgByLine = (line) => (line === "UVONYX" ? tgOnyx : telegramUserbot);
+// Xodim faqat o'z yo'nalishi chatlari bilan ishlaydi (rahbar va «Umumiy» — hammasi)
+const chatAllowed = (req, chatId) => !req.lineScope || chatLineOf(chatId) === req.lineScope;
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -240,9 +251,10 @@ function requireAuth(req, res, next) {
   next();
 }
 // Dizayner va Pechatchi — faqat o'z vazifalarini ko'radigan "ishchi" rollar (pul ma'lumotlarisiz)
-const WORKER_ROLES = new Set(["designer", "printer"]);
+const WORKER_ROLES = new Set(["designer", "printer", "installer"]);
 const isWorker = (user) => WORKER_ROLES.has(user?.role);
 const linesApi = require("./lines");
+let jobsApi = null; // «Vazifalar» (pastda ro'yxatdan o'tadi) — bajarilgan ish statistikasi uchun
 // Ishchi rollar o'qishi/yozishi mumkin bo'lgan KV kalitlari (qolgani — 403)
 const WORKER_READ_KEYS = new Set(["uvix:employees", "uvix:appearance", "uvix:settings"]);
 const WORKER_WRITE_KEYS = new Set(["uvix:employees"]); // faqat o'z PIN'ini o'zgartirish uchun
@@ -374,7 +386,7 @@ const TG_ROUTE_DEFAULTS = {
   paint: "admin", debts: "admin", system: "admin", monthlyReport: "admin",
 };
 const TG_STAFF_ALLOWED = new Set(["orders", "paint"]);
-const TG_STAFF_ROLES = new Set(["admin", "operator"]);
+const TG_STAFF_ROLES = new Set(["admin", "manager", "operator"]);
 function tgRoute(cat) {
   let s = {};
   try { s = JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch {}
@@ -428,12 +440,12 @@ const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, req
 const customerMsg = require("./customer-msg")(app, {
   getStmt, upsertStmt, requireAuth, requireAdmin,
   sender: {
-    isConnected: () => telegramUserbot.isConnected(),
-    sendText: (peer, text) => telegramUserbot.sendMessage(peer, text),
+    isConnected: () => telegramUserbot.isConnected() || tgOnyx.isConnected(),
+    sendText: (peer, text) => { const t = tgFor(peer); return t.bot.sendMessage(t.id, text); },
     sendImage: async (peer, base64, caption, ext = "png") => {
       const file = path.join(require("os").tmpdir(), `uvix-invoice-${crypto.randomBytes(6).toString("hex")}.${ext === "jpeg" ? "jpg" : "png"}`);
       fs.writeFileSync(file, Buffer.from(base64, "base64"));
-      try { return await telegramUserbot.sendPhoto(peer, file, { caption }); } finally { fs.unlink(file, () => {}); }
+      try { const t = tgFor(peer); return await t.bot.sendPhoto(t.id, file, { caption }); } finally { fs.unlink(file, () => {}); }
     },
   },
 });
@@ -467,6 +479,14 @@ require("./task-notify").createTaskNotifier({
 const onOrderReady = (order) => customerMsg.sendReady(order).catch((e) => console.error("Mijozga «tayyor» xabari:", e.message));
 registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAuth, isWorker, onOrderReady });
 
+// ==================== Vazifalar (o'lchov, montaj, yetkazish) ====================
+jobsApi = require("./jobs")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, isWorker,
+  sendToEmployee: (id, text) => (tgAllowed(id, "tasks") ? staffBot.sendToEmployee(id, text) : Promise.resolve(false)),
+  appUrl: () => { try { return JSON.parse(getStmt.get("uvix:attConfig")?.value || "{}").appUrl || ""; } catch { return ""; } },
+  interval: process.env.UVIX_JOBS_MS ? Number(process.env.UVIX_JOBS_MS) : 20000,
+});
+
 // ==================== Smeta → buyurtmalar, holatlar, umumiy to'lov ====================
 const fx = require("./fx").createFx({ getStmt, upsertStmt });
 require("./quotes")(app, {
@@ -486,7 +506,7 @@ const SECRET_SETTING_FIELDS = ["telegramBotToken", "telegramChatId", "gmailUser"
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key === "uvix:tgSession" || key === "uvix:tgSessionState" || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -576,18 +596,29 @@ app.get("/api/kv/:key", (req, res) => {
   if (req.lineScope && linesApi.SCOPED_KEYS.has(key)) {
     try {
       const allOrders = key === "uvix:orders" ? JSON.parse(row.value) : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), req.lineScope, allOrders)) });
+      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), req.lineScope, allOrders, jobsApi?.workStats())) });
     } catch { return res.status(500).json({ error: "read_failed" }); }
   }
   res.json({ key: row.key, rev, value: row.value });
 });
+// Mijozning mas'ul menejerini faqat rahbar yoki katta menejer o'zgartiradi
+function keepCustomerManager(user, items, oldList) {
+  if (!Array.isArray(items) || user?.role === "admin" || user?.role === "manager") return items;
+  const old = new Map((Array.isArray(oldList) ? oldList : []).filter(Boolean).map((x) => [String(x.id), x]));
+  return items.map((it) => {
+    if (!it || typeof it !== "object") return it;
+    const o = old.get(String(it.id));
+    const { managerId, ...rest } = it; // eslint-disable-line no-unused-vars
+    return o?.managerId ? { ...rest, managerId: o.managerId } : rest;
+  });
+}
 // Yo'nalish bo'yicha javob: xodimga faqat o'z yo'nalishi ko'rinadi
 function scopedValue(req, key, value) {
   if (!req.lineScope || !linesApi.SCOPED_KEYS.has(key)) return value;
   try {
     const list = JSON.parse(value);
     const allOrders = key === "uvix:orders" ? list : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-    return JSON.stringify(linesApi.filterForClient(key, list, req.lineScope, allOrders));
+    return JSON.stringify(linesApi.filterForClient(key, list, req.lineScope, allOrders, jobsApi?.workStats()));
   } catch { return value; }
 }
 
@@ -717,7 +748,20 @@ function notifyExpensesDiff(oldValue, newValue) {
     const newTx = JSON.parse(newValue);
     if (!Array.isArray(newTx)) return;
     const oldIds = new Set(oldTx.map((t) => t.id));
+    let st = {};
+    try { st = JSON.parse(getStmt.get("uvix:settings")?.value || "{}") || {}; } catch { st = {}; }
+    const bigLimit = Math.max(0, Number(st.bigExpenseLimit) || 0);
     newTx.forEach((t) => {
+      if (!oldIds.has(t.id) && t.type === "chiqim" && bigLimit > 0 && (Number(t.amount) || 0) >= bigLimit) {
+        // Yirik rasxod — rahbarga alohida (Telegram yo'nalishi sozlamasidan qat'i nazar), ilovada ham
+        const ln = t.line === "common" ? "Umumiy" : t.line === "UVONYX" ? "UVONYX" : t.line === "UVIXPRINT" ? "UVIXPRINT" : "";
+        const text = `🔴 <b>Yirik rasxod</b>${ln ? ` · ${ln}` : ""}\nSumma: <b>${fmtMoney(t.amount)}</b>\nKategoriya: ${escHtml(t.category)}${t.subcategory ? " / " + escHtml(t.subcategory) : ""}\nKiritdi: ${escHtml(t.createdBy || "—")}${t.note ? `\nIzoh: ${escHtml(t.note)}` : ""}`;
+        for (const id of adminIds()) {
+          try { notifications.emit("expenses", { title: `Yirik rasxod: ${fmtMoney(t.amount)}`, body: `${t.category}${ln ? ` · ${ln}` : ""} · ${t.createdBy || ""}`, view: "dashboard", to: id }); } catch { /* ixtiyoriy */ }
+          Promise.resolve(staffBot.sendToEmployee(id, text)).catch(() => false);
+        }
+        return;
+      }
       if (!oldIds.has(t.id) && t.type === "chiqim") {
         notify("expenses",
           `💸 <b>Yangi rasxod</b>\nKategoriya: ${escHtml(t.category)}${t.subcategory ? " / " + escHtml(t.subcategory) : ""}\nSumma: ${fmtMoney(t.amount)}${t.note ? `\nIzoh: ${escHtml(t.note)}` : ""}`
@@ -769,6 +813,10 @@ function mergeEmployees(incoming, user) {
     const next = { ...oldRest, ...rest, name, role, pin };
     const ln = linesApi.cleanEmpLine(rest.line !== undefined ? rest.line : old?.line);
     if (ln) next.line = ln; else delete next.line;
+    // Huquqlar (rahbar beradi): kassa qoldig'ini ko'rish, foydani ko'rish, tasdiqlash chegarasi (so'm)
+    const pr = rest.perm !== undefined ? rest.perm : old?.perm;
+    if (pr && typeof pr === "object" && role !== "admin") next.perm = { cash: pr.cash !== false, profit: pr.profit !== false, approveLimit: Math.max(0, Math.min(1e12, Math.round(Number(pr.approveLimit) || 0))) };
+    else delete next.perm;
     if (old && pin !== old.pin) { delete next.mustChangePin; delete next.tempPinExp; } // admin PIN'ni qo'lda o'zgartirdi
     result.push(next);
   }
@@ -892,8 +940,9 @@ app.post("/api/kv/:key/merge", (req, res) => {
       // Boshqa yo'nalish (yoki umumiy rasxod) yozuvlarini xodim o'zgartira/o'chira olmaydi
       const lm = linesApi.lineMap(key === "uvix:orders" ? oldList : JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
       const byId = new Map(oldList.filter(Boolean).map((x) => [String(x.id), x]));
-      scopedDeletes = deletes.filter((id) => { const o = byId.get(String(id)); return !o || linesApi.editable(key, o, req.lineScope, lm); });
-      scopedUpserts = upserts.map((u) => { const it = linesApi.prepareUpsert(key, u.item, byId.get(String(u.item.id)), req.lineScope, lm); return it ? { ...u, item: it } : null; }).filter(Boolean);
+      const allOrd = key === "uvix:orders" ? oldList : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
+      scopedDeletes = deletes.filter((id) => { const o = byId.get(String(id)); return !o || linesApi.editable(key, o, req.lineScope, lm, allOrd); });
+      scopedUpserts = upserts.map((u) => { const it = linesApi.prepareUpsert(key, u.item, byId.get(String(u.item.id)), req.lineScope, lm, allOrd); return it ? { ...u, item: it } : null; }).filter(Boolean);
     }
     // Operator buyurtmani o'chira olmaydi (faqat admin tasdig'i bilan) — o'chirish so'rovi e'tiborsiz qoladi
     const blocked = key === "uvix:orders" && !isAdminUser ? oldList.filter((x) => scopedDeletes.map(String).includes(String(x?.id))) : [];
@@ -902,6 +951,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     const pos = new Map(list.map((x, i) => [String(x?.id), i]));
     const toStart = [];
     const toEnd = [];
+    if (key === "uvix:customers") scopedUpserts = keepCustomerManager(req.user, scopedUpserts.map((u) => u.item), oldList).map((item, i) => ({ ...scopedUpserts[i], item }));
     for (const u of scopedUpserts) {
       const id = String(u.item.id);
       if (pos.has(id)) list[pos.get(id)] = u.item;
@@ -987,9 +1037,11 @@ app.put("/api/kv/:key", (req, res) => {
   if (key === "uvix:leads") {
     // Dizayner/pechatchi vazifa holatini o'zgartirgan bo'lsa, menejerning eskirgan nusxasi uni bosib ketmasin
     try {
-      const merged = mergeLeadTaskState(JSON.parse(value), oldValue ? JSON.parse(oldValue) : []);
+      const oldLeads = oldValue ? JSON.parse(oldValue) : [];
+      const incomingLeads = linesApi.mergeScopedPut(key, JSON.parse(value), oldLeads, req.lineScope, JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
+      const merged = mergeLeadTaskState(incomingLeads, oldLeads);
       upsertStmt.run(key, JSON.stringify(merged));
-      return res.json({ key, rev: revOf(key), value: JSON.stringify(merged) });
+      return res.json({ key, rev: revOf(key), value: scopedValue(req, key, JSON.stringify(merged)) });
     } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
   if (key === "uvix:audit") {
@@ -1018,7 +1070,10 @@ app.put("/api/kv/:key", (req, res) => {
   if (req.params.key === "uvix:settings") {
     try { settingsLog.settingsChanged(req.user.name, oldValue ? JSON.parse(oldValue) : {}, JSON.parse(value)); } catch { /* jurnal ixtiyoriy */ }
   }
-  if (key === "uvix:transactions" && req.lineScope) {
+  if (key === "uvix:customers") {
+    try { value = JSON.stringify(keepCustomerManager(req.user, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [])); } catch { return res.status(400).json({ error: "invalid_json" }); }
+  }
+  if ((key === "uvix:transactions" || key === "uvix:customers") && req.lineScope) {
     try {
       value = JSON.stringify(linesApi.mergeScopedPut(key, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [], req.lineScope, JSON.parse(getStmt.get("uvix:orders")?.value || "[]")));
     } catch { return res.status(400).json({ error: "invalid_json" }); }
@@ -1123,7 +1178,7 @@ app.post("/api/backup/restore", requireAuth, requireAdmin, restoreUpload.single(
       for (const r of rows) insert.run(r.key, r.value, r.updated_at || new Date().toISOString());
       db.prepare("UPDATE kv_store SET rev = ?").run(maxRev + 1);
     })();
-    dialogsCache = { at: 0, list: [] };
+    dialogsCaches.UVIXPRINT = { at: 0, list: [] }; dialogsCaches.UVONYX = { at: 0, list: [] };
     historySyncedAt.clear();
     const auditRow = getStmt.get("uvix:audit");
     try {
@@ -1278,13 +1333,13 @@ function handleIncomingTelegramMessage(data) {
 // Botlar (CardXabar kabi), kanallar va Telegram xizmati bilan yozishmalarni CRM'dan olib tashlaydi.
 // Lid faqat avtomatik ochilgan va hech kim tegmagan bo'lsa o'chiriladi.
 async function removeBotChats() {
-  if (!telegramUserbot.isConnected()) return { removedChats: 0, removedLeads: 0 };
+  if (!telegramUserbot.isConnected() && !tgOnyx.isConnected()) return { removedChats: 0, removedLeads: 0 };
   const msgs = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
   const leads = JSON.parse(getStmt.get("uvix:leads")?.value || "[]");
   const ids = new Set([...Object.keys(msgs), ...leads.filter((l) => l.telegramChatId).map((l) => String(l.telegramChatId))]);
   const bots = new Set();
   for (const id of ids) {
-    try { if ((await telegramUserbot.isBotChat(id)) === true) bots.add(id); } catch { /* aniqlab bo'lmadi — tegmaymiz */ }
+    try { const t = tgFor(id); if (t.bot.isConnected() && (await t.bot.isBotChat(t.id)) === true) bots.add(id); } catch { /* aniqlab bo'lmadi — tegmaymiz */ }
   }
   if (!bots.size) return { removedChats: 0, removedLeads: 0 };
   const freshMsgs = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
@@ -1301,14 +1356,20 @@ async function removeBotChats() {
 }
 
 async function repairUnknownTelegramNames() {
-  if (!telegramUserbot.isConnected()) return { fixed: 0 };
+  if (!telegramUserbot.isConnected() && !tgOnyx.isConnected()) return { fixed: 0 };
   const cleaned = await removeBotChats().catch((e) => { console.error("Botlarni tozalashda xato:", e.message); return {}; });
   if (cleaned.removedChats || cleaned.removedLeads) console.log(`Telegram: ${cleaned.removedChats} ta bot suhbati va ${cleaned.removedLeads} ta avtomatik lid olib tashlandi`);
   const leadsRow = getStmt.get("uvix:leads");
   const leads = leadsRow ? JSON.parse(leadsRow.value) : [];
   const targets = leads.filter((l) => l.telegramChatId && (!l.customer || l.customer.startsWith("Noma'lum") || !l.telegramUsername || !l.phone));
   if (!targets.length) return { fixed: 0 };
-  const names = await telegramUserbot.resolveChatNames([...new Set(targets.map((l) => String(l.telegramChatId)))]);
+  const ids = [...new Set(targets.map((l) => String(l.telegramChatId)))];
+  const names = {};
+  if (telegramUserbot.isConnected()) Object.assign(names, await telegramUserbot.resolveChatNames(ids.filter((i) => !i.startsWith(ONYX))).catch(() => ({})));
+  if (tgOnyx.isConnected()) {
+    const on = await tgOnyx.resolveChatNames(ids.filter((i) => i.startsWith(ONYX)).map((i) => i.slice(ONYX.length))).catch(() => ({}));
+    for (const [k, v] of Object.entries(on)) names[ONYX + k] = v;
+  }
   // Oraliqda boshqa o'zgarish bo'lgan bo'lishi mumkin — yangidan o'qib, faqat kerakli maydonlarni yozamiz
   const freshRow = getStmt.get("uvix:leads");
   const fresh = freshRow ? JSON.parse(freshRow.value) : [];
@@ -1342,13 +1403,15 @@ app.post("/api/telegram-user/refresh-names", requireAuth, requireStaff, async (r
 // Sozlamalar (uvix:settings) brauzerdan butunligicha yoziladi — agar sessiya o'sha yerda tursa, eski ochiq
 // sahifa yangi sessiyani eskisi bilan ustidan yozib yuborishi mumkin edi. Shuning uchun uni faqat server yozadi.
 const sessionHash = (s) => crypto.createHash("sha256").update(String(s || "")).digest("hex").slice(0, 16);
-function readTgState() {
-  try { return JSON.parse(getStmt.get("uvix:tgSessionState")?.value || "{}"); } catch { return {}; }
+const tgKeys = (line) => (line === "UVONYX" ? { session: "uvix:tgSession:UVONYX", state: "uvix:tgSessionState:UVONYX" } : { session: "uvix:tgSession", state: "uvix:tgSessionState" });
+function readTgState(line) {
+  try { return JSON.parse(getStmt.get(tgKeys(line).state)?.value || "{}"); } catch { return {}; }
 }
-function currentTgSession(settings) {
+function currentTgSession(settings, line) {
   let stored = null;
-  try { stored = JSON.parse(getStmt.get("uvix:tgSession")?.value || "null"); } catch { /* */ }
+  try { stored = JSON.parse(getStmt.get(tgKeys(line).session)?.value || "null"); } catch { /* */ }
   if (stored?.session) return stored.session;
+  if (line === "UVONYX") return null;
   // Eski usul: sozlamalarga qo'lda qo'yilgan session string (o'lganligi ma'lum bo'lsa — ishlatmaymiz)
   const legacy = settings?.telegramUserSession;
   if (legacy && readTgState().deadHash !== sessionHash(legacy)) return legacy;
@@ -1357,48 +1420,53 @@ function currentTgSession(settings) {
 function readSettings() {
   try { return JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch { return {}; }
 }
-let tgDeadNotifiedHash = null;
-function onTelegramSessionDead(info) {
+const tgDeadNotifiedHash = {};
+function onTelegramSessionDead(info, line) {
   const settings = readSettings();
-  const dead = currentTgSession(settings);
+  const dead = currentTgSession(settings, line);
   const deadHash = sessionHash(dead);
-  upsertStmt.run("uvix:tgSessionState", JSON.stringify({ expired: info, deadHash }));
-  db.prepare("DELETE FROM kv_store WHERE key = ?").run("uvix:tgSession");
-  if (tgDeadNotifiedHash !== deadHash) {
-    tgDeadNotifiedHash = deadHash;
-    notify("system", `⚠️ <b>UVIX: Telegram akkaunt uzildi</b>\n${info.message}\n\nCRM chatlar ishlashi uchun: Sozlamalar → Telegram akkaunt → «Qayta ulash» (QR kod yoki telefon kodi).`);
+  upsertStmt.run(tgKeys(line).state, JSON.stringify({ expired: info, deadHash }));
+  db.prepare("DELETE FROM kv_store WHERE key = ?").run(tgKeys(line).session);
+  if (tgDeadNotifiedHash[line || "UVIXPRINT"] !== deadHash) {
+    tgDeadNotifiedHash[line || "UVIXPRINT"] = deadHash;
+    notify("system", `⚠️ <b>UVIX: ${line === "UVONYX" ? "UVONYX " : ""}Telegram akkaunt uzildi</b>\n${info.message}\n\nCRM chatlar ishlashi uchun: Sozlamalar → Telegram akkaunt → «Qayta ulash» (QR kod yoki telefon kodi).`);
   }
 }
-function connectTelegramUserbot() {
+function connectTelegramUserbot(line) {
   const settings = readSettings();
-  const session = currentTgSession(settings);
+  const session = currentTgSession(settings, line);
   if (!settings?.telegramUserApiId || !settings?.telegramUserApiHash || !session) return Promise.resolve({ ok: false, error: "Telegram akkaunt ulanmagan" });
-  return telegramUserbot.connectFromSettings(settings, handleIncomingTelegramMessage, { session, onSessionDead: onTelegramSessionDead }).then((r) => {
+  const onyx = line === "UVONYX";
+  const handler = onyx ? (d) => handleIncomingTelegramMessage({ ...d, chatId: ONYX + d.chatId }) : handleIncomingTelegramMessage;
+  return tgByLine(line).connectFromSettings(settings, handler, { session, onSessionDead: (info) => onTelegramSessionDead(info, line) }).then((r) => {
     if (r.ok) repairUnknownTelegramNames().catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
     return r;
   });
 }
 
+const lineQ = (req) => (req.query?.line === "UVONYX" || req.body?.line === "UVONYX" ? "UVONYX" : null);
 app.get("/api/telegram-user/status", requireAuth, requireStaff, (req, res) => {
-  const st = telegramUserbot.getStatus();
+  // Xodim — o'z yo'nalishi akkaunti; rahbar — ?line=UVONYX bilan ikkinchisi
+  const line = req.lineScope === "UVONYX" ? "UVONYX" : req.lineScope ? null : lineQ(req);
+  const st = tgByLine(line).getStatus();
   // Server qayta ishga tushgan bo'lsa ham «sessiya tugagan» holati yo'qolmasin
-  if ((st.status === "disconnected" || st.status === "error") && !currentTgSession(readSettings())) {
-    const { expired } = readTgState();
+  if ((st.status === "disconnected" || st.status === "error") && !currentTgSession(readSettings(), line)) {
+    const { expired } = readTgState(line);
     if (expired) return res.json({ status: "expired", ...expired });
   }
   res.json(st);
 });
 
 // ---- Ilovaning o'zidan kirish (QR kod / telefon kodi / 2FA) ----
-async function saveLoggedInSession({ session, apiId, apiHash, user }) {
-  upsertStmt.run("uvix:tgSession", JSON.stringify({ session, savedAt: new Date().toISOString(), user }));
-  upsertStmt.run("uvix:tgSessionState", JSON.stringify({}));
-  tgDeadNotifiedHash = null;
+async function saveLoggedInSession({ session, apiId, apiHash, user }, line) {
+  upsertStmt.run(tgKeys(line).session, JSON.stringify({ session, savedAt: new Date().toISOString(), user }));
+  upsertStmt.run(tgKeys(line).state, JSON.stringify({}));
+  tgDeadNotifiedHash[line || "UVIXPRINT"] = null;
   const settings = readSettings();
-  const next = { ...settings, telegramUserApiId: String(apiId), telegramUserApiHash: apiHash, telegramUserPhone: user?.phone || settings.telegramUserPhone || "" };
-  delete next.telegramUserSession; // endi alohida kalitda
+  const next = { ...settings, telegramUserApiId: String(apiId), telegramUserApiHash: apiHash, ...(line === "UVONYX" ? {} : { telegramUserPhone: user?.phone || settings.telegramUserPhone || "" }) };
+  if (line !== "UVONYX") delete next.telegramUserSession; // endi alohida kalitda
   upsertStmt.run("uvix:settings", JSON.stringify(next));
-  const r = await connectTelegramUserbot();
+  const r = await connectTelegramUserbot(line);
   if (!r.ok) throw new Error(r.error || "Ulanib bo'lmadi");
 }
 function loginCreds(body) {
@@ -1408,25 +1476,31 @@ function loginCreds(body) {
 const loginRoute = (fn) => async (req, res) => {
   try { res.json(await fn(req)); } catch (e) { res.status(400).json({ error: "login_failed", message: e.message }); }
 };
-app.get("/api/telegram-user/login", requireAuth, requireAdmin, (req, res) => res.json(telegramLogin.getState()));
-app.post("/api/telegram-user/login/qr", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.startQr({ ...loginCreds(req.body), onSuccess: saveLoggedInSession })));
-app.post("/api/telegram-user/login/phone", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.startPhone({ ...loginCreds(req.body), phone: req.body?.phone, onSuccess: saveLoggedInSession })));
-app.post("/api/telegram-user/login/code", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.submitCode(req.body?.code)));
-app.post("/api/telegram-user/login/password", requireAuth, requireAdmin, loginRoute((req) => telegramLogin.submitPassword(req.body?.password)));
-app.post("/api/telegram-user/login/cancel", requireAuth, requireAdmin, loginRoute(() => telegramLogin.cancel()));
+// ?line=UVONYX — ikkinchi (UVONYX) akkaunt; aks holda asosiy
+const loginOf = (req) => (lineQ(req) === "UVONYX" ? telegramLoginOnyx : telegramLogin);
+const onLogin = (req) => { const line = lineQ(req); return (info) => saveLoggedInSession(info, line); };
+app.get("/api/telegram-user/login", requireAuth, requireAdmin, (req, res) => res.json(loginOf(req).getState()));
+app.post("/api/telegram-user/login/qr", requireAuth, requireAdmin, loginRoute((req) => loginOf(req).startQr({ ...loginCreds(req.body), onSuccess: onLogin(req) })));
+app.post("/api/telegram-user/login/phone", requireAuth, requireAdmin, loginRoute((req) => loginOf(req).startPhone({ ...loginCreds(req.body), phone: req.body?.phone, onSuccess: onLogin(req) })));
+app.post("/api/telegram-user/login/code", requireAuth, requireAdmin, loginRoute((req) => loginOf(req).submitCode(req.body?.code)));
+app.post("/api/telegram-user/login/password", requireAuth, requireAdmin, loginRoute((req) => loginOf(req).submitPassword(req.body?.password)));
+app.post("/api/telegram-user/login/cancel", requireAuth, requireAdmin, loginRoute((req) => loginOf(req).cancel()));
 
 // Telegram'dagi shaxsiy suhbatlar ro'yxati — daqiqasiga bir marta yangilanadi (Telegram cheklovlari)
-let dialogsCache = { at: 0, list: [] };
-async function getPrivateDialogs() {
-  if (!telegramUserbot.isConnected()) return [];
-  if (Date.now() - dialogsCache.at < 60 * 1000) return dialogsCache.list;
-  dialogsCache.at = Date.now();
+const dialogsCaches = { UVIXPRINT: { at: 0, list: [] }, UVONYX: { at: 0, list: [] } };
+async function getDialogsOf(line) {
+  const bot = tgByLine(line);
+  const cache = dialogsCaches[line];
+  if (!bot.isConnected()) return [];
+  if (Date.now() - cache.at < 60 * 1000) return cache.list;
+  cache.at = Date.now();
   try {
-    dialogsCache.list = await telegramUserbot.listPrivateDialogs(300);
+    const raw = await bot.listPrivateDialogs(300);
+    cache.list = line === "UVONYX" ? raw.map((d) => ({ ...d, chatId: ONYX + d.chatId })) : raw;
     // Ismlarni eslab qolamiz — Telegram uzilib qolsa ham ro'yxatda ism turadi
     const contacts = JSON.parse(getStmt.get("uvix:telegramContacts")?.value || "{}");
     let changed = false;
-    for (const d of dialogsCache.list) {
+    for (const d of cache.list) {
       if (!d.name || d.name.startsWith("Noma'lum")) continue;
       const c = contacts[d.chatId];
       if (!c || c.name !== d.name || c.username !== d.username || c.phone !== d.phone) {
@@ -1437,9 +1511,15 @@ async function getPrivateDialogs() {
     if (changed) upsertStmt.run("uvix:telegramContacts", JSON.stringify(contacts));
   } catch (e) {
     console.error("Telegram suhbatlar ro'yxatini olishda xato:", e.message);
-    dialogsCache.at = Date.now() - 45 * 1000; // 15 soniyadan keyin qayta urinamiz
+    cache.at = Date.now() - 45 * 1000; // 15 soniyadan keyin qayta urinamiz
   }
-  return dialogsCache.list;
+  return cache.list;
+}
+// Papkalar uchun — faqat asosiy akkaunt
+const getPrivateDialogs = () => getDialogsOf("UVIXPRINT");
+async function getAllDialogs() {
+  const [a, b] = await Promise.all([getDialogsOf("UVIXPRINT"), getDialogsOf("UVONYX")]);
+  return [...a, ...b];
 }
 
 // Telegram papkalari (chap panel) — Telegram'dagidek; daqiqasiga bir marta yangilanadi
@@ -1448,7 +1528,7 @@ require("./tg-folders").registerTgFolders(app, { requireAuth, requireStaff, user
 app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) => {
   let dialogs = [];
   try {
-    dialogs = await Promise.race([getPrivateDialogs(), new Promise((r) => setTimeout(() => r(dialogsCache.list), 8000))]);
+    dialogs = await Promise.race([getAllDialogs(), new Promise((r) => setTimeout(() => r([...dialogsCaches.UVIXPRINT.list, ...dialogsCaches.UVONYX.list]), 8000))]);
   } catch { /* saqlangan xabarlar bilan davom etamiz */ }
   const allMessages = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
   const lastSeen = JSON.parse(getStmt.get("uvix:telegramLastSeen")?.value || "{}");
@@ -1478,8 +1558,9 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
   const chats = [...byId.values()].map((c) => {
     const info = contacts[c.chatId];
     const out = info ? { ...c, name: info.name, username: info.username || "", phone: info.phone || "" } : c;
-    return !out.lastOut && require("./chat-tools").noReplyCovers(chatMeta[c.chatId], out.lastDate) ? { ...out, noReply: true } : out;
-  });
+    const withLine = { ...out, line: chatLineOf(c.chatId) };
+    return !out.lastOut && require("./chat-tools").noReplyCovers(chatMeta[c.chatId], out.lastDate) ? { ...withLine, noReply: true } : withLine;
+  }).filter((c) => chatAllowed(req, c.chatId));
   chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
   res.json({ chats });
 });
@@ -1487,13 +1568,15 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
 // Suhbatni CRM'ga lid sifatida qo'lda qo'shish
 app.post("/api/telegram-user/create-lead", requireAuth, requireStaff, async (req, res) => {
   const chatId = String(req.body?.chatId || "").slice(0, 64);
-  if (!/^-?\d+$/.test(chatId)) return res.status(400).json({ error: "missing_chatId" });
+  if (!/^(on:)?-?\d+$/.test(chatId)) return res.status(400).json({ error: "missing_chatId" });
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found" });
   const leads = JSON.parse(getStmt.get("uvix:leads")?.value || "[]");
   const existing = leads.find((l) => String(l.telegramChatId) === chatId);
   if (existing) return res.json({ ok: true, lead: existing, existed: true });
   let info = JSON.parse(getStmt.get("uvix:telegramContacts")?.value || "{}")[chatId] || null;
   try {
-    const live = await telegramUserbot.describeChat(chatId);
+    const tg = tgFor(chatId);
+    const live = await tg.bot.describeChat(tg.id);
     if (live?.bot) return res.status(400).json({ error: "is_bot", message: "Botni CRM'ga qo'shib bo'lmaydi" });
     if (live?.known) info = { name: live.name, username: live.username, phone: live.phone };
   } catch { /* saqlangan ma'lumot bilan davom etamiz */ }
@@ -1510,6 +1593,7 @@ app.post("/api/telegram-user/create-lead", requireAuth, requireStaff, async (req
     orderId: null,
     telegramChatId: chatId,
     telegramUsername: username,
+    line: chatLineOf(chatId),
     createdBy: req.user?.name || "Xodim",
     createdAt: new Date().toISOString(),
   };
@@ -1523,6 +1607,7 @@ app.post("/api/telegram-user/create-lead", requireAuth, requireStaff, async (req
 app.post("/api/telegram-user/mark-read", requireAuth, requireStaff, (req, res) => {
   const { chatId } = req.body || {};
   if (!chatId) return res.status(400).json({ error: "missing_chatId" });
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
   const seenRow = getStmt.get("uvix:telegramLastSeen");
   const lastSeen = seenRow ? JSON.parse(seenRow.value) : {};
   lastSeen[chatId] = new Date().toISOString();
@@ -1531,13 +1616,13 @@ app.post("/api/telegram-user/mark-read", requireAuth, requireStaff, (req, res) =
 });
 
 app.post("/api/telegram-user/connect", requireAuth, requireAdmin, async (req, res) => {
-  const result = await connectTelegramUserbot();
+  const result = await connectTelegramUserbot(lineQ(req));
   if (result.ok) res.json({ ok: true });
   else res.status(400).json({ error: "connect_failed", message: result.error });
 });
 
 app.post("/api/telegram-user/disconnect", requireAuth, requireAdmin, async (req, res) => {
-  await telegramUserbot.disconnect();
+  await tgByLine(lineQ(req)).disconnect();
   res.json({ ok: true });
 });
 
@@ -1545,7 +1630,8 @@ app.post("/api/telegram-user/disconnect", requireAuth, requireAdmin, async (req,
 // Bir suhbat uchun daqiqasiga ko'pi bilan bir marta — Telegram cheklovlariga rioya qilish uchun.
 const historySyncedAt = new Map();
 async function syncChatHistory(chatId) {
-  if (!telegramUserbot.isConnected()) return;
+  const tg = tgFor(chatId);
+  if (!tg.bot.isConnected()) return;
   const row = getStmt.get("uvix:telegramMessages");
   const stored = (row ? JSON.parse(row.value) : {})[chatId] || [];
   const last = historySyncedAt.get(chatId) || 0;
@@ -1553,11 +1639,12 @@ async function syncChatHistory(chatId) {
   if (stored.length && Date.now() - last < 60 * 1000) return;
   historySyncedAt.set(chatId, Date.now());
   const known = new Set(stored.map((m) => m.tgId).filter((x) => x != null));
-  const { messages } = await telegramUserbot.fetchHistory(chatId, { limit: 50, knownTgIds: known });
+  const { messages } = await tg.bot.fetchHistory(tg.id, { limit: 50, knownTgIds: known });
   if (messages.length) mergeTgMessages(chatId, messages);
 }
 app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, async (req, res) => {
   const chatId = String(req.params.chatId).slice(0, 64);
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
   try {
     await Promise.race([syncChatHistory(chatId), new Promise((r) => setTimeout(r, 8000))]);
   } catch (e) {
@@ -1567,7 +1654,7 @@ app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, async 
   const allMessages = row ? JSON.parse(row.value) : {};
   const list = allMessages[chatId] || [];
   // Eski tarixni yuklash mumkinmi: Telegram ulangan va eng eski xabar 1-xabar emas
-  const hasOlder = telegramUserbot.isConnected() && !noOlder.has(chatId) && list.some((m) => Number.isInteger(m.tgId) && m.tgId > 1);
+  const hasOlder = tgFor(chatId).bot.isConnected() && !noOlder.has(chatId) && list.some((m) => Number.isInteger(m.tgId) && m.tgId > 1);
   res.json({ messages: list, hasOlder });
 });
 
@@ -1577,7 +1664,9 @@ const noOlder = new Set(); // boshigacha yuklangan suhbatlar
 app.get("/api/telegram-user/messages/:chatId/older", requireAuth, requireStaff, async (req, res) => {
   const chatId = String(req.params.chatId).slice(0, 64);
   const limit = Math.min(60, Math.max(10, parseInt(req.query.limit, 10) || 40));
-  if (!telegramUserbot.isConnected()) return res.status(409).json({ error: "not_connected", message: "Telegram akkauntga ulanmagan" });
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
+  const tg = tgFor(chatId);
+  if (!tg.bot.isConnected()) return res.status(409).json({ error: "not_connected", message: "Telegram akkauntga ulanmagan" });
   const stored = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}")[chatId] || [];
   // Eng eski ma'lum xabar ID'sidan boshlab eskiroqlarini so'raymiz
   const ids = stored.map((m) => m.tgId).filter((x) => Number.isInteger(x) && x > 0);
@@ -1586,7 +1675,7 @@ app.get("/api/telegram-user/messages/:chatId/older", requireAuth, requireStaff, 
   const key = `${chatId}:${before}`;
   try {
     if (!olderInFlight.has(key)) {
-      olderInFlight.set(key, telegramUserbot.fetchHistory(chatId, { limit, offsetId: before, knownTgIds: new Set(ids) }).finally(() => olderInFlight.delete(key)));
+      olderInFlight.set(key, tg.bot.fetchHistory(tg.id, { limit, offsetId: before, knownTgIds: new Set(ids) }).finally(() => olderInFlight.delete(key)));
     }
     const { messages, hasMore } = await olderInFlight.get(key);
     const added = messages.length ? mergeTgMessages(chatId, messages) : 0;
@@ -1631,8 +1720,9 @@ const replyOpt = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v
 app.post("/api/telegram-user/send", requireAuth, requireStaff, async (req, res) => {
   const { chatId, text, replyToTgId } = req.body || {};
   if (!validChatId(chatId) || !text || typeof text !== "string") return res.status(400).json({ error: "missing_fields" });
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
   try {
-    const { tgId } = await telegramUserbot.sendMessage(chatId, text, { replyTo: replyOpt(replyToTgId) });
+    const { tgId } = await tgFor(chatId).bot.sendMessage(tgFor(chatId).id, text, { replyTo: replyOpt(replyToTgId) });
     const message = storeOutgoing(String(chatId), { text, tgId, replyToTgId: replyOpt(replyToTgId) || null });
     res.json({ ok: true, message });
   } catch (e) {
@@ -1660,6 +1750,7 @@ app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) 
       if (f) fs.unlink(f.path, () => {});
       return res.status(400).json({ error: "missing_fields" });
     }
+    if (!chatAllowed(req, chatId)) { fs.unlink(f.path, () => {}); return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" }); }
     const cleanup = [];
     try {
       const replyTo = replyOpt(replyToTgId);
@@ -1668,18 +1759,18 @@ app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) 
       if ((kind === "photo" || kind === "voice") && f.size > 15 * 1024 * 1024) throw new Error("Fayl 15 MB dan katta");
       if (kind === "video") {
         if (!f.mimetype.startsWith("video/")) throw new Error("Video fayli kutilgan edi");
-        const { tgId } = await telegramUserbot.sendVideo(chatId, f.path, { caption, replyTo });
+        const { tgId } = await tgFor(chatId).bot.sendVideo(tgFor(chatId).id, f.path, { caption, replyTo });
         const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "video", mediaUrl: `/api/photos/${f.filename}`, fileName: originalName, fileSize: f.size, tgId, replyToTgId: replyTo || null });
         return res.json({ ok: true, message });
       }
       if (kind === "document") {
-        const { tgId } = await telegramUserbot.sendDocument(chatId, f.path, { fileName: originalName, caption, replyTo });
+        const { tgId } = await tgFor(chatId).bot.sendDocument(tgFor(chatId).id, f.path, { fileName: originalName, caption, replyTo });
         const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "document", mediaUrl: `/api/photos/${f.filename}`, fileName: originalName, fileSize: f.size, tgId, replyToTgId: replyTo || null });
         return res.json({ ok: true, message });
       }
       if (kind === "photo") {
         if (!f.mimetype.startsWith("image/")) throw new Error("Rasm fayli kutilgan edi");
-        const { tgId } = await telegramUserbot.sendPhoto(chatId, f.path, { caption, replyTo });
+        const { tgId } = await tgFor(chatId).bot.sendPhoto(tgFor(chatId).id, f.path, { caption, replyTo });
         const message = storeOutgoing(String(chatId), { text: caption || "", mediaType: "photo", mediaUrl: `/api/photos/${f.filename}`, tgId, replyToTgId: replyTo || null });
         return res.json({ ok: true, message });
       }
@@ -1689,7 +1780,7 @@ app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) 
       const ogg = await tgAudio.toTelegramVoice(f.path, `${base}.ogg`).catch((e) => { console.error("Ovozni o'girishda xato:", e.message); return null; });
       if (ogg) sendPath = ogg; // OGG'ni o'chirmaymiz — CRM'da ham ijro uchun ishlatiladi
       const duration = tgAudio.probeDuration(sendPath);
-      const { tgId } = await telegramUserbot.sendVoice(chatId, sendPath, { replyTo, duration });
+      const { tgId } = await tgFor(chatId).bot.sendVoice(tgFor(chatId).id, sendPath, { replyTo, duration });
       // Ikki format: M4A (iPhone Safari) + OGG/asl yozuv (qolgan brauzerlar)
       const m4a = await tgAudio.toPlayableM4a(f.path, `${base}.m4a`).catch(() => null);
       const altName = ogg ? path.basename(ogg) : f.filename;
@@ -1716,8 +1807,9 @@ app.post("/api/telegram-user/send-location", requireAuth, requireStaff, async (r
   if (!validChatId(chatId) || !Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) {
     return res.status(400).json({ error: "bad_location", message: "Joylashuv noto'g'ri" });
   }
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
   try {
-    const { tgId } = await telegramUserbot.sendLocation(chatId, la, lo, { replyTo: replyOpt(replyToTgId) });
+    const { tgId } = await tgFor(chatId).bot.sendLocation(tgFor(chatId).id, la, lo, { replyTo: replyOpt(replyToTgId) });
     const message = storeOutgoing(String(chatId), { mediaType: "location", lat: la, lng: lo, tgId, replyToTgId: replyOpt(replyToTgId) || null });
     res.json({ ok: true, message });
   } catch (e) {
@@ -1730,13 +1822,14 @@ const ALLOWED_REACTIONS = new Set(["👍", "❤", "🔥", "😁", "😢", "🙏"
 app.post("/api/telegram-user/react", requireAuth, requireStaff, async (req, res) => {
   const { chatId, messageId, emoji } = req.body || {};
   if (!validChatId(chatId) || !messageId || (emoji && !ALLOWED_REACTIONS.has(emoji))) return res.status(400).json({ error: "bad_request" });
+  if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
   const row = getStmt.get("uvix:telegramMessages");
   const all = row ? JSON.parse(row.value) : {};
   const msg = (all[chatId] || []).find((m) => m.id === messageId);
   if (!msg) return res.status(404).json({ error: "not_found" });
   if (!msg.tgId) return res.status(409).json({ error: "no_tg_id", message: "Bu eski xabarga reaksiya qo'yib bo'lmaydi" });
   try {
-    await telegramUserbot.sendReaction(chatId, msg.tgId, emoji || null);
+    await tgFor(chatId).bot.sendReaction(tgFor(chatId).id, msg.tgId, emoji || null);
     // Yangidan o'qib yozamiz (oraliqda yangi xabar kelgan bo'lishi mumkin)
     const fresh = JSON.parse(getStmt.get("uvix:telegramMessages").value);
     const target = (fresh[chatId] || []).find((m) => m.id === messageId);
@@ -1757,7 +1850,7 @@ function gracefulShutdown(signal) {
   console.log(`${signal} — server to'xtatilmoqda...`);
   const force = setTimeout(() => process.exit(0), 4000);
   force.unref?.();
-  Promise.allSettled([telegramUserbot.disconnect(), telegramLogin.cancel()]).finally(() => process.exit(0));
+  Promise.allSettled([telegramUserbot.disconnect(), tgOnyx.disconnect(), telegramLogin.cancel(), telegramLoginOnyx.cancel()]).finally(() => process.exit(0));
 }
 // Ushlanmagan server xatolari ham «So'nggi xatolar»ga yoziladi va adminga xabar boradi
 app.use((err, req, res, next) => {
@@ -1793,6 +1886,7 @@ app.listen(PORT, () => {
       else if (r.expired) console.log("Telegram shaxsiy akkaunt: sessiya tugagan — Sozlamalardan qayta ulang");
       else console.log("Telegram shaxsiy akkaunt:", r.error);
     });
+    connectTelegramUserbot("UVONYX").then((r) => { if (r.ok) console.log("UVONYX Telegram akkaunt: ulandi"); });
   } catch (e) {
     console.error("Telegram avto-ulanish xatosi:", e.message);
   }

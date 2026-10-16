@@ -151,6 +151,13 @@ const VIOLATION_TEXT = {
   payment_invalid: (v) => `noto'g'ri to'lov rad etildi · ${v.order?.orderNumber || ""}`,
 };
 
+// So'rovning pul hajmi (tasdiqlash chegarasi bilan solishtiriladi)
+function requestAmount(r) {
+  if (r.kind === "payment_edit") return Math.abs((Number(r.new?.amount) || 0) - (Number(r.old?.amount) || 0));
+  if (r.kind === "payment_delete") return Number(r.old?.amount) || 0;
+  if (r.kind === "order_total") return Math.max(0, (Number(r.old?.agreementUzs) || 0) - (Number(r.new?.agreementUzs) || 0));
+  return Number(r.old?.agreementUzs) || 0;
+}
 function describeRequest(r) {
   if (r.kind === "payment_edit") return `to'lov summasini o'zgartirmoqchi: ${money(r.old.amount)} → ${money(r.new.amount)}`;
   if (r.kind === "payment_delete") return `to'lovni o'chirmoqchi: ${money(r.old.amount)}`;
@@ -184,13 +191,26 @@ module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmp
 
   // ---------- Tasdiqlash so'rovlari ----------
   const all = () => read(KEY_APPROVALS, []);
+  // Katta menejer: o'z yo'nalishidagi boshqa xodimlar so'rovini chegarasi doirasida tasdiqlaydi
+  const lineOfOrderId = (id) => { const o = read("uvix:orders", []).find((x) => x && x.id === id); return o ? (o.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") : null; };
+  function canDecide(user, r) {
+    if (!user || r.status !== "pending") return false;
+    if (user.role === "admin") return true;
+    if (user.role !== "manager" || r.by?.id === user.id) return false;
+    const me = readEmployees().find((e) => e.id === user.id);
+    const limit = Math.max(0, Number(me?.perm?.approveLimit) || 0);
+    const scope = me?.line === "UVONYX" ? "UVONYX" : me?.line === "common" ? null : "UVIXPRINT";
+    if (scope && lineOfOrderId(r.orderId) !== scope) return false;
+    return requestAmount(r) <= limit;
+  }
+  const visibleTo = (user, r) => user.role === "admin" || r.by?.id === user.id || (user.role === "manager" && (canDecide(user, r) || r.decidedBy === user.name));
+  const managersFor = (r) => readEmployees().filter((e) => e.role === "manager" && e.id !== r.by?.id && canDecide({ id: e.id, role: "manager", name: e.name }, r)).map((e) => e.id);
   const save = (list) => write(KEY_APPROVALS, list.slice(0, 300));
   const pending = (list) => list.filter((r) => r.status === "pending");
 
   app.get("/api/approvals", requireAuth, requireStaff, (req, res) => {
     const list = all();
-    const isAdmin = req.user.role === "admin";
-    const mine = isAdmin ? list : list.filter((r) => r.by?.id === req.user.id);
+    const mine = list.filter((r) => visibleTo(req.user, r)).map((r) => ({ ...r, canDecide: canDecide(req.user, r) }));
     res.json({ approvals: mine.slice(0, 100), pending: pending(mine).length });
   });
 
@@ -233,6 +253,10 @@ module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmp
     log(req.user.name, `So'rov yubordi: ${describeRequest(r)} · ${o.orderNumber} · sabab: «${reason}»`, r.dev);
     toAdmins(`🛡 <b>Tasdiqlash so'rovi</b>\n${esc(req.user.name)} ${esc(describeRequest(r))}\nBuyurtma: ${esc(o.orderNumber)} · ${esc(o.customer)}\nSabab: «${esc(reason)}»\n\nUVIX'da tasdiqlang yoki rad eting.`,
       "Tasdiqlash so'rovi", `${req.user.name} ${describeRequest(r)} · ${o.orderNumber}`).catch(() => {});
+    for (const id of managersFor(r)) {
+      sendToEmployee(id, `🛡 <b>Tasdiqlash so'rovi</b>\n${esc(req.user.name)} ${esc(describeRequest(r))}\nBuyurtma: ${esc(o.orderNumber)} · ${esc(o.customer)}\nSabab: «${esc(reason)}»`).catch(() => false);
+      try { emit("approvals", { title: "Tasdiqlash so'rovi", body: `${req.user.name} ${describeRequest(r)} · ${o.orderNumber}`, view: "orders", to: id }); } catch { /* ixtiyoriy */ }
+    }
     res.json({ approval: r });
   });
 
@@ -250,10 +274,11 @@ module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmp
   });
 
   // Admin qarori. Tasdiqlansa — o'zgarish serverda qo'llanadi (bitta tranzaksiya ichida)
-  app.post("/api/approvals/:id/:action(approve|reject)", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/approvals/:id/:action(approve|reject)", requireAuth, (req, res) => {
     const list = all();
     const r = list.find((x) => x.id === req.params.id);
     if (!r) return res.status(404).json({ error: "not_found" });
+    if (r.status === "pending" && !canDecide(req.user, r)) return res.status(403).json({ error: "forbidden", message: req.user.role === "manager" ? "Bu so'rov sizning tasdiqlash chegarangizdan yuqori — rahbar hal qiladi" : "Faqat administrator uchun" });
     if (r.status !== "pending") return res.status(409).json({ error: "already_decided", message: "So'rov allaqachon ko'rib chiqilgan" });
     const at = now().toISOString();
     const approve = req.params.action === "approve";
@@ -298,6 +323,7 @@ module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmp
   return { guardOrders, guardAudit, report, log, deviceOf };
 };
 module.exports.guardOrders = guardOrders;
+module.exports.requestAmount = requestAmount;
 module.exports.guardAudit = guardAudit;
 module.exports.deviceOf = deviceOf;
 module.exports.describeRequest = describeRequest;

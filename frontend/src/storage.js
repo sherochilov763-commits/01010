@@ -148,8 +148,10 @@ export async function deletePhoto(filename) {
   return true;
 }
 
-export async function fetchTelegramUserStatus() {
-  const res = await fetch(`${API_BASE}/telegram-user/status`, { headers: authHeaders() });
+// line = "UVONYX" — ikkinchi (UVONYX) akkaunt; bo'lmasa — asosiy
+const lineQs = (line) => (line === "UVONYX" ? "?line=UVONYX" : "");
+export async function fetchTelegramUserStatus(line) {
+  const res = await fetch(`${API_BASE}/telegram-user/status${lineQs(line)}`, { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.message || data.error || `status failed: ${res.status}`);
@@ -158,10 +160,10 @@ export async function fetchTelegramUserStatus() {
 }
 
 // Ilovaning o'zidan Telegram'ga kirish: step = "qr" | "phone" | "code" | "password" | "cancel", yoki holatni olish (step yo'q)
-export async function telegramLogin(step, body = {}) {
+export async function telegramLogin(step, body = {}, line) {
   const res = step
-    ? await fetch(`${API_BASE}/telegram-user/login/${step}`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) })
-    : await fetch(`${API_BASE}/telegram-user/login`, { headers: authHeaders() });
+    ? await fetch(`${API_BASE}/telegram-user/login/${step}${lineQs(line)}`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) })
+    : await fetch(`${API_BASE}/telegram-user/login${lineQs(line)}`, { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || data.error || `login failed: ${res.status}`);
   return data;
@@ -197,8 +199,8 @@ export async function markTelegramChatRead(chatId) {
   return data;
 }
 
-export async function connectTelegramUser() {
-  const res = await fetch(`${API_BASE}/telegram-user/connect`, { method: "POST", headers: authHeaders() });
+export async function connectTelegramUser(line) {
+  const res = await fetch(`${API_BASE}/telegram-user/connect${lineQs(line)}`, { method: "POST", headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.message || data.error || `connect failed: ${res.status}`);
@@ -206,8 +208,8 @@ export async function connectTelegramUser() {
   return data;
 }
 
-export async function disconnectTelegramUser() {
-  const res = await fetch(`${API_BASE}/telegram-user/disconnect`, { method: "POST", headers: authHeaders() });
+export async function disconnectTelegramUser(line) {
+  const res = await fetch(`${API_BASE}/telegram-user/disconnect${lineQs(line)}`, { method: "POST", headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.message || data.error || `disconnect failed: ${res.status}`);
@@ -665,3 +667,22 @@ export async function revokeSession(id) {
 // ---- So'nggi xatolar (admin) ----
 export const fetchSystemErrors = () => apiReq("/system/errors");
 export const clearSystemErrors = () => apiReq("/system/errors", "DELETE");
+
+// ---------- Vazifalar (o'lchov, montaj, yetkazish) ----------
+async function jobsCall(path, method = "GET", body) {
+  const res = await fetch(`${API_BASE}/jobs${path}`, { method, headers: { ...authHeaders(), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401) { clearToken(); throw new Error("unauthorized"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "Vazifani saqlab bo'lmadi");
+  return data;
+}
+export const fetchJobs = () => jobsCall("");
+export const createJob = (job) => jobsCall("", "POST", job);
+export const updateJob = (id, patch) => jobsCall(`/${encodeURIComponent(id)}`, "PATCH", patch);
+export const deleteJob = (id) => jobsCall(`/${encodeURIComponent(id)}`, "DELETE");
+export async function fetchWorkStats() {
+  const res = await fetch(`${API_BASE}/work-stats`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => ({}));
+  return data.stats || null;
+}

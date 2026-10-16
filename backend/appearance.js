@@ -30,7 +30,7 @@ function cleanAppearance(a) {
 function cleanRoleDefaults(rd) {
   if (!rd || typeof rd !== "object") return undefined;
   const out = {};
-  for (const role of ["admin", "operator", "designer", "printer"]) {
+  for (const role of ["admin", "manager", "operator", "designer", "printer", "installer"]) {
     if (MODES.has(rd[role])) out[role] = rd[role];
   }
   return Object.keys(out).length ? out : undefined;

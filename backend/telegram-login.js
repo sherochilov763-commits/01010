@@ -11,6 +11,7 @@ const QRCode = require("qrcode");
 const { CLIENT_OPTS, friendlyError } = require("./telegram-userbot");
 
 const LOGIN_TIMEOUT = 10 * 60 * 1000;
+function createLogin() {
 let flow = null; // joriy kirish jarayoni
 
 function publicState() {
@@ -183,4 +184,6 @@ async function cancel() {
   return publicState();
 }
 
-module.exports = { startQr, startPhone, submitCode, submitPassword, cancel, getState: publicState };
+  return { startQr, startPhone, submitCode, submitPassword, cancel, getState: publicState };
+}
+module.exports = { ...createLogin(), createLogin };

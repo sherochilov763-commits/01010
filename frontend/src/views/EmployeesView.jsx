@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
-import { ClipboardList, KeyRound, Lock, Plus, Send, Trash2, Users } from "lucide-react";
+import { useContext, useEffect, useState } from "react";
+import { ClipboardList, KeyRound, Lock, Pencil, Plus, Send, Trash2, Users } from "lucide-react";
 import { fetchPinHelp, fetchStaffTelegram, giveTempPin } from "../storage.js";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
-import { uid } from "../lib/format.js";
+import { fmt, uid } from "../lib/format.js";
 import { roleLabel } from "../constants.js";
-import { EMP_LINE_OPTIONS, empLineLabel, lineColor } from "../lib/lines.js";
+import { EMP_LINE_OPTIONS, WorkStatsContext, empLineLabel, lineColor } from "../lib/lines.js";
 import { THEME } from "../theme.js";
 
 /* ---------------- EMPLOYEES VIEW ---------------- */
@@ -12,17 +12,23 @@ import { THEME } from "../theme.js";
 /* ---------------- XODIMLAR ---------------- */
 const ROLE_DESCRIPTIONS = {
   admin: "Hammasini ko'radi, qo'shadi, tahrirlaydi, o'chiradi",
+  manager: "Yo'nalish rahbari: o'z yo'nalishining barcha buyurtma, rasxod va mijozlarini ko'radi; xodimlar so'rovini chegarasi doirasida tasdiqlaydi",
   operator: "Faqat o'z tushum/rasxodlarini kiritadi va ko'radi",
   designer: "Faqat o'ziga biriktirilgan dizayn vazifalarini ko'radi — pul ma'lumotlarisiz",
   printer: "Faqat o'ziga biriktirilgan pechat vazifalarini ko'radi — pul ma'lumotlarisiz",
+  installer: "Faqat o'ziga berilgan o'lchov, montaj, yetkazish vazifalarini ko'radi — pul ma'lumotlarisiz",
 };
 const ROLE_BADGE = (role) => ({
   admin: { color: THEME.violet, bg: THEME.violetSoft },
+  manager: { color: THEME.text, bg: THEME.chip },
   designer: { color: THEME.blue, bg: THEME.blueBg },
   printer: { color: THEME.cyan, bg: THEME.cyanBg },
+  installer: { color: THEME.amber || "#B45309", bg: THEME.amberBg || "#FDF3E3" },
 }[role] || { color: THEME.greenText, bg: THEME.greenBg });
 
 export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
+  const work = useContext(WorkStatsContext);
+  const curMonth = new Date().toISOString().slice(0, 7);
   const [modal, setModal] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
@@ -30,6 +36,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
+  const [editEmp, setEditEmp] = useState(null);
   const [tab, setTab] = useState("list");
   // Kirish holati: Telegram ulanganmi (PIN tiklash kodi shu yerga keladi) va kim PIN so'radi
   const isAdmin = currentUser?.role === "admin";
@@ -120,14 +127,29 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
                         {EMP_LINE_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
                       </select>
                     ) : <span style={{ fontSize: 12.5, fontWeight: 600, color: THEME.muted }}>{empLineLabel(e)}</span>}
+                    {e.line === "common" && (() => {
+                      const r = work?.[curMonth]?.[e.id];
+                      const tot = r ? r.UVIXPRINT + r.UVONYX : 0;
+                      return (
+                        <div data-emp-work={e.id} style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4, whiteSpace: "nowrap" }} title="Oylik shu nisbatda bo'linadi (bajarilgan vazifalar)">
+                          {tot ? <>Shu oy: <b style={{ color: lineColor("UVIXPRINT", THEME.isDark) }}>{r.UVIXPRINT} UV</b> · <b style={{ color: lineColor("UVONYX", THEME.isDark) }}>{r.UVONYX} ON</b> → {Math.round((r.UVIXPRINT / tot) * 100)}% / {100 - Math.round((r.UVIXPRINT / tot) * 100)}%</> : "Shu oy bajarilgan ish yo'q"}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ padding: "13px 16px", color: THEME.muted, fontSize: 12 }}>
                     {ROLE_DESCRIPTIONS[e.role] || ROLE_DESCRIPTIONS.operator}
+                    {["manager", "operator"].includes(e.role) && <PermChips e={e} />}
                   </td>
                   <td style={{ padding: "13px 16px" }}>
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                    {isAdmin && e.role !== "admin" && (
+                      <button onClick={() => setEditEmp(e)} className="uvix-iconbtn" style={getIconBtn()} title="Rol va huquqlar" aria-label={`${e.name}: rol va huquqlar`} data-emp-edit={e.id}><Pencil size={14} /></button>
+                    )}
                     {e.id !== currentUser.id && (
                       <button onClick={() => setConfirmDel(e)} className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
                     )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -162,6 +184,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
         </Card>
       )}
 
+      {editEmp && <EmpRights emp={editEmp} onClose={() => setEditEmp(null)} onSave={(next) => { onSave(employees.map((x) => (x.id === next.id ? next : x))); setEditEmp(null); }} />}
       {modal && (
         <Modal title="Yangi xodim qo'shish" onClose={() => setModal(false)} width={440}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -169,10 +192,12 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
               <input value={name} onChange={(e) => setName(e.target.value)} style={getInputStyle()} placeholder="Ism familiya" />
             </Field>
             <Field label="Rol">
-              <select value={role} onChange={(e) => { setRole(e.target.value); setLine(["designer", "printer"].includes(e.target.value) ? "common" : "UVIXPRINT"); }} style={getInputStyle()}>
-                <option value="operator">Operator</option>
+              <select value={role} onChange={(e) => { setRole(e.target.value); setLine(["designer", "printer", "installer"].includes(e.target.value) ? "common" : "UVIXPRINT"); }} style={getInputStyle()}>
+                <option value="operator">Operator (sotuv menejeri)</option>
+                <option value="manager">Katta menejer</option>
                 <option value="designer">Dizayner</option>
                 <option value="printer">Pechatchi</option>
+                <option value="installer">Montajchi</option>
                 <option value="admin">Administrator</option>
               </select>
               <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]}</div>
@@ -236,5 +261,58 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+// Huquqlar: kassa qoldig'i, foyda, tasdiqlash chegarasi (Katta menejer uchun)
+const permOf = (e) => ({ cash: e?.perm?.cash !== false, profit: e?.perm?.profit !== false, approveLimit: Number(e?.perm?.approveLimit) || 0 });
+function PermChips({ e }) {
+  const p = permOf(e);
+  const chip = (on, text, k) => <span key={k} data-perm={k} data-on={on ? "1" : "0"} style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", borderRadius: 6, fontSize: 11, fontWeight: 600, marginRight: 4, marginTop: 5, color: on ? THEME.greenText : THEME.muted, background: on ? THEME.greenBg : THEME.chip, textDecoration: on ? "none" : "line-through" }}>{text}</span>;
+  return (
+    <div>
+      {chip(p.cash, "Kassa", "cash")}
+      {chip(p.profit, "Foyda", "profit")}
+      {e.role === "manager" && chip(p.approveLimit > 0, p.approveLimit > 0 ? `Tasdiq ≤ ${fmt(p.approveLimit)}` : "Tasdiq — yo'q", "limit")}
+    </div>
+  );
+}
+function EmpRights({ emp, onClose, onSave }) {
+  const [role, setRole] = useState(emp.role);
+  const [perm, setPerm] = useState(permOf(emp));
+  const sw = (k, label, sub) => (
+    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", border: `1px solid ${THEME.border}`, borderRadius: 12, cursor: "pointer" }}>
+      <input type="checkbox" checked={perm[k]} onChange={(e) => setPerm((p) => ({ ...p, [k]: e.target.checked }))} data-perm-input={k} style={{ marginTop: 3, width: 16, height: 16 }} />
+      <span><b style={{ fontSize: 13.5 }}>{label}</b><small style={{ display: "block", fontSize: 12, color: THEME.muted }}>{sub}</small></span>
+    </label>
+  );
+  const staff = ["manager", "operator"].includes(role);
+  return (
+    <Modal title={`${emp.name} — rol va huquqlar`} onClose={onClose} width={460}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <Field label="Rol">
+          <select value={role} onChange={(e) => setRole(e.target.value)} style={getInputStyle()} data-testid="emp-role">
+            <option value="operator">Operator (sotuv menejeri)</option>
+            <option value="manager">Katta menejer</option>
+            <option value="designer">Dizayner</option>
+            <option value="printer">Pechatchi</option>
+            <option value="installer">Montajchi</option>
+          </select>
+          <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]}</div>
+        </Field>
+        {staff && sw("cash", "Kassa qoldig'ini ko'radi", "Dashboard'da karta, naqd, bank qoldig'i va «Jami pul»")}
+        {staff && sw("profit", "Foydani ko'radi", "Qo'shilgan qiymat, marja, kraska hisob-kitobi")}
+        {role === "manager" && (
+          <Field label="Tasdiqlash chegarasi (so'm)">
+            <input value={perm.approveLimit ? fmt(perm.approveLimit) : ""} onChange={(e) => setPerm((p) => ({ ...p, approveLimit: Number(e.target.value.replace(/\D/g, "")) || 0 }))} placeholder="0 — faqat rahbar tasdiqlaydi" inputMode="numeric" style={getInputStyle()} data-testid="emp-limit" />
+            <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>O'z yo'nalishidagi xodimlarning to'lovni o'zgartirish/o'chirish, summani kamaytirish va buyurtmani o'chirish so'rovlarini shu summagacha o'zi tasdiqlaydi. Kattasi — faqat rahbar.</div>
+          </Field>
+        )}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button variant="ghost" onClick={onClose}>Bekor qilish</Button>
+          <Button onClick={() => onSave({ ...emp, role, ...(staff ? { perm: { ...perm, approveLimit: role === "manager" ? perm.approveLimit : 0 } } : { perm: undefined }) })} data-testid="emp-rights-save">Saqlash</Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

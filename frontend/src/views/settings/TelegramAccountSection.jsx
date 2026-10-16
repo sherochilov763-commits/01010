@@ -15,24 +15,25 @@ function StatusBadge({ status }) {
   return <Badge color={THEME.muted} bg={THEME.surface}>Ulanmagan</Badge>;
 }
 
-export function TelegramAccountSection({ settings, onSaveSettings }) {
+export function TelegramAccountSection({ settings, onSaveSettings, line }) {
+  const onyx = line === "UVONYX";
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [loginOpen, setLoginOpen] = useState(false);
 
-  const refresh = () => fetchTelegramUserStatus().then(setStatus).catch(() => setStatus({ status: "error", message: "Holatni bilib bo'lmadi" }));
+  const refresh = () => fetchTelegramUserStatus(line).then(setStatus).catch(() => setStatus({ status: "error", message: "Holatni bilib bo'lmadi" }));
   useEffect(() => { refresh(); }, []);
 
   async function reconnect() {
     setBusy(true); setMsg("");
-    try { await connectTelegramUser(); } catch (e) { setMsg(e.message); }
+    try { await connectTelegramUser(line); } catch (e) { setMsg(e.message); }
     await refresh();
     setBusy(false);
   }
   async function disconnect() {
     setBusy(true);
-    await disconnectTelegramUser().catch(() => {});
+    await disconnectTelegramUser(line).catch(() => {});
     await refresh();
     setBusy(false);
   }
@@ -45,8 +46,8 @@ export function TelegramAccountSection({ settings, onSaveSettings }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 34, height: 34, borderRadius: 10, background: THEME.blueBg || THEME.surface, color: THEME.blue, display: "flex", alignItems: "center", justifyContent: "center" }}><MessageCircle size={17} /></div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 14, color: THEME.text }}>Telegram akkaunt (CRM chat)</div>
-            <div style={{ fontSize: 11.5, color: THEME.muted }}>Mijozlar bilan yozishmalar shu akkaunt orqali</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: THEME.text }}>{onyx ? "UVONYX Telegram" : line === "UVIXPRINT" ? "UVIXPRINT Telegram" : "Telegram akkaunt (CRM chat)"}</div>
+            <div style={{ fontSize: 11.5, color: THEME.muted }}>{onyx ? "UVONYX mijozlari bilan yozishmalar — chatlar faqat UVONYX xodimlariga ko'rinadi" : line ? "UVIXPRINT mijozlari bilan yozishmalar" : "Mijozlar bilan yozishmalar shu akkaunt orqali"}</div>
           </div>
         </div>
         <StatusBadge status={status} />
@@ -90,7 +91,7 @@ export function TelegramAccountSection({ settings, onSaveSettings }) {
       </div>
 
       {loginOpen && (
-        <TelegramLoginModal
+        <TelegramLoginModal line={line}
           settings={settings}
           onClose={() => { setLoginOpen(false); refresh(); }}
           onDone={(creds) => {
@@ -106,7 +107,8 @@ export function TelegramAccountSection({ settings, onSaveSettings }) {
   );
 }
 
-function TelegramLoginModal({ settings, onClose, onDone }) {
+function TelegramLoginModal({ settings, onClose, onDone, line }) {
+  const tLogin = (step, body) => telegramLogin(step, body, line);
   const [apiId, setApiId] = useState(settings?.telegramUserApiId || "");
   const [apiHash, setApiHash] = useState(settings?.telegramUserApiHash || "");
   const needCreds = !settings?.telegramUserApiId || !settings?.telegramUserApiHash;
@@ -126,7 +128,7 @@ function TelegramLoginModal({ settings, onClose, onDone }) {
 
   async function call(step, body) {
     setErr(""); setSending(true);
-    try { setState(await telegramLogin(step, { ...creds, ...body })); }
+    try { setState(await tLogin(step, { ...creds, ...body })); }
     catch (e) { setErr(e.message); }
     finally { setSending(false); }
   }
@@ -141,7 +143,7 @@ function TelegramLoginModal({ settings, onClose, onDone }) {
     if (!credsOk) return;
     const live = ["qr", "starting", "checking", "saving", "password", "code"];
     if (!live.includes(state.stage)) return;
-    const t = setInterval(() => telegramLogin().then(setState).catch(() => {}), 1500);
+    const t = setInterval(() => tLogin().then(setState).catch(() => {}), 1500);
     return () => clearInterval(t);
   }, [credsOk, state.stage]);
 
@@ -153,12 +155,12 @@ function TelegramLoginModal({ settings, onClose, onDone }) {
   }, [state.stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function close() {
-    if (state.stage !== "done" && state.stage !== "idle") telegramLogin("cancel").catch(() => {});
+    if (state.stage !== "done" && state.stage !== "idle") tLogin("cancel").catch(() => {});
     onClose();
   }
   function switchMethod(m) {
     if (m === method) return;
-    telegramLogin("cancel").catch(() => {});
+    tLogin("cancel").catch(() => {});
     setState({ stage: "idle" }); setErr(""); setCode(""); setPassword("");
     setMethod(m);
   }
@@ -246,7 +248,7 @@ function TelegramLoginModal({ settings, onClose, onDone }) {
 
           {errorText && <div data-testid="tg-login-error" style={{ fontSize: 12.5, color: THEME.rose, textAlign: "center" }}>{errorText}</div>}
           {needCreds === false && (
-            <button type="button" onClick={() => { telegramLogin("cancel").catch(() => {}); setState({ stage: "idle" }); setCredsOk(false); }} style={{ background: "none", border: "none", color: THEME.muted, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>
+            <button type="button" onClick={() => { tLogin("cancel").catch(() => {}); setState({ stage: "idle" }); setCredsOk(false); }} style={{ background: "none", border: "none", color: THEME.muted, fontSize: 11.5, cursor: "pointer", textDecoration: "underline" }}>
               API ID / Hash ni o'zgartirish
             </button>
           )}

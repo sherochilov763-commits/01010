@@ -1015,3 +1015,51 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 ## 📊 Yo'nalishlar — 2-etap: «Foyda va zarar» (2026-10)
 - Rahbar Dashboard'i tepasida jadval: **UVIXPRINT | UVONYX | Jami** — tushum (shu oydagi to'lovlar), to'g'ridan-to'g'ri rasxod, umumiy rasxod ulushi (tushum nisbatida), sof foyda, marja, o'tgan oyga nisbatan o'zgarish, hozirgi qarzdorlik va tushum ulushi chizig'i. Oy — Dashboard'dagi «Oy» tanlovi (aks holda joriy oy). Hisob: `frontend/src/lib/pnl.js`.
 - Rasxod ro'yxatida rahbar uchun filtr: Barchasi / UVIXPRINT / UVONYX / Umumiy (shu qurilmada eslab qolinadi).
+
+## ✅ Yo'nalishlar — 3-etap: «Vazifalar» (2026-10)
+- Menyuda **Vazifalar** (Ishlab chiqarish guruhi): o'lchov, montaj, yetkazish, boshqa. Har vazifada: turi, buyurtma (ixtiyoriy), nomi, sana, vaqt, manzil, mijoz telefoni, bir yoki bir nechta mas'ul, izoh, holat (Yangi / Jarayonda / Bajarildi / Bekor).
+- Ko'rinish: **Ro'yxat** (Kechikkan, Bugun, Ertaga, Keyinroq, Sanasiz, Bajarilgan) va **hafta kalendari**; turi bo'yicha filtr, «Faqat menga». Dizayn/pechat vazifalari ham shu yerda (faqat ko'rish).
+- **Zanjir**: buyurtma «Tayyor» → avtomatik «Yetkazish» (UVIXPRINT) yoki «Montaj» (UVONYX), mas'ulsiz — menejer tayinlaydi. Buyurtmaga bog'langan montaj/yetkazish «Bajarildi» → buyurtma «Topshirildi» (lid ham yangilanadi).
+- **Ishchi telefoni**: «Joydagi ishlar» — Bugun / Ertaga / Keyin / Kechikkan, «Yo'l» (xarita), «Qo'ng'iroq», «Bajarildi». Yangi rol **Montajchi** (faqat o'z vazifalari, pulsiz).
+- **Huquqlar**: rahbar — hammasi; yo'nalish xodimi — o'z yo'nalishi; ishchi — faqat o'ziga berilgani (faqat holat va izoh). Vazifani menejer/rahbar qo'shadi.
+- **Telegram**: tayinlanganda mas'ulga xabar; sana va vaqt bo'lsa — 1 soat oldin eslatma.
+- Server: `backend/jobs.js` (`/api/jobs`), ma'lumot `uvix:jobs` (KV orqali yopiq). Test: `tests/e2e/test_jobs.py`.
+
+## 👷 Yo'nalishlar — 4-etap: umumiy xodim oyligi (2026-10)
+- Rasxod → «Xodimlar» kategoriyasi → **Xodim** tanlanadi (rahbar). Xodim UVIXPRINT/UVONYX bo'lsa — rasxod shu yo'nalishga; **Umumiy** bo'lsa — oylik shu oyda bajargan vazifalari nisbatida bo'linadi (masalan 84 UV / 36 ON → 70% / 30%). Vazifa bo'lmagan oyda — tushum ulushi.
+- Hisoblanadigan ishlar: buyurtmadagi dizayn/pechat (bajarilgan) va «Vazifalar»dagi o'lchov/montaj/yetkazish (bajarilgan, har mas'ulga). Server: `GET /api/work-stats` (faqat rahbar); yo'nalish xodimiga umumiy oylik o'z ulushi bilan yuboriladi.
+- «Foyda va zarar»da alohida qator — «Umumiy xodimlar oyligi (bajargan ishi bo'yicha)»; Xodimlar ro'yxatida umumiy xodim yonida «Shu oy: 84 UV · 36 ON → 70% / 30%».
+
+## 💬 Yo'nalishlar — 5-etap: har yo'nalishning o'z Telegram akkaunti (2026-10)
+- Sozlamalar → Integratsiyalar: **UVIXPRINT Telegram** (hozirgi akkaunt) va **UVONYX Telegram** — har biri alohida ulanadi (QR / telefon kodi; hozircha rahbar ulaydi). Sessiyalar: `uvix:tgSession` va `uvix:tgSession:UVONYX`.
+- UVONYX akkaunti chatlari `on:<id>` ko'rinishida saqlanadi (xabarlar, kontaktlar, lidlar, chat sozlamalari) — birinchi akkaunt bilan aralashmaydi; xabar yuborish/tarix avtomatik to'g'ri akkaunt orqali.
+- **Ajratish (server)**: Chatlar ro'yxati, xabarlar, yuborish, izoh, «yozyapti», qidiruv, papkalar — xodimga faqat o'z yo'nalishi. Lidlar (`lead.line`; chatdan — akkaunt bo'yicha), mijozlar (o'z yo'nalishida yaratilgan yoki shu yo'nalishda buyurtmasi bor), smeta va lid vazifalari ham. Bildirishnoma (yangi xabar) — faqat shu yo'nalish xodimlariga.
+- Rahbar hammasini ko'radi: Chatlarda UVONYX chatida «ON» belgisi, yangi lidda yo'nalish tanlovi.
+- Test: `tests/e2e/test_tg_lines.py`.
+
+## 🧱 Yo'nalishlar — 6-etap: UVONYX bosqichlari (2026-10)
+- **CRM (UVONYX):** Murojaat → O'lchov → Smeta → Dizayn → Ishlab chiqarish → Tayyor/o'rnatish. Lid kartasidagi 📏 tugma — o'lchov vazifasi (lid bilan bog'lanadi): qo'shilsa lid «O'lchov»ga, bajarilsa «Smeta»ga o'tadi. Kartada eng yaqin ochiq ish ko'rinadi.
+- **Buyurtma (UVONYX):** Navbatda → Dizayn → Material → Ishlab chiqarish → Tayyor → O'rnatish → Topshirildi. Montaj vazifasi boshlansa — «O'rnatish», bajarilsa — «Topshirildi» (lid yopiladi). UVIXPRINT bosqichlari avvalgidek.
+- Test: `tests/e2e/test_stages.py`.
+
+## 🧑‍💼 Yo'nalishlar — 7-etap: rollar va huquqlar (2026-10)
+- **Rahbar → Katta menejer → Operator (sotuv menejeri).** Katta menejer o'z yo'nalishining hammasini ko'radi, «Hisobot» ochiq; tasdiqlash so'rovlarini (to'lovni o'zgartirish/o'chirish, summani kamaytirish, buyurtmani o'chirish) o'z chegarasigacha tasdiqlaydi — server tekshiradi (`backend/money-guard.js`: `canDecide`, `requestAmount`).
+- Xodimlar → ✏️ «Rol va huquqlar»: rol, kassa qoldig'i (Dashboard qoldiqlari, «Jami pul», to'lov turlari), foyda (qo'shilgan qiymat, kraska), tasdiqlash chegarasi. `employee.perm = { cash, profit, approveLimit }`.
+- Mijozlar: «Mas'ul menejer» — operator boshqa menejerga biriktirilgan mijozni ko'rmaydi; mas'ulni faqat rahbar yoki katta menejer o'zgartiradi (server ham).
+- Test: `tests/e2e/test_roles.py`.
+
+## 💰 Yo'nalishlar — 8-etap: kategoriyalar va yirik rasxodlar (2026-10)
+- Kategoriyalar (rahbar): har kategoriyaga standart yo'nalish (`settings.categoryLines`) — yangi rasxodda o'zi qo'yiladi, cheklamaydi.
+- «Yirik rasxod chegarasi» (`settings.bigExpenseLimit`): «Yirik» belgisi, rahbarga Telegram (yo'nalish sozlamasidan qat'i nazar) va ilova bildirishnomasi, Dashboard'da «Yirik rasxodlar» kartasi (oxirgi 30 kun, «Ko'rildi» → `tx.bigSeenAt`), Rasxod'da «Faqat yiriklar».
+- Test: `tests/e2e/test_bigexp.py`.
+
+## 🏦 Yo'nalishlar — 9-etap: alohida kassalar (2026-10)
+- «Kassalar» (rahbar; katta menejer — kassa huquqi bilan, o'z yo'nalishi): UVIXPRINT / UVONYX × naqd / karta / bank — kirim (to'lovlar), chiqim (rasxodlar), o'tkazma, qoldiq. Hisob: `frontend/src/lib/kassa.js`.
+- Umumiy rasxod: `tx.paidFrom` — qaysi kassadan to'langan (belgilanmagan eski umumiy rasxod — UVIXPRINT). Foyda/zarar hisobida umumiy rasxod avvalgidek ulush bo'yicha.
+- Ichki o'tkazma: `uvix:transfers` (faqat rahbar yozadi; xodimga faqat o'z yo'nalishiga tegishlisi beriladi). O'chirish — belgilanadi (`deletedAt`), tarix saqlanadi.
+- Test: `tests/e2e/test_kassa.py`.
+
+## ⚙️ Yo'nalishlar — 10-etap: yo'nalish sozlamalari (2026-10)
+- Sozlamalar → Savdo → «Yo'nalishlar» (`settings.lineProfiles[line]`): `color`, `prefix` (2–4 belgi, ikkalasi har xil), `logo` (PNG data URL, ≤480px), `companyLine`, `cardNumber`, `cardHolder`, `managerPhone`, `managerName`.
+- Rang va prefiks: `applyLineProfiles()` (`frontend/src/lib/lines.js`), server — `linePrefix()` (`backend/quotes.js`). Rekvizitlar: hisob-faktura (`InvoiceModal`), «tayyor» va qarz eslatmasi (`backend/customer-msg.js` → `withLine`).
+- Test: `tests/e2e/test_lineprof.py`.

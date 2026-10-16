@@ -3,9 +3,11 @@ import LoginScreen from "./auth/LoginScreen.jsx";
 import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
 import { TodayView } from "./views/dashboard/TodayView.jsx";
-import { LineContext, scopeByLine, useLineState } from "./lib/lines.js";
+import { JobsView } from "./views/jobs/JobsView.jsx";
+import { LineContext, WorkStatsContext, applyLineProfiles, scopeByLine, useLineState } from "./lib/lines.js";
+import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
-import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos } from "./storage.js";
+import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos, fetchWorkStats } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
 import { BottomNav, BOTTOM_NAV_CSS } from "./components/BottomNav.jsx";
 import { MORE_SHEET_CSS } from "./components/MoreSheet.jsx";
@@ -51,6 +53,7 @@ import { Dashboard } from "./views/Dashboard.jsx";
 // Dashboard darhol kerak bo'lgani uchun asosiy faylda qoladi.
 const WorkerApp = lazy(() => import("./views/tasks/WorkerApp.jsx").then((m) => ({ default: m.WorkerApp })));
 const TaskAssignModal = lazy(() => import("./views/crm/TaskAssignModal.jsx").then((m) => ({ default: m.TaskAssignModal })));
+const KassaView = lazy(() => import("./views/KassaView.jsx").then((m) => ({ default: m.KassaView })));
 const CategoriesView = lazy(() => import("./views/CategoriesView.jsx").then((m) => ({ default: m.CategoriesView })));
 const EmployeesView = lazy(() => import("./views/EmployeesView.jsx").then((m) => ({ default: m.EmployeesView })));
 const OperationsView = lazy(() => import("./views/OperationsView.jsx").then((m) => ({ default: m.OperationsView })));
@@ -458,6 +461,10 @@ function AppInner() {
   }
 
   // ---- Rasxod (chiqim) CRUD ----
+  // Yirik rasxod: rahbar «Ko'rildi» bosadi — Dashboard kartasidan chiqadi
+  function markBigSeen(id) {
+    persistTx(transactions.map((t) => (t.id === id ? { ...t, bigSeenAt: new Date().toISOString(), bigSeenBy: currentUser?.name || "" } : t)));
+  }
   function saveTransaction(tx, isEdit) {
     let next;
     if (isEdit) {
@@ -721,6 +728,20 @@ function AppInner() {
   const phoneUi = useIsMobile();
   // Ikki yo'nalish: joriy ish maydoni (UVIXPRINT / UVONYX / admin — ikkalasi)
   const meEmp = currentUser ? employees.find((e) => e.id === currentUser.id) : null;
+  const expenseRules = useMemo(() => rulesFrom(settings), [settings]);
+  // Yo'nalish rangi va raqam prefiksi (Sozlamalar → Yo'nalishlar) — bolalar chizilishidan oldin qo'llanadi
+  useMemo(() => applyLineProfiles(settings?.lineProfiles), [settings?.lineProfiles]);
+  // Umumiy xodim oyligini bo'lish uchun bajarilgan ish statistikasi (faqat rahbar)
+  const [workStats, setWorkStats] = useState(null);
+  const wsAdmin = currentUser?.role === "admin";
+  useEffect(() => {
+    if (!wsAdmin) return undefined;
+    let alive = true;
+    const load = () => fetchWorkStats().then((w) => alive && setWorkStats(w)).catch(() => {});
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [wsAdmin]);
   const lineState = useLineState(currentUser && !isWorkerRole(currentUser.role) ? { ...currentUser, line: meEmp ? meEmp.line : currentUser.line } : null);
   const [fullReport, setFullReport] = useState(() => { try { return localStorage.getItem("uvix_today_report") === "1"; } catch { return false; } });
   const toggleReport = () => setFullReport((v) => { try { localStorage.setItem("uvix_today_report", v ? "0" : "1"); } catch { /* */ } return !v; });
@@ -804,18 +825,22 @@ function AppInner() {
   const logout = () => { authLogout(); resetAttendance(); clearLockState(); idle.unlock(); setCurrentUser(null); };
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
-  const myTx = isAdmin ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
-  const myOrders = isAdmin ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
+  // Katta menejer — o'z yo'nalishining hammasini ko'radi (server yo'nalish bo'yicha ajratib beradi)
+  const seesAll = isAdmin || currentUser.role === "manager";
+  const myTx = seesAll ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
+  const myOrders = seesAll ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
   // Yo'nalish bo'yicha: buyurtmalar, rasxodlar ro'yxati (to'liq) va hisob-kitob uchun (umumiy rasxod — ulushi bilan)
   const scope = scopeByLine(lineState.line, myOrders, myTx, activeOrders);
   const lOrders = scope.orders;
-  const reportScope = isAdmin ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
+  const reportScope = isAdmin || currentUser.role === "manager" ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
 
   return (
     <TelegramOnboard user={currentUser} onLogout={logout}>
     <AttendanceGate user={currentUser} onLogout={logout}>
     <ApprovalsProvider value={approvalsCtx}>
     <LineContext.Provider value={lineState}>
+    <ExpenseRulesContext.Provider value={expenseRules}>
+    <WorkStatsContext.Provider value={workStats}>
     {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
     <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
@@ -1003,14 +1028,14 @@ function AppInner() {
                 onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
                 onScan={() => openScanner("order")} />
             )}
-            {isAdmin && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
+            {(isAdmin || currentUser.role === "manager") && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
             {view === "dashboard" && phoneUi && (
               <button type="button" onClick={toggleReport} data-testid="today-report" aria-expanded={fullReport}
                 style={{ width: "100%", height: 48, borderRadius: 14, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, fontFamily: "inherit", fontSize: 14.5, fontWeight: 600, cursor: "pointer", marginBottom: fullReport ? 18 : 0 }}>
                 {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
               </button>
             )}
-            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
@@ -1094,6 +1119,7 @@ function AppInner() {
                 onQuickAddHandled={() => setQuickAdd(null)}
                 transactions={scope.txList}
                 orders={myOrders}
+                employees={employees}
                 currentUser={currentUser}
                 categories={categories}
                 onAddCategory={addCategory}
@@ -1116,16 +1142,20 @@ function AppInner() {
             )}
             {view === "attendance" && <AttendanceView currentUser={currentUser} isAdmin={isAdmin} />}
             {view === "customers" && (
-              <CustomersView currentUser={currentUser} isAdmin={isAdmin} orders={lOrders} leads={leads} profiles={customers} transactions={scope.txList}
+              <CustomersView currentUser={currentUser} isAdmin={isAdmin} employees={employees} orders={lOrders} leads={leads} profiles={customers} transactions={scope.txList}
                 onSaveCustomer={saveCustomer} onAddPayment={addPayment} onDeletePayment={deletePayment}
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
             )}
+            {view === "jobs" && <JobsView employees={employees} orders={activeOrders} currentUser={currentUser} />}
             {view === "paint" && (
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
             )}
-            {view === "report" && isAdmin && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
+            {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
+            {view === "kassa" && (isAdmin || currentUser.role === "manager") && (
+              <KassaView orders={activeOrders} transactions={activeTransactions} isAdmin={isAdmin} canCash={meEmp?.perm?.cash !== false} currentUser={currentUser} showToast={showToast} />
+            )}
             {view === "categories" && (
               <CategoriesView
                 transactions={activeTransactions}
@@ -1136,6 +1166,8 @@ function AppInner() {
                 onRenameCategory={renameCategory}
                 onDeleteCategory={deleteCategory}
                 onDeleteSubcategory={deleteSubcategory}
+                settings={settings}
+                onSaveSettings={isAdmin ? persistSettings : null}
               />
             )}
             {view === "employees" && isAdmin && (
@@ -1245,6 +1277,8 @@ function AppInner() {
         </div>
       )}
     </div>
+    </WorkStatsContext.Provider>
+    </ExpenseRulesContext.Provider>
     </LineContext.Provider>
     </ApprovalsProvider>
     </AttendanceGate>

@@ -9,6 +9,8 @@ const { TelegramClient, Api } = require("teleproto");
 const audio = require("./audio");
 const { StringSession } = require("teleproto/sessions");
 
+// Bir nechta akkaunt (har yo'nalishga alohida) — har biri o'z holati bilan: createUserbot()
+function createUserbot() {
 let client = null;
 let connecting = false;
 let lastError = null;
@@ -546,10 +548,13 @@ const guarded = (fn) => async (...args) => {
 // Kirish oqimi (telegram-login.js) va boshqa modullar uchun
 function clearExpired() { expired = null; lastError = null; }
 
-module.exports = {
-  listPrivateDialogs: guarded(listPrivateDialogs), getFolderDefs: guarded(getFolderDefs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
-  isBotChat: guarded(isBotChat), sendMessage: guarded(sendMessage), sendPhoto: guarded(sendPhoto), sendVideo: guarded(sendVideo),
-  sendDocument: guarded(sendDocument), sendVoice: guarded(sendVoice), sendLocation: guarded(sendLocation), sendReaction: guarded(sendReaction),
-  getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames),
-  connectFromSettings, disconnect, getStatus, isConnected, setMediaDir, clearExpired, friendlyError, authErrorCode, CLIENT_OPTS,
-};
+  return {
+    listPrivateDialogs: guarded(listPrivateDialogs), getFolderDefs: guarded(getFolderDefs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
+    isBotChat: guarded(isBotChat), sendMessage: guarded(sendMessage), sendPhoto: guarded(sendPhoto), sendVideo: guarded(sendVideo),
+    sendDocument: guarded(sendDocument), sendVoice: guarded(sendVoice), sendLocation: guarded(sendLocation), sendReaction: guarded(sendReaction),
+    getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames),
+    connectFromSettings, disconnect, getStatus, isConnected, setMediaDir, clearExpired, friendlyError, authErrorCode, CLIENT_OPTS,
+  };
+}
+const main = createUserbot();
+module.exports = { ...main, createUserbot };

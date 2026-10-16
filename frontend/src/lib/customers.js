@@ -55,6 +55,7 @@ export function buildCustomers(orders, leads, profiles, today = new Date().toISO
     c.telegram = tgKey(p.telegram) || tgKey(leadWithTg?.telegramUsername) || "";
     c.chatLead = c.leads.find((l) => l.telegramChatId) || null;
     c.note = p.note || "";
+    c.managerId = p.managerId || null; // mas'ul menejer (rahbar yoki katta menejer biriktiradi)
     c.orders.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     const total = c.orders.reduce((s, o) => s + (o.agreementUzs || 0), 0);
     const paid = c.orders.reduce((s, o) => s + orderTotalPaid(o), 0);

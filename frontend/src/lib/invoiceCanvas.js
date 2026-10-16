@@ -65,7 +65,11 @@ export function drawInvoice({ order, customer, cfg }) {
   crop(72, 28, -1, 1); crop(W - 72, 28, 1, 1); crop(72, H - 60, -1, -1); crop(W - 72, H - 60, 1, -1);
 
   let y = 84 + 44;
-  t(PAD, y, "UVIX", F.brand);
+  // Yo'nalish logosi (bo'lsa) — «UVIX» yozuvi o'rniga, balandligi ~64px
+  if (cfg.logoImg && cfg.logoImg.width) {
+    const h = 64, w = Math.min(360, (cfg.logoImg.width / cfg.logoImg.height) * h);
+    ctx.drawImage(cfg.logoImg, PAD, y - 52, w, (w / cfg.logoImg.width) * cfg.logoImg.height);
+  } else t(PAD, y, "UVIX", F.brand);
   t(W - PAD, y - 14, order.orderNumber || "", F.no, C.ink, "right");
   t(W - PAD, y + 20, dLabel(todayStr()), F.sub, C.muted, "right");
   t(PAD, y + 38, cfg.companyLine || "UV bosma ustaxonasi", F.sub, C.muted);
