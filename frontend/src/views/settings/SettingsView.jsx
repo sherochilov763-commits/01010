@@ -434,7 +434,8 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
         )}
 
 
-      {onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} />}
+      {onConnectTelegramUser && <TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} line="UVIXPRINT" />}
+      {onConnectTelegramUser && isAdmin && <div data-testid="tg-onyx"><TelegramAccountSection settings={settings} onSaveSettings={onSaveSettings} line="UVONYX" /></div>}
     </>,
     bolimlar: isAdmin && <ModulesSection onOpenView={onOpenView} />,
     malumotlar: isAdmin && <>

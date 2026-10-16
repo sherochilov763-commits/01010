@@ -1029,3 +1029,10 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Rasxod → «Xodimlar» kategoriyasi → **Xodim** tanlanadi (rahbar). Xodim UVIXPRINT/UVONYX bo'lsa — rasxod shu yo'nalishga; **Umumiy** bo'lsa — oylik shu oyda bajargan vazifalari nisbatida bo'linadi (masalan 84 UV / 36 ON → 70% / 30%). Vazifa bo'lmagan oyda — tushum ulushi.
 - Hisoblanadigan ishlar: buyurtmadagi dizayn/pechat (bajarilgan) va «Vazifalar»dagi o'lchov/montaj/yetkazish (bajarilgan, har mas'ulga). Server: `GET /api/work-stats` (faqat rahbar); yo'nalish xodimiga umumiy oylik o'z ulushi bilan yuboriladi.
 - «Foyda va zarar»da alohida qator — «Umumiy xodimlar oyligi (bajargan ishi bo'yicha)»; Xodimlar ro'yxatida umumiy xodim yonida «Shu oy: 84 UV · 36 ON → 70% / 30%».
+
+## 💬 Yo'nalishlar — 5-etap: har yo'nalishning o'z Telegram akkaunti (2026-10)
+- Sozlamalar → Integratsiyalar: **UVIXPRINT Telegram** (hozirgi akkaunt) va **UVONYX Telegram** — har biri alohida ulanadi (QR / telefon kodi; hozircha rahbar ulaydi). Sessiyalar: `uvix:tgSession` va `uvix:tgSession:UVONYX`.
+- UVONYX akkaunti chatlari `on:<id>` ko'rinishida saqlanadi (xabarlar, kontaktlar, lidlar, chat sozlamalari) — birinchi akkaunt bilan aralashmaydi; xabar yuborish/tarix avtomatik to'g'ri akkaunt orqali.
+- **Ajratish (server)**: Chatlar ro'yxati, xabarlar, yuborish, izoh, «yozyapti», qidiruv, papkalar — xodimga faqat o'z yo'nalishi. Lidlar (`lead.line`; chatdan — akkaunt bo'yicha), mijozlar (o'z yo'nalishida yaratilgan yoki shu yo'nalishda buyurtmasi bor), smeta va lid vazifalari ham. Bildirishnoma (yangi xabar) — faqat shu yo'nalish xodimlariga.
+- Rahbar hammasini ko'radi: Chatlarda UVONYX chatida «ON» belgisi, yangi lidda yo'nalish tanlovi.
+- Test: `tests/e2e/test_tg_lines.py`.

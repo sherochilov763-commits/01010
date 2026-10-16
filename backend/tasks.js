@@ -133,6 +133,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
         const t = lead[kind];
         if (!t || !t.status) continue;
         if (worker && t.assigneeId !== req.user.id) continue;
+        if (!worker && req.lineScope && require("./lines").lineOfLead(lead) !== req.lineScope) continue;
         if (lead.stage === "lost" && t.status !== "done") continue; // bekor qilingan ish
         tasks.push(publicTask(lead, kind, orders, empById));
       }

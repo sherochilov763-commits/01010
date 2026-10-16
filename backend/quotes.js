@@ -175,6 +175,8 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     if (lead.stage === "new") { lead.stage = "negotiation"; lead.stageAt = at; }
     lead.updatedAt = at;
   }
+  const { lineOfLead } = require("./lines");
+  const leadOk = (req, l) => !req.lineScope || lineOfLead(l) === req.lineScope;
   const findOrderAny = (orders, id) => (Array.isArray(orders) ? orders.find((o) => o && o.id === id && !o.deletedAt) : null);
   // Yo'nalish: xodim faqat o'z yo'nalishidagi buyurtma bilan ishlaydi (boshqasi «topilmadi»)
   const findOrder = (orders, id, req) => { const o = findOrderAny(orders, id); return o && (!req?.lineScope || (o.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") === req.lineScope) ? o : null; };
@@ -214,7 +216,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const items = b.items.map((i) => cleanItem(i, prices));
     const leads = readJson("uvix:leads", []);
     let lead = Array.isArray(leads) ? leads.find((l) => l && l.id === req.params.leadId && !l.deletedAt) : null;
-    if (!lead) throw new Bad("Lid topilmadi", 404);
+    if (!lead || !leadOk(req, lead)) throw new Bad("Lid topilmadi", 404);
     const at = now().toISOString();
     let created = false;
     if (lead.quote?.status === "converted") {
@@ -237,7 +239,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     if (!Array.isArray(b.items) || !b.items.length || b.items.length > 30) throw new Bad("Smetaga kamida bitta pozitsiya qo'shing");
     const items = b.items.map((i) => cleanItem(i, prices));
     const at = now().toISOString();
-    const lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager: str(b.manager, 80) || req.user.name, notes: str(b.notes, 500), stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at };
+    const lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager: str(b.manager, 80) || req.user.name, notes: str(b.notes, 500), stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at, line: req.lineScope || (b.line === "UVONYX" ? "UVONYX" : "UVIXPRINT") };
     saveQuoteOn(lead, items, b, req.user, at);
     const leads = readJson("uvix:leads", []);
     write("uvix:leads", [lead, ...(Array.isArray(leads) ? leads : [])]);
@@ -269,13 +271,13 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     let lead = null;
     if (b.leadId) {
       lead = leadList.find((l) => l && l.id === b.leadId && !l.deletedAt);
-      if (!lead) throw new Bad("Lid topilmadi", 404);
+      if (!lead || !leadOk(req, lead)) throw new Bad("Lid topilmadi", 404);
       if (lead.quote?.status === "converted") { lead = newDealFrom(lead, req.user, at); leadList.unshift(lead); }
     }
     const customer = str(lead?.customer || b.customer, 120);
     if (!customer) throw new Bad("Mijoz nomini kiriting");
     const manager = str(b.manager, 80) || lead?.manager || req.user.name;
-    const subcategory = req.lineScope || (b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+    const subcategory = req.lineScope || (b.subcategory === "UVONYX" ? "UVONYX" : b.subcategory === "UVIXPRINT" ? "UVIXPRINT" : lead ? lineOfLead(lead) : "UVIXPRINT");
     const date = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") ? b.date : localDate(now());
 
     // Vazifalarni oldindan tekshiramiz (xato bo'lsa hech narsa yozilmaydi)
@@ -295,7 +297,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const tasks = items.map(taskOf);
 
     if (!lead) {
-      lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager, notes: "", stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at };
+      lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager, notes: "", stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at, line: subcategory };
       leadList.unshift(lead);
     }
     const no = lead.quote?.status === "open" && lead.quote.no ? lead.quote.no : nextQuoteNo();

@@ -36,6 +36,8 @@ function registerTgFolders(app, { requireAuth, requireStaff, userbot, getDialogs
     return cache.defs;
   }
   app.get("/api/telegram-user/folders", requireAuth, requireStaff, async (req, res) => {
+    // Papkalar — asosiy (UVIXPRINT) akkauntniki; UVONYX xodimiga ko'rsatilmaydi
+    if (req.lineScope === "UVONYX") return res.json({ connected: true, folders: [] });
     if (!userbot.isConnected()) return res.json({ connected: false, folders: [] });
     const [d, dialogs] = await Promise.all([defs(), getDialogs()]);
     if (!d) return res.json({ connected: true, folders: [], error: cache.err || "Papkalarni olib bo'lmadi" });

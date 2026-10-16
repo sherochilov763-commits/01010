@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Send, Trash2, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
 import { LEAD_STAGES, isWorkerRole } from "../../constants.js";
+import { useLine } from "../../lib/lines.js";
 import { PROD_LABEL, PROD_STAGES, prodColors } from "../../lib/production.js";
 import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
 import { TaskChips } from "./TaskAssignModal.jsx";
@@ -36,6 +37,9 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
   const [notes, setNotes] = useState(initial?.notes || "");
   const [error, setError] = useState("");
+  // Yo'nalish: xodim — o'zinikida (server ham shunday yozadi); rahbar — tanlaydi
+  const { line: curLine } = useLine();
+  const [leadLine, setLeadLine] = useState(initial?.line || (String(initial?.telegramChatId || "").startsWith("on:") ? "UVONYX" : curLine !== "all" ? curLine : "UVIXPRINT"));
 
   function submit() {
     if (!customer.trim()) return setError("Mijoz ismini kiriting");
@@ -51,6 +55,7 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
       orderId: initial?.orderId || null,
       createdBy: initial?.createdBy,
       createdAt: initial?.createdAt,
+      line: leadLine,
     };
     onSave(lead, isEdit);
   }
@@ -61,6 +66,16 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
         <Field label="Mijoz ismi">
           <input value={customer} onChange={(e) => setCustomer(e.target.value)} style={getInputStyle()} placeholder="Mijoz yoki kompaniya nomi" autoFocus />
         </Field>
+        {curLine === "all" && !initial?.telegramChatId && (
+          <Field label="Yo'nalish">
+            <div role="group" data-testid="lead-line" style={{ display: "flex", gap: 6 }}>
+              {["UVIXPRINT", "UVONYX"].map((l) => (
+                <button key={l} type="button" onClick={() => setLeadLine(l)} aria-pressed={leadLine === l} data-line={l}
+                  style={{ flex: 1, height: 34, borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 12.5, border: `1.5px solid ${leadLine === l ? THEME.text : THEME.border}`, background: THEME.card, color: THEME.text }}>{l}</button>
+              ))}
+            </div>
+          </Field>
+        )}
         <Field label="Telefon">
           <input value={phone} onChange={(e) => setPhone(e.target.value)} style={getInputStyle()} placeholder="+998 90 123 45 67" />
         </Field>

@@ -96,7 +96,9 @@ module.exports = function registerNotifications(app, { getStmt, upsertStmt, read
   }
   const visibleTo = (user) => {
     const cats = new Set(allowedCats(user));
-    return (n) => cats.has(n.cat) && (!n.to || n.to === user.id);
+    // Yo'nalish: UVONYX chatining xabari faqat UVONYX xodimlariga (rahbar va «Umumiy» — hammasi)
+    const ul = user.role === "admin" || user.line === "common" ? null : user.line === "UVONYX" ? "UVONYX" : "UVIXPRINT";
+    return (n) => cats.has(n.cat) && (!n.to || n.to === user.id) && (!n.line || !ul || n.line === ul);
   };
 
   // ---------- Push ----------
@@ -125,14 +127,14 @@ module.exports = function registerNotifications(app, { getStmt, upsertStmt, read
   }
 
   // ---------- Hodimni qayd etish ----------
-  function emit(cat, { title, body = "", view, to = null, level } = {}) {
+  function emit(cat, { title, body = "", view, to = null, level, line = null } = {}) {
     if (!CATS[cat]) return null;
-    const item = { id: uid(), cat, title: String(title || CATS[cat].label).slice(0, 140), body: String(body || "").slice(0, 300), view: view || CATS[cat].view, at: now().toISOString(), level: level || (CATS[cat].critical ? "critical" : "info"), to };
+    const item = { id: uid(), cat, title: String(title || CATS[cat].label).slice(0, 140), body: String(body || "").slice(0, 300), view: view || CATS[cat].view, at: now().toISOString(), level: level || (CATS[cat].critical ? "critical" : "info"), to, ...(line ? { line } : {}) };
     const list = read(KEY_LIST, []);
     list.unshift(item);
     write(KEY_LIST, list.slice(0, MAX_ITEMS));
     // Push — har bir qabul qiluvchining sozlamasiga qarab (fon rejimida, ilova yopiq bo'lsa ham)
-    const targets = to ? staff().filter((e) => e.id === to) : audience(cat);
+    const targets = (to ? staff().filter((e) => e.id === to) : audience(cat)).filter((u) => visibleTo(u)(item));
     for (const u of targets) {
       const p = prefsOf(u);
       const m = p.matrix[cat];
@@ -157,7 +159,7 @@ module.exports = function registerNotifications(app, { getStmt, upsertStmt, read
     if (lastChat.has(k) && t - lastChat.get(k) < 120000) return null;
     lastChat.set(k, t);
     const snippet = text ? String(text).slice(0, 160) : mediaType === "photo" ? "📷 Rasm" : mediaType === "voice" ? "🎤 Ovozli xabar" : mediaType ? "📎 Fayl" : "Yangi xabar";
-    return emit("chats", { title: fromName || "Telegram", body: snippet, view: "chats" });
+    return emit("chats", { title: fromName || "Telegram", body: snippet, view: "chats", line: k.startsWith("on:") ? "UVONYX" : null });
   }
 
   // ---------- API ----------
