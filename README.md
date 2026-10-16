@@ -1036,3 +1036,8 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - **Ajratish (server)**: Chatlar ro'yxati, xabarlar, yuborish, izoh, «yozyapti», qidiruv, papkalar — xodimga faqat o'z yo'nalishi. Lidlar (`lead.line`; chatdan — akkaunt bo'yicha), mijozlar (o'z yo'nalishida yaratilgan yoki shu yo'nalishda buyurtmasi bor), smeta va lid vazifalari ham. Bildirishnoma (yangi xabar) — faqat shu yo'nalish xodimlariga.
 - Rahbar hammasini ko'radi: Chatlarda UVONYX chatida «ON» belgisi, yangi lidda yo'nalish tanlovi.
 - Test: `tests/e2e/test_tg_lines.py`.
+
+## 🧱 Yo'nalishlar — 6-etap: UVONYX bosqichlari (2026-10)
+- **CRM (UVONYX):** Murojaat → O'lchov → Smeta → Dizayn → Ishlab chiqarish → Tayyor/o'rnatish. Lid kartasidagi 📏 tugma — o'lchov vazifasi (lid bilan bog'lanadi): qo'shilsa lid «O'lchov»ga, bajarilsa «Smeta»ga o'tadi. Kartada eng yaqin ochiq ish ko'rinadi.
+- **Buyurtma (UVONYX):** Navbatda → Dizayn → Material → Ishlab chiqarish → Tayyor → O'rnatish → Topshirildi. Montaj vazifasi boshlansa — «O'rnatish», bajarilsa — «Topshirildi» (lid yopiladi). UVIXPRINT bosqichlari avvalgidek.
+- Test: `tests/e2e/test_stages.py`.

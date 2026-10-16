@@ -25,6 +25,7 @@ export const DEFAULT_CATEGORIES = {
 const stage = (key, label, color) => ({ key, label, color, get bg() { return mixColors(color, THEME.card, THEME.isDark ? 0.82 : 0.9); } });
 export const LEAD_STAGES = [
   stage("new", "Yangi lid", "#1F5FD6"),
+  stage("measure", "O'lchov (UVONYX)", "#7C3AED"),
   stage("negotiation", "Muzokara", "#B45309"),
   stage("design", "Jarayonda (Dizayn)", "#6D28D9"),
   stage("printing", "Jarayonda (Pechatchi)", "#0E7490"),
@@ -32,6 +33,14 @@ export const LEAD_STAGES = [
   stage("won", "Yopilgan", "#15803D"),
   stage("lost", "Yo'qotilgan", "#DC2626"),
 ];
+
+// Yo'nalish bo'yicha CRM bosqichlari: UVONYX — Murojaat → O'lchov → Smeta → (avans) buyurtma → ...
+const UVONYX_LABELS = { new: "Murojaat", measure: "O'lchov", negotiation: "Smeta", design: "Dizayn", printing: "Ishlab chiqarish", ready: "Tayyor / o'rnatish" };
+export function leadStagesFor(line) {
+  if (line === "UVONYX") return LEAD_STAGES.map((s) => (UVONYX_LABELS[s.key] ? stage(s.key, UVONYX_LABELS[s.key], s.color) : s));
+  if (line === "UVIXPRINT") return LEAD_STAGES.filter((s) => s.key !== "measure");
+  return LEAD_STAGES;
+}
 
 // Mijoz rozi bo'lgan (ish boshlangan) bosqichlar — shu yerdan boshlab lidni buyurtmaga aylantirish mumkin
 export const ORDER_READY_STAGES = ["design", "printing", "ready", "won"];

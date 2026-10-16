@@ -146,7 +146,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
         if (worker && t.assigneeId !== req.user.id) continue;
         if (!worker && req.lineScope && (order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") !== req.lineScope) continue;
         // Xodim buyurtmani qo'lda keyingi holatga o'tkazgan bo'lsa — ochiq qolgan vazifa ro'yxatdan chiqadi
-        const passed = kind === "design" ? ["printing", "ready", "delivered"] : ["ready", "delivered"];
+        const passed = kind === "design" ? ["material", "printing", "ready", "install", "delivered"] : ["ready", "install", "delivered"];
         if (t.status !== "done" && passed.includes(order.prodStage)) continue;
         tasks.push(publicOrderTask(order, kind, empById));
       }

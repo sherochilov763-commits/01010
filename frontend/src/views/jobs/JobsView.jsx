@@ -235,11 +235,11 @@ function WeekCalendar({ list, week, setWeek, isMobile, onOpen, showLine }) {
   );
 }
 
-export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId }) {
+export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId, preset }) {
   const { line } = useLine();
   const [f, setF] = useState(() => ({
-    kind: job?.kind || "measure", orderId: job?.orderId || presetOrderId || "", title: job?.title || "", date: job ? job.date || "" : today(), time: job?.time || "",
-    address: job?.address || "", phone: job?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || [], line: job?.line || (line !== "all" ? line : "UVIXPRINT"),
+    kind: job?.kind || preset?.kind || "measure", orderId: job?.orderId || presetOrderId || "", leadId: job?.leadId || preset?.leadId || null, title: job?.title || preset?.title || "", date: job ? job.date || "" : today(), time: job?.time || "",
+    address: job?.address || preset?.address || "", phone: job?.phone || preset?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || [], line: job?.line || preset?.line || (line !== "all" ? line : "UVIXPRINT"),
   }));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -277,6 +277,7 @@ export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderI
             );
           })}
         </div>
+        {f.leadId && <div data-testid="job-lead" style={{ fontSize: 12.5, color: THEME.muted }}>CRM lidi bilan bog'langan — o'lchov bajarilsa, lid «Smeta» bosqichiga o'tadi.</div>}
         <Field label="Buyurtma (ixtiyoriy)">
           <select value={f.orderId} onChange={(e) => set("orderId", e.target.value)} style={inp} data-testid="job-order">
             <option value="">— Buyurtmasiz (masalan, yangi mijoz o'lchovi)</option>
@@ -292,7 +293,7 @@ export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderI
         </div>
         <Field label="Manzil"><input value={f.address} onChange={(e) => set("address", e.target.value)} style={inp} placeholder="Chilonzor 9, 12-uy" data-testid="job-address" /></Field>
         <Field label="Telefon (mijoz)"><input value={f.phone} onChange={(e) => set("phone", e.target.value)} style={inp} placeholder="+998 90 123 45 67" inputMode="tel" /></Field>
-        {line === "all" && !f.orderId && (
+        {line === "all" && !f.orderId && !f.leadId && (
           <Field label="Yo'nalish">
             <div style={{ display: "flex", gap: 6 }}>
               {["UVIXPRINT", "UVONYX"].map((l) => (

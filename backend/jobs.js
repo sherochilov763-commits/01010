@@ -17,6 +17,7 @@ const REM = "uvix:jobsReminded";
 const KINDS = { measure: "📏 O'lchov", install: "🛠 Montaj", deliver: "🚚 Yetkazish", other: "📌 Vazifa" };
 const STATUSES = ["new", "doing", "done", "cancelled"];
 const lineOfOrder = (o) => (o?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+const { lineOfLead } = require("./lines");
 const rid = () => crypto.randomBytes(8).toString("hex");
 const str = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 const dateOk = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
@@ -63,16 +64,22 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
 
   function clean(b, prev, user, scope, orders) {
     const kind = Object.keys(KINDS).includes(b.kind) ? b.kind : prev?.kind || "other";
-    const order = b.orderId ? orders.find((o) => o && o.id === b.orderId && !o.deletedAt) : null;
-    if (b.orderId && !order) throw Object.assign(new Error("Buyurtma topilmadi"), { status: 404 });
+    // Yuborilmagan maydon — avvalgisi qoladi (masalan, faqat holat o'zgartirilganda)
+    const orderIdIn = b.orderId === undefined ? prev?.orderId || null : b.orderId || null;
+    const order = orderIdIn ? orders.find((o) => o && o.id === orderIdIn && !o.deletedAt) : null;
+    if (orderIdIn && !order) throw Object.assign(new Error("Buyurtma topilmadi"), { status: 404 });
     if (order && scope && lineOfOrder(order) !== scope) throw Object.assign(new Error("Buyurtma topilmadi"), { status: 404 });
-    const line = order ? lineOfOrder(order) : scope || (b.line === "UVONYX" ? "UVONYX" : b.line === "UVIXPRINT" ? "UVIXPRINT" : prev?.line || "UVIXPRINT");
+    // Lid (CRM) — masalan, UVONYX o'lchovi: bajarilsa lid «Smeta»ga o'tadi
+    const leadIdIn = b.leadId === undefined ? prev?.leadId || null : b.leadId || null;
+    const lead = leadIdIn ? (read("uvix:leads", []) || []).find((l) => l && l.id === leadIdIn && !l.deletedAt) : null;
+    if (leadIdIn && (!lead || (scope && lineOfLead(lead) !== scope))) throw Object.assign(new Error("Lid topilmadi"), { status: 404 });
+    const line = order ? lineOfOrder(order) : lead ? lineOfLead(lead) : scope || (b.line === "UVONYX" ? "UVONYX" : b.line === "UVIXPRINT" ? "UVIXPRINT" : prev?.line || "UVIXPRINT");
     const emps = empMap();
     const assigneeIds = Array.isArray(b.assigneeIds) ? [...new Set(b.assigneeIds.map(String))].filter((id) => emps.has(id)).slice(0, 10) : prev?.assigneeIds || [];
-    const title = str(b.title, 140) || (order ? `${order.orderNumber} · ${order.title || order.customer || ""}`.trim() : "") || prev?.title || "";
+    const title = str(b.title, 140) || (order ? `${order.orderNumber} · ${order.title || order.customer || ""}`.trim() : "") || (lead ? lead.customer || "" : "") || prev?.title || "";
     if (!title) throw Object.assign(new Error("Vazifa nomini kiriting"), { status: 400 });
     return {
-      kind, title, line, orderId: order ? order.id : null,
+      kind, title, line, orderId: order ? order.id : null, leadId: lead ? lead.id : null,
       date: b.date === undefined ? prev?.date || null : dateOk(b.date),
       time: b.time === undefined ? prev?.time || null : timeOk(b.time),
       address: b.address === undefined ? prev?.address || "" : str(b.address, 200),
@@ -99,6 +106,23 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
     audit(`${j.doneBy || "Xodim"}: ${KINDS[j.kind]} bajarildi → ${o.orderNumber} «Topshirildi»`, at);
     return o;
   }
+  // Lid bosqichi: o'lchov vazifasi qo'shilsa — «O'lchov»; bajarilsa — «Smeta» (muzokara)
+  function leadStage(j, at, from, to) {
+    if (!j.leadId) return null;
+    const leads = read("uvix:leads", []);
+    const l = Array.isArray(leads) ? leads.find((x) => x && x.id === j.leadId && !x.deletedAt) : null;
+    if (!l || !from.includes(l.stage || "new")) return null;
+    l.stage = to; l.stageAt = at;
+    write("uvix:leads", leads);
+    return l;
+  }
+  // Montaj boshlandi → buyurtma «O'rnatish»
+  function chainDoing(j, at) {
+    if (!j.orderId || j.kind !== "install") return;
+    const orders = read("uvix:orders", []);
+    const o = orders.find((x) => x && x.id === j.orderId && !x.deletedAt);
+    if (o && ["ready", "printing", "material"].includes(o.prodStage) && setStage(o, "install", at)) write("uvix:orders", orders);
+  }
   function audit(text, at) {
     const list = read("uvix:audit", []);
     write("uvix:audit", [{ id: rid(), who: "Tizim", what: text, when: at }, ...(Array.isArray(list) ? list : [])].slice(0, 500));
@@ -119,6 +143,7 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       const at = now().toISOString();
       const j = { id: rid(), ...clean(req.body || {}, null, req.user, req.lineScope, orders), status: "new", createdBy: req.user.name, createdAt: at, updatedAt: at, auto: false, photos: [] };
       write(KEY, [j, ...jobs()]);
+      if (j.kind === "measure" && j.line === "UVONYX") leadStage(j, at, ["new"], "measure");
       notifyAssigned(j, j.assigneeIds, empMap());
       res.json({ job: publicJob(j, empMap(), orders) });
     } catch (e) { res.status(e.status || 400).json({ error: "bad_request", message: e.message }); }
@@ -142,6 +167,8 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
         j.status = b.status;
         if (b.status === "done") { j.doneAt = at; j.doneBy = req.user.name; } else { delete j.doneAt; delete j.doneBy; }
         if (b.status === "done") order = chainDone(j, all, at);
+        if (b.status === "done" && j.kind === "measure") leadStage(j, at, ["new", "measure"], "negotiation");
+        if (b.status === "doing") chainDoing(j, at);
       }
       j.updatedAt = at;
       write(KEY, all);

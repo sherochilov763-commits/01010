@@ -8,8 +8,9 @@
 //   design / print — lid ichidagi vazifalar bilan bir xil tuzilma: { assigneeId, status, statusAt, ... }
 //   leadId, groupId ("G-014"), groupIdx, groupSize, quoteNo ("S-014"), title (ish nomi)
 
-const PROD_STAGES = ["new", "design", "printing", "ready", "delivered"];
-const PROD_LABEL = { new: "Navbatda", design: "Dizaynda", printing: "Pechatda", ready: "Tayyor", delivered: "Topshirildi" };
+// UVONYX: + «Material» va «O'rnatish»
+const PROD_STAGES = ["new", "design", "material", "printing", "ready", "install", "delivered"];
+const PROD_LABEL = { new: "Navbatda", design: "Dizaynda", material: "Material", printing: "Pechatda", ready: "Tayyor", install: "O'rnatish", delivered: "Topshirildi" };
 
 // Vazifa holati o'zgarganda buyurtma holati (ishchi tugmani bosganda)
 function applyOrderTaskStatus(order, kind, status, now) {
@@ -50,7 +51,7 @@ function deriveLeadStage(orders) {
   const st = list.map((o) => o.prodStage || "new");
   if (st.every((s) => s === "delivered")) return "won";
   if (st.some((s) => s === "new" || s === "design")) return "design";
-  if (st.some((s) => s === "printing")) return "printing";
+  if (st.some((s) => s === "printing" || s === "material")) return "printing";
   return "ready";
 }
 

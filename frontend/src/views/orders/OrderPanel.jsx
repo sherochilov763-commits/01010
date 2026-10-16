@@ -6,7 +6,7 @@ import { Avatar, Button } from "../../components/ui.jsx";
 import { orderAddedValue, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
-import { PROD_LABEL, PROD_STAGES, prodColors, stageHint } from "../../lib/production.js";
+import { PROD_LABEL, PROD_STAGES, prodColors, prodLabel, stageHint, stagesFor } from "../../lib/production.js";
 import { useBackToClose } from "../../lib/history.js";
 import { PENDING_LABEL } from "../../lib/approvals.jsx";
 import { useSheetDrag } from "../../lib/sheetDrag.js";
@@ -116,7 +116,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
               <select value={stage || ""} disabled={busy} onChange={(e) => e.target.value && run(() => onStage(e.target.value))} aria-label="Holat" data-testid="order-stage-select"
                 style={{ height: 30, borderRadius: 15, border: 0, padding: "0 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", color: prodColors(stage).color, background: prodColors(stage).bg }}>
                 {!stage && <option value="">Holat belgilanmagan</option>}
-                {PROD_STAGES.map((s) => <option key={s} value={s}>{PROD_LABEL[s]}</option>)}
+                {stagesFor(order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT").map((s) => <option key={s} value={s}>{prodLabel(s, order.subcategory)}</option>)}
               </select>
             </div>
             {sheet && stage && <ProdSteps order={order} stage={stage} employees={employees} />}
@@ -250,7 +250,14 @@ function ProdSteps({ order, stage, employees }) {
   const empById = new Map((employees || []).map((e) => [e.id, e]));
   const cur = PROD_STAGES.indexOf(stage);
   const first = (t) => (t?.assigneeId && empById.get(t.assigneeId)?.name?.split(" ")[0]) || "";
-  const steps = [
+  const steps = order.subcategory === "UVONYX" ? [
+    { k: "design", l: "Dizayn", sub: first(order.design) },
+    { k: "material", l: "Material", sub: "" },
+    { k: "printing", l: "Ishlab ch.", sub: first(order.print) },
+    { k: "ready", l: "Tayyor", sub: "" },
+    { k: "install", l: "O'rnatish", sub: "" },
+    { k: "delivered", l: "Topshirildi", sub: "" },
+  ] : [
     { k: "design", l: "Dizayn", sub: first(order.design) },
     { k: "printing", l: "Pechat", sub: first(order.print) },
     { k: "ready", l: "Tayyor", sub: "" },
