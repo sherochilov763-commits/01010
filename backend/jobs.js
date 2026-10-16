@@ -12,6 +12,9 @@ const crypto = require("crypto");
 const { setStage, syncLeadStage } = require("./production");
 
 const KEY = "uvix:jobs";
+const CFG = "uvix:jobsConfig"; // { fields: [...], stages: [...], defaults: {...} } — o'z ustunlari, doska holatlari, hamma uchun ko'rinish
+const PREFS = "uvix:jobsPrefs"; // { [xodimId]: {...} } — har kimning o'z ko'rinishi
+const FIELD_TYPES = ["text", "number", "date", "select", "check", "person"];
 const SEEN = "uvix:jobsAutoSeen";
 const REM = "uvix:jobsReminded";
 const KINDS = { measure: "📏 O'lchov", install: "🛠 Montaj", deliver: "🚚 Yetkazish", other: "📌 Vazifa" };
@@ -45,6 +48,44 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
   const write = (k, v) => upsertStmt.run(k, JSON.stringify(v));
   const jobs = () => { const v = read(KEY, []); return Array.isArray(v) ? v : []; };
   const empMap = () => new Map(readEmployees().map((e) => [e.id, e]));
+  const config = () => { const c = read(CFG, {}); return { fields: Array.isArray(c?.fields) ? c.fields : [], stages: Array.isArray(c?.stages) ? c.stages : [], defaults: c?.defaults && typeof c.defaults === "object" ? c.defaults : null }; };
+  const fid = (v) => (typeof v === "string" && /^[a-z0-9]{4,24}$/.test(v) ? v : rid());
+  function cleanFields(list, prev) {
+    const old = new Map((prev || []).map((f) => [f.id, f]));
+    return (Array.isArray(list) ? list : []).slice(0, 30).map((f) => {
+      const name = str(f?.name, 40); if (!name) return null;
+      const type = FIELD_TYPES.includes(f.type) ? f.type : old.get(f.id)?.type || "text";
+      return { id: fid(f.id), name, type, options: type === "select" ? [...new Set((Array.isArray(f.options) ? f.options : []).map((o) => str(o, 40)).filter(Boolean))].slice(0, 20) : [],
+        kinds: (Array.isArray(f.kinds) ? f.kinds : []).filter((k) => Object.keys(KINDS).includes(k)), archived: !!f.archived };
+    }).filter(Boolean);
+  }
+  function cleanStages(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 6).map((x) => { const name = str(x?.name, 30); return name ? { id: fid(x.id), name, color: /^#[0-9a-fA-F]{6}$/.test(x.color || "") ? x.color : "#BE185D" } : null; }).filter(Boolean);
+  }
+  function cleanPrefs(p) {
+    if (!p || typeof p !== "object") return null;
+    const keys = (a, n = 40) => (Array.isArray(a) ? a.slice(0, n).map((x) => ({ k: str(x?.k, 40), on: !!x?.on })).filter((x) => x.k) : undefined);
+    return { views: keys(p.views, 8), cards: keys(p.cards, 8), columns: keys(p.columns), filters: keys(p.filters, 20), showDone: p.showDone !== false, compact: !!p.compact, mine: !!p.mine };
+  }
+  // O'z ustunlari qiymati: turi bo'yicha tekshiriladi
+  function cleanCustom(input, prev, kind) {
+    const out = { ...(prev || {}) };
+    if (!input || typeof input !== "object") return out;
+    const emps = empMap();
+    for (const f of config().fields) {
+      if (!(f.id in input)) continue;
+      const v = input[f.id];
+      if (v === null || v === "" || v === undefined) { delete out[f.id]; continue; }
+      if (f.kinds.length && !f.kinds.includes(kind)) continue;
+      if (f.type === "text") out[f.id] = str(String(v), 200);
+      else if (f.type === "number") { const n = Number(String(v).replace(/\s/g, "").replace(",", ".")); if (Number.isFinite(n)) out[f.id] = n; }
+      else if (f.type === "date") { if (dateOk(v)) out[f.id] = v; }
+      else if (f.type === "select") { if (f.options.includes(v)) out[f.id] = v; }
+      else if (f.type === "check") out[f.id] = !!v;
+      else if (f.type === "person") { if (emps.has(String(v))) out[f.id] = String(v); }
+    }
+    return out;
+  }
 
   function canSee(user, scope, j) {
     if ((j.assigneeIds || []).includes(user.id)) return true;
@@ -157,11 +198,31 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
   }
 
   // ---------- API ----------
+  // Sozlama: o'z ustunlari va doska holatlari (rahbar / katta menejer), «Hamma uchun» ko'rinish
+  app.put("/api/jobs/config", requireAuth, (req, res) => {
+    if (!["admin", "manager"].includes(req.user.role)) return res.status(403).json({ error: "forbidden", message: "Ustunlarni rahbar yoki katta menejer sozlaydi" });
+    const prev = config(); const b = req.body || {};
+    const next = {
+      fields: b.fields !== undefined ? cleanFields(b.fields, prev.fields) : prev.fields,
+      stages: b.stages !== undefined ? cleanStages(b.stages) : prev.stages,
+      defaults: b.defaults !== undefined ? cleanPrefs(b.defaults) : prev.defaults,
+    };
+    write(CFG, next);
+    res.json({ config: next });
+  });
+  app.put("/api/jobs/prefs", requireAuth, (req, res) => {
+    const all = read(PREFS, {}) || {};
+    const p = cleanPrefs(req.body?.prefs);
+    if (p) all[req.user.id] = p; else delete all[req.user.id];
+    write(PREFS, all);
+    res.json({ prefs: p });
+  });
   app.get("/api/jobs", requireAuth, (req, res) => {
     const emps = empMap();
     const orders = read("uvix:orders", []);
     const list = jobs().filter((j) => canSee(req.user, req.lineScope, j)).map((j) => publicJob(j, emps, orders));
-    res.json({ jobs: list, canManage: isStaffManager(req.user) });
+    const prefs = read(PREFS, {})?.[req.user.id] || null;
+    res.json({ jobs: list, canManage: isStaffManager(req.user), config: config(), prefs, canConfig: req.user.role === "admin" || req.user.role === "manager" });
   });
 
   app.post("/api/jobs", requireAuth, (req, res) => {
@@ -170,6 +231,7 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       const orders = read("uvix:orders", []);
       const at = now().toISOString();
       const j = { id: rid(), ...clean(req.body || {}, null, req.user, req.lineScope, orders), status: "new", createdBy: req.user.name, createdAt: at, updatedAt: at, auto: false, photos: [] };
+      if (req.body?.custom) j.custom = cleanCustom(req.body.custom, {}, j.kind);
       const emps0 = empMap();
       logIt(j, req.user.name, `vazifa yaratildi${j.assigneeIds.length ? ` · ${j.assigneeIds.map((id) => emps0.get(id)?.name || id).join(", ")}` : ""}`, at);
       write(KEY, [j, ...jobs()]);
@@ -202,6 +264,12 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
           logIt(j, req.user.name, `${c.done ? "✓" : "✗"} ${c.text}`, at);
         }
       }
+      if (b.custom && typeof b.custom === "object") j.custom = cleanCustom(b.custom, j.custom, j.kind);
+      if (b.stage !== undefined) {
+        const st = config().stages.find((x) => x.id === b.stage);
+        if (st) { if (j.stage !== st.id) logIt(j, req.user.name, `«${st.name}»`, at); j.stage = st.id; if (!b.status && j.status !== "doing") b.status = "doing"; }
+        else delete j.stage;
+      }
       const comment = str(b.comment, 1000);
       if (comment) logIt(j, req.user.name, `💬 ${comment}`, at);
       if (isStaffManager(req.user)) {
@@ -217,6 +285,7 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       if (b.status && STATUSES.includes(b.status) && b.status !== j.status) {
         if (b.status === "cancelled" && !isStaffManager(req.user)) return res.status(403).json({ error: "forbidden", message: "Bekor qilishni menejer qiladi" });
         j.status = b.status;
+        if (b.status !== "doing") delete j.stage;
         logIt(j, req.user.name, `«${STATUS_L[b.status]}»`, at);
         if (b.status === "doing") { j.startedAt = at; j.startedBy = req.user.name; }
         if (b.status === "done") { j.doneAt = at; j.doneBy = req.user.name; } else { delete j.doneAt; delete j.doneBy; }

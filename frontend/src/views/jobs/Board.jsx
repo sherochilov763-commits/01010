@@ -14,14 +14,14 @@ export const BOARD_COLS = [
   { k: "doing", l: "Jarayonda", short: "Jarayonda", dot: "#D97706" },
   { k: "done", l: "Bajarildi · bu hafta", short: "Bajarildi", dot: "#15803D" },
 ];
-export function boardCol(j, mon = mondayOf(today())) {
+export function boardCol(j, mon = mondayOf(today()), stages = []) {
   if (j.status === "cancelled") return null;
   if (j.status === "done") return String(j.doneAt || j.date || "").slice(0, 10) >= mon ? "done" : null;
-  if (j.status === "doing") return "doing";
+  if (j.status === "doing") return j.stage && stages.some((s) => s.id === j.stage) ? `st:${j.stage}` : "doing";
   return (j.assigneeIds || []).length && j.date ? "planned" : "new";
 }
 
-export function Board({ list, isMobile, showLine, canManage, employees, onOpen, onPatch, onDone, onPlan }) {
+export function Board({ list, stages = [], isMobile, showLine, canManage, employees, onOpen, onPatch, onDone, onPlan }) {
   const [groupBy, setGroupBy] = useState(() => { try { return localStorage.getItem("uvix_board_group") || "status"; } catch { return "status"; } });
   const [mcol, setMcol] = useState(null);
   const [over, setOver] = useState(null);
@@ -31,20 +31,24 @@ export function Board({ list, isMobile, showLine, canManage, employees, onOpen, 
 
   const cols = useMemo(() => {
     const mon = mondayOf(today());
-    if (groupBy === "status") return BOARD_COLS.map((c) => ({ ...c, items: list.filter((j) => boardCol(j, mon) === c.k).sort(c.k === "done" ? (a, b) => String(b.doneAt || "").localeCompare(String(a.doneAt || "")) : byWhen) }));
-    const open = list.filter((j) => boardCol(j, mon) && j.status !== "done");
+    if (groupBy === "status") {
+      const defs = [...BOARD_COLS.slice(0, 3), ...stages.map((st) => ({ k: `st:${st.id}`, l: st.name, short: st.name, dot: st.color })), BOARD_COLS[3]];
+      return defs.map((c) => ({ ...c, items: list.filter((j) => boardCol(j, mon, stages) === c.k).sort(c.k === "done" ? (a, b) => String(b.doneAt || "").localeCompare(String(a.doneAt || "")) : byWhen) }));
+    }
+    const open = list.filter((j) => boardCol(j, mon, stages) && j.status !== "done");
     if (groupBy === "kind") return Object.entries(JOB_KINDS).map(([k, K]) => ({ k, l: K.l, dot: K.c, items: open.filter((j) => j.kind === k).sort(byWhen) })).filter((c) => c.items.length);
     if (groupBy === "line") return ["UVIXPRINT", "UVONYX"].map((k) => ({ k, l: k, dot: k === "UVONYX" ? "#0E7C6B" : "#1F5FD6", items: open.filter((j) => j.line === k).sort(byWhen) }));
     const ppl = [...new Map(open.flatMap((j) => j.assignees || []).map((a) => [a.id, a])).values()];
     return [{ k: "none", l: "Mas'ulsiz", dot: "#A1A1AA", items: open.filter((j) => !(j.assigneeIds || []).length).sort(byWhen) },
       ...ppl.map((a) => ({ k: a.id, l: a.name, dot: "#6D28D9", items: open.filter((j) => (j.assigneeIds || []).includes(a.id)).sort(byWhen) }))];
-  }, [list, groupBy]);
+  }, [list, groupBy, stages]);
   const dnd = groupBy === "status" && canManage && !isMobile;
 
   function dropTo(col, j) {
-    if (!j || j.ro || boardCol(j) === col) return;
+    if (!j || j.ro || boardCol(j, undefined, stages) === col) return;
     if (col === "done") return onDone(j);
-    if (col === "doing") return onPatch(j, { status: "doing" });
+    if (col.startsWith("st:")) return onPatch(j, { stage: col.slice(3) });
+    if (col === "doing") return onPatch(j, { status: "doing", stage: null });
     if (col === "planned") {
       if (!(j.assigneeIds || []).length || !j.date) return onPlan(j);
       return onPatch(j, { status: "new" });
@@ -73,7 +77,7 @@ export function Board({ list, isMobile, showLine, canManage, employees, onOpen, 
               <div style={{ display: "flex", gap: 8, marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
                 {c.k === "new" && <button type="button" style={mBtn(false)} onClick={() => onPlan(j)}><UserPlus size={15} /> Biriktirish</button>}
                 {c.k === "planned" && <button type="button" style={mBtn(true, "#0E7C6B")} onClick={() => onPatch(j, { status: "doing" })} data-board-next={j.id}>Boshlash <ArrowRight size={15} /></button>}
-                {c.k === "doing" && <><button type="button" style={mBtn(false)} onClick={() => onPatch(j, { status: "new" })} data-board-back={j.id}><ArrowLeft size={15} /> Rejaga</button>
+                {(c.k === "doing" || c.k.startsWith("st:")) && <><button type="button" style={mBtn(false)} onClick={() => onPatch(j, { status: "new" })} data-board-back={j.id}><ArrowLeft size={15} /> Rejaga</button>
                   <button type="button" style={mBtn(true, THEME.greenSolid)} onClick={() => onDone(j)} data-board-next={j.id}>Bajarildi <ArrowRight size={15} /></button></>}
               </div>
             )} />

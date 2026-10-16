@@ -6,14 +6,16 @@ import { useLine } from "../../lib/lines.js";
 import { createJob, deleteJob, updateJob } from "../../storage.js";
 import { THEME } from "../../theme.js";
 import { JOB_KINDS, STATUS, today } from "./jobsLib.js";
+import { CustomInput } from "./CustomFields.jsx";
+import { fieldsFor } from "./jobsPrefs.js";
 
 export const DURATION = { measure: 60, install: 120, deliver: 40, other: 60 };
 
-export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId, preset }) {
+export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId, preset, config }) {
   const { line } = useLine();
   const [f, setF] = useState(() => ({
     kind: job?.kind || preset?.kind || "measure", orderId: job?.orderId || presetOrderId || "", leadId: job?.leadId || preset?.leadId || null, title: job?.title || preset?.title || "", date: job ? job.date || "" : preset?.date !== undefined ? preset.date || "" : today(), time: job?.time || preset?.time || "",
-    address: job?.address || preset?.address || "", phone: job?.phone || preset?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || preset?.assigneeIds || [], duration: job?.duration || preset?.duration || DURATION[job?.kind || preset?.kind || "measure"], line: job?.line || preset?.line || (line !== "all" ? line : "UVIXPRINT"),
+    address: job?.address || preset?.address || "", phone: job?.phone || preset?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || preset?.assigneeIds || [], custom: { ...(job?.custom || {}) }, duration: job?.duration || preset?.duration || DURATION[job?.kind || preset?.kind || "measure"], line: job?.line || preset?.line || (line !== "all" ? line : "UVIXPRINT"),
   }));
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -94,6 +96,12 @@ export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderI
             })}
           </div>
         </Field>
+        {fieldsFor(config, f.kind).map((cf) => (
+          <Field key={cf.id} label={<span>{cf.name} <span style={{ color: THEME.blue }}>✦</span></span>}>
+            <CustomInput f={cf} value={f.custom[cf.id] ?? (cf.type === "check" ? false : "")} employees={employees} style={{ height: 40, border: `1px solid ${THEME.border2}` }}
+              onChange={(v) => set("custom", { ...f.custom, [cf.id]: v })} />
+          </Field>
+        ))}
         <Field label="Izoh"><textarea value={f.note} onChange={(e) => set("note", e.target.value)} style={{ ...inp, minHeight: 60, resize: "vertical" }} /></Field>
         {job && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }} data-testid="job-status">

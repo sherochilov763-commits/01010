@@ -11,7 +11,7 @@ import { hm2min, isLate, isOpen, mapsUrl, min2hm, whenText } from "./jobsLib.js"
 
 const fmtAt = (s) => { if (!s) return ""; const d = new Date(s); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${d.toTimeString().slice(0, 5)}`; };
 
-export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit, onDone, customFields = [], renderCustom }) {
+export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit, onDone, customFields = [], renderCustom, stages = [] }) {
   const [j, setJ] = useState(job);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -52,11 +52,11 @@ export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit
   );
   const sec = (t) => <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: THEME.muted, margin: "16px 0 8px" }}>{t}</div>;
   const segBtn = (s, l) => {
-    const on = j.status === s;
+    const on = j.status === s && !(s === "doing" && j.stage && stages.some((x) => x.id === j.stage));
     const c = s === "done" ? THEME.green : s === "doing" ? THEME.amber : THEME.muted;
     return (
       <button key={s} type="button" disabled={busy || on} data-drawer-status={s} aria-pressed={on}
-        onClick={() => (s === "done" ? onDone?.(j) : patch({ status: s }))}
+        onClick={() => (s === "done" ? onDone?.(j) : patch({ status: s, stage: null }))}
         style={{ height: 32, padding: "0 12px", borderRadius: 999, cursor: on ? "default" : "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: `1.5px solid ${on ? c : THEME.border}`, background: on ? c + "1F" : THEME.card, color: on ? c : THEME.mutedDark || THEME.text }}>
         {on && s !== "new" ? "● " : ""}{l}
       </button>
@@ -75,7 +75,11 @@ export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit
           <button type="button" onClick={onClose} aria-label="Yopish" data-testid="drawer-close" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, display: "grid", placeItems: "center", cursor: "pointer" }}><X size={16} /></button>
         </div>
         <h2 style={{ margin: "12px 0 10px", fontSize: 19, lineHeight: 1.3, fontWeight: 750 }}>{j.title}</h2>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{segBtn("new", "Yangi")}{segBtn("doing", "Jarayonda")}{segBtn("done", "Bajarildi")}</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{segBtn("new", "Yangi")}{segBtn("doing", "Jarayonda")}
+          {stages.map((st) => { const on = j.status === "doing" && j.stage === st.id; return (
+            <button key={st.id} type="button" disabled={busy || on} data-drawer-stage={st.id} aria-pressed={on} onClick={() => patch({ stage: st.id })}
+              style={{ height: 32, padding: "0 12px", borderRadius: 999, cursor: on ? "default" : "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, border: `1.5px solid ${on ? st.color : THEME.border}`, background: on ? st.color + "1F" : THEME.card, color: on ? st.color : THEME.mutedDark || THEME.text }}>{on ? "● " : ""}{st.name}</button>); })}
+          {segBtn("done", "Bajarildi")}</div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "8px 18px 12px" : "8px 20px 16px" }}>
         {row("Qachon", <span style={{ color: late ? THEME.rose : undefined }}>{when}</span>, "when")}

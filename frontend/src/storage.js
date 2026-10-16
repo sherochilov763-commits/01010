@@ -680,6 +680,8 @@ export const fetchJobs = () => jobsCall("");
 export const createJob = (job) => jobsCall("", "POST", job);
 export const updateJob = (id, patch) => jobsCall(`/${encodeURIComponent(id)}`, "PATCH", patch);
 export const deleteJob = (id) => jobsCall(`/${encodeURIComponent(id)}`, "DELETE");
+export const saveJobsConfig = (cfg) => jobsCall("/config", "PUT", cfg).then((d) => d.config);
+export const saveJobsPrefs = (prefs) => jobsCall("/prefs", "PUT", { prefs }).then((d) => d.prefs);
 export async function uploadJobPhotos(id, files) {
   const form = new FormData();
   for (const f of files) form.append("photos", f);

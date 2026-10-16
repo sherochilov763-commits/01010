@@ -8,6 +8,8 @@ import { fetchJobs, updateJob } from "../../storage.js";
 import { THEME } from "../../theme.js";
 import { JobDrawer } from "./JobDrawer.jsx";
 import { KindBadge } from "./JobParts.jsx";
+import { CustomValue } from "./CustomFields.jsx";
+import { fieldsFor } from "./jobsPrefs.js";
 import { JOB_KINDS, MONTHS, WD_FULL, addDays, byWhen, isLate, isOpen, mapsUrl, today, untilText, weekdayOf, whenText } from "./jobsLib.js";
 
 export function MyJobs({ currentUser, hideEmpty }) {
@@ -17,7 +19,8 @@ export function MyJobs({ currentUser, hideEmpty }) {
   const [openId, setOpenId] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => { try { const r = await fetchJobs(); setJobs((r.jobs || []).filter((j) => (j.assigneeIds || []).includes(currentUser.id))); } catch (e) { setErr(e.message); setJobs((x) => x || []); } }, [currentUser.id]);
+  const [config, setConfig] = useState(null);
+  const load = useCallback(async () => { try { const r = await fetchJobs(); setConfig(r.config || null); setJobs((r.jobs || []).filter((j) => (j.assigneeIds || []).includes(currentUser.id))); } catch (e) { setErr(e.message); setJobs((x) => x || []); } }, [currentUser.id]);
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
   if (jobs === null) return null;
   const open = jobs.filter(isOpen);
@@ -102,7 +105,8 @@ export function MyJobs({ currentUser, hideEmpty }) {
           <div style={{ fontSize: 12, color: THEME.dim, textAlign: "center", marginTop: 2 }}>Kartani o'ngga suring — «Bajarildi»</div>
         </div>
       )}
-      {opened && <JobDrawer job={opened} canManage={false} isMobile onClose={() => setOpenId(null)} onChanged={(nj) => setJobs((l) => l.map((x) => (x.id === nj.id ? nj : x)))} onDone={(j) => setConfirm(j)} />}
+      {opened && <JobDrawer job={opened} canManage={false} isMobile onClose={() => setOpenId(null)} onChanged={(nj) => setJobs((l) => l.map((x) => (x.id === nj.id ? nj : x)))} onDone={(j) => setConfirm(j)}
+        stages={config?.stages || []} customFields={fieldsFor(config, opened.kind)} renderCustom={(f, j, patch) => <CustomValue f={f} j={j} onSave={(c) => patch({ custom: c })} align="right" />} />}
       {confirm && <ConfirmDialog title="Bajarildimi?" message={`«${confirm.title}» bajarildi deb belgilansinmi?`} confirmLabel="Ha, bajarildi" tone="primary" icon={Check} onCancel={() => setConfirm(null)} onConfirm={() => setStatus(confirm, "done")} />}
     </section>
   );
