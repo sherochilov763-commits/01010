@@ -563,8 +563,6 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
   }
 
   const hasText = text.trim().length > 0;
-  // Telefonda tayyor javoblar tugma bo'lib turadi — ⚡ tugmasi va «/» maslahati takrorlanmaydi
-  const chipsOn = isMobile && !isNote && !rec && !hasText && !showTpl && replies.length > 0;
   const bar = { display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "8px 8px" : "10px 14px", background: C.panel, borderTop: onSendNote && !rec ? "none" : `1px solid ${C.border}` };
 
   return (
@@ -595,7 +593,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
           ))}
         </div>
       )}
-      {showTpl && (
+      {showTpl && !(isMobile && tplOpen) && (
         <>
           {tplOpen && <div onClick={() => setTplOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 300 }} />}
           <div role="listbox" aria-label="Tayyor javoblar" data-testid="tpl-menu"
@@ -611,17 +609,10 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
           </div>
         </>
       )}
-      {/* Telefonda: tayyor javoblar klaviatura ustida tugma bo'lib turadi (mobil 2-bosqich) */}
-      {chipsOn && (
-        <div className="uc-chips" role="group" aria-label="Tezkor javoblar" data-testid="quick-replies"
-          style={{ display: "flex", gap: 8, overflowX: "auto", padding: "8px 10px 2px", background: C.panel, borderTop: onSendNote ? "none" : `1px solid ${C.border}`, scrollbarWidth: "none" }}>
-          {replies.slice(0, 8).map((r) => (
-            <button key={r.id || r.key} type="button" data-chip={r.key} onClick={() => pickTpl(r)} title={r.text}
-              style={{ flexShrink: 0, height: 34, padding: "0 14px", borderRadius: 17, border: `1px solid ${C.border}`, background: C.hover, color: C.text, fontSize: 14, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}>
-              {r.key.charAt(0).toUpperCase() + r.key.slice(1)}
-            </button>
-          ))}
-        </div>
+      {/* Telefonda: ⚡ → pastdan ro'yxat (nomi + to'liq matn); tanlangani maydonga tushadi, yozilgan matn o'chmaydi */}
+      {isMobile && tplOpen && (
+        <TplSheet replies={replies} onClose={() => setTplOpen(false)}
+          onPick={(r) => { setText((t) => (t.trim() ? `${t.trimEnd()} ${r.text}` : r.text)); setTplOpen(false); setTimeout(() => inputRef.current?.focus(), 0); }} />
       )}
       {rec ? (
         <div style={bar}>
@@ -639,7 +630,7 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
       ) : (
         <div style={bar}>
           {!isNote && <button type="button" className="uc-iconbtn" onClick={() => setAttachOpen((v) => !v)} aria-label="Biriktirish" aria-expanded={attachOpen} disabled={busy}><Paperclip size={21} /></button>}
-          {!isNote && replies.length > 0 && !isMobile && (
+          {!isNote && replies.length > 0 && (
             <button type="button" className="uc-iconbtn" onClick={() => setTplOpen((v) => !v)} aria-label="Tayyor javoblar" title="Tayyor javoblar (yoki «/» yozing)" aria-expanded={showTpl} data-testid="tpl-btn"><Zap size={19} /></button>
           )}
           <input
@@ -743,6 +734,32 @@ function SendSheet({ title, children, onClose, onSend, busy, isMobile }) {
             style={{ flex: 1, height: 44, borderRadius: 12, border: 0, background: C.blue, color: "#fff", fontSize: 14.5, fontWeight: 600, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
             {busy ? <Loader2 size={17} className="uc-spin" /> : <Send size={17} />} Yuborish
           </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function TplSheet({ replies, onPick, onClose }) {
+  useBackToClose(true, onClose);
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 420, background: "rgba(0,0,0,.4)" }} />
+      <div role="dialog" aria-modal="true" aria-label="Tayyor javoblar" data-testid="tpl-sheet"
+        style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 421, maxHeight: "70dvh", display: "flex", flexDirection: "column", background: C.panel, color: C.text, borderRadius: "20px 20px 0 0", boxShadow: "0 -10px 30px rgba(0,0,0,.3)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "12px 14px 8px 18px" }}>
+          <b style={{ fontSize: 16, flex: 1 }}>Tayyor javoblar</b>
+          <button type="button" onClick={onClose} aria-label="Yopish" style={{ width: 36, height: 36, border: 0, borderRadius: 10, background: C.hover, color: C.text, display: "grid", placeItems: "center", cursor: "pointer" }}><X size={18} /></button>
+        </div>
+        <div style={{ fontSize: 12.5, color: C.muted, padding: "0 18px 8px" }}>Tanlangan matn yozish maydoniga tushadi — yuborishdan oldin o'zgartirish mumkin.</div>
+        <div style={{ overflowY: "auto", padding: "0 10px 12px" }}>
+          {replies.map((r) => (
+            <button key={r.id || r.key} type="button" data-tpl={r.key} onClick={() => onPick(r)}
+              style={{ width: "100%", display: "block", textAlign: "left", border: 0, borderTop: `1px solid ${C.border}`, background: "none", color: C.text, padding: "12px 8px", cursor: "pointer", fontFamily: "inherit" }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{r.key.charAt(0).toUpperCase() + r.key.slice(1)}</div>
+              <div style={{ fontSize: 13.5, color: C.muted, marginTop: 3, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.text}</div>
+            </button>
+          ))}
         </div>
       </div>
     </>
