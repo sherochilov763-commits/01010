@@ -6,6 +6,7 @@ import { money, paymentTypeBadgeColors, paymentTypeLabel, todayStr, shortDateUz 
 import { THEME } from "../../theme.js";
 import { TransactionForm } from "./TransactionForm.jsx";
 import { LINE_META, lineColor, lineOfOrder, txLine, useLine } from "../../lib/lines.js";
+import { isBigExpense, useExpenseRules } from "../../lib/expenseRules.js";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 
 /* ---------------- EXPENSE VIEW ---------------- */
@@ -26,14 +27,20 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
   // Rahbar: Barchasi / UVIXPRINT / UVONYX / Umumiy filtri (tanlov shu qurilmada eslab qolinadi)
   const [lineF, setLineFRaw] = useState(() => { try { return localStorage.getItem("uvix_exp_line") || "all"; } catch { return "all"; } });
   const setLineF = (v) => { setLineFRaw(v); try { localStorage.setItem("uvix_exp_line", v); } catch { /* */ } };
-  const list = transactions.filter((t) => t.type === "chiqim" && (curLine !== "all" || lineF === "all" || txLine(t, lineById) === lineF)).sort((a, b) => (a.date < b.date ? 1 : -1));
-  const { page, setPage, totalPages, pageItems } = usePagination(list, [transactions.length, lineF]);
+  // Yirik rasxodlar: chegara rahbar sozlaydi (Kategoriyalar bo'limi); «Faqat yiriklar» filtri
+  const { limit: bigLimit } = useExpenseRules();
+  const [onlyBig, setOnlyBig] = useState(false);
+  const list = transactions.filter((t) => t.type === "chiqim" && (curLine !== "all" || lineF === "all" || txLine(t, lineById) === lineF) && (!onlyBig || isBigExpense(t, bigLimit))).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const { page, setPage, totalPages, pageItems } = usePagination(list, [transactions.length, lineF, onlyBig]);
   const orderById = useMemo(() => {
     const map = {};
     (orders || []).forEach((o) => { map[o.id] = o; });
     return map;
   }, [orders]);
-  const tagOf = (t) => { const l = txLine(t, lineById); return curLine === "all" || l === "common" ? <LineTag line={l} /> : null; };
+  const tagOf = (t) => {
+    const l = txLine(t, lineById);
+    return <>{curLine === "all" || l === "common" ? <LineTag line={l} /> : null}{isBigExpense(t, bigLimit) && <BigTag />}</>;
+  };
 
   function exportExcel() {
     exportWorkbook([], list, categories, "Rasxodlar", `UVIX_rasxodlar_${todayStr()}.xlsx`);
@@ -55,6 +62,13 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
               );
             })}
           </div>
+        )}
+        {bigLimit > 0 && (
+          <button type="button" onClick={() => setOnlyBig((v) => !v)} aria-pressed={onlyBig} data-testid="only-big" className="uvix-fchip"
+            style={{ height: 32, padding: "0 12px", borderRadius: 16, whiteSpace: "nowrap", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6,
+              border: `1px solid ${onlyBig ? THEME.rose : THEME.border2}`, background: onlyBig ? THEME.roseBg : THEME.card, color: onlyBig ? THEME.rose : THEME.mutedDark }}>
+            Faqat yiriklar
+          </button>
         )}
         <Button variant="ghost" onClick={exportExcel} disabled={list.length === 0}><Download size={14} /> Excel</Button>
         <Button onClick={() => setModal({})}><Plus size={15} /> Yangi rasxod</Button>
@@ -158,4 +172,8 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
       )}
     </div>
   );
+}
+
+function BigTag() {
+  return <span data-big-tag style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", marginLeft: 4, borderRadius: 6, fontSize: 11, fontWeight: 700, color: THEME.rose, background: THEME.roseBg, whiteSpace: "nowrap" }}>Yirik</span>;
 }

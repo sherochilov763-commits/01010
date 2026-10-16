@@ -5,6 +5,7 @@ import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOr
 import { TodayView } from "./views/dashboard/TodayView.jsx";
 import { JobsView } from "./views/jobs/JobsView.jsx";
 import { LineContext, WorkStatsContext, scopeByLine, useLineState } from "./lib/lines.js";
+import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
 import { authBootstrap, authListEmployees, authLogout, authMe, getToken, connectTelegramUser, deletePhoto, disconnectTelegramUser, fetchMyAppearance, saveMyAppearance, fetchTelegramChats, fetchTelegramMessages, fetchTelegramUserStatus, markTelegramChatRead, sendBackupNow, sendTelegramUserMessage, uploadPhotos, fetchWorkStats } from "./storage.js";
 import { Sidebar, Topbar } from "./components/Layout.jsx";
@@ -459,6 +460,10 @@ function AppInner() {
   }
 
   // ---- Rasxod (chiqim) CRUD ----
+  // Yirik rasxod: rahbar «Ko'rildi» bosadi — Dashboard kartasidan chiqadi
+  function markBigSeen(id) {
+    persistTx(transactions.map((t) => (t.id === id ? { ...t, bigSeenAt: new Date().toISOString(), bigSeenBy: currentUser?.name || "" } : t)));
+  }
   function saveTransaction(tx, isEdit) {
     let next;
     if (isEdit) {
@@ -722,6 +727,7 @@ function AppInner() {
   const phoneUi = useIsMobile();
   // Ikki yo'nalish: joriy ish maydoni (UVIXPRINT / UVONYX / admin — ikkalasi)
   const meEmp = currentUser ? employees.find((e) => e.id === currentUser.id) : null;
+  const expenseRules = useMemo(() => rulesFrom(settings), [settings]);
   // Umumiy xodim oyligini bo'lish uchun bajarilgan ish statistikasi (faqat rahbar)
   const [workStats, setWorkStats] = useState(null);
   const wsAdmin = currentUser?.role === "admin";
@@ -830,6 +836,7 @@ function AppInner() {
     <AttendanceGate user={currentUser} onLogout={logout}>
     <ApprovalsProvider value={approvalsCtx}>
     <LineContext.Provider value={lineState}>
+    <ExpenseRulesContext.Provider value={expenseRules}>
     <WorkStatsContext.Provider value={workStats}>
     {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
     <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
@@ -1025,7 +1032,7 @@ function AppInner() {
                 {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
               </button>
             )}
-            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} perm={meEmp?.perm} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
@@ -1153,6 +1160,8 @@ function AppInner() {
                 onRenameCategory={renameCategory}
                 onDeleteCategory={deleteCategory}
                 onDeleteSubcategory={deleteSubcategory}
+                settings={settings}
+                onSaveSettings={isAdmin ? persistSettings : null}
               />
             )}
             {view === "employees" && isAdmin && (
@@ -1263,6 +1272,7 @@ function AppInner() {
       )}
     </div>
     </WorkStatsContext.Provider>
+    </ExpenseRulesContext.Provider>
     </LineContext.Provider>
     </ApprovalsProvider>
     </AttendanceGate>

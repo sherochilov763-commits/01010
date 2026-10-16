@@ -5,6 +5,7 @@ import { Button, Field, Modal, PaymentTypeSelector, getIconBtn, getInputStyle } 
 import { fmt, todayStr, uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { LINE_META, lineColor, useLine } from "../../lib/lines.js";
+import { useExpenseRules } from "../../lib/expenseRules.js";
 
 /* ---------------- RASXOD FORMASI (faqat chiqim uchun) ---------------- */
 export function TransactionForm({ initial, preset, currentUser, categories, orders, employees, onAddCategory, onAddSubcategory, onClose, onSave }) {
@@ -17,8 +18,9 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   const [note, setNote] = useState(initial?.note || "");
   // Kimga tegishli: joriy yo'nalish yoki «Umumiy» (ikkalasiga — oylik tushum ulushiga qarab bo'linadi)
   const curLine = useLine();
+  const rules = useExpenseRules();
   // Xodim — har doim o'z yo'nalishi (umumiy rasxodni faqat rahbar kiritadi); rahbar — tanlaydi
-  const [txLineSel, setTxLineSel] = useState(curLine.line !== "all" ? curLine.line : initial?.line || "common");
+  const [txLineSel, setTxLineSel] = useState(curLine.line !== "all" ? curLine.line : initial?.line || (!initial && ["UVIXPRINT", "UVONYX", "common"].includes(rules.categoryLines[category]) ? rules.categoryLines[category] : "common"));
   const lineOptions = [...new Set([...(curLine.line === "all" ? ["UVIXPRINT", "UVONYX"] : [curLine.line]), ...(initial?.line && initial.line !== "common" ? [initial.line] : []), "common"])];
   const [error, setError] = useState("");
   const [newCatOpen, setNewCatOpen] = useState(false);
@@ -82,6 +84,9 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   function handleCategoryChange(cat) {
     setCategory(cat);
     setSubcategory((categories[cat] || [])[0] || "");
+    // Kategoriyaning standart yo'nalishi (rahbar sozlagan) — faqat tavsiya, o'zgartirish mumkin
+    const def = rules.categoryLines[cat];
+    if (curLine.line === "all" && ["UVIXPRINT", "UVONYX", "common"].includes(def)) setTxLineSel(def);
   }
   function submitNewCategory() {
     const clean = newCatName.trim();

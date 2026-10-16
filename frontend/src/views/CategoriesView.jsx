@@ -1,11 +1,14 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, FolderTree, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, getIconBtn, getInputStyle } from "../components/ui.jsx";
-import { money, monthKey, todayStr } from "../lib/format.js";
+import { fmt, money, monthKey, todayStr } from "../lib/format.js";
 import { THEME } from "../theme.js";
 
 /* ---------------- KATEGORIYALAR ---------------- */
-export function CategoriesView({ transactions, categories, isAdmin, onAddCategory, onAddSubcategory, onRenameCategory, onDeleteCategory, onDeleteSubcategory }) {
+export function CategoriesView({ transactions, categories, isAdmin, onAddCategory, onAddSubcategory, onRenameCategory, onDeleteCategory, onDeleteSubcategory, settings, onSaveSettings }) {
+  // Rahbar: yirik rasxod chegarasi va kategoriyaning standart yo'nalishi (hech narsani cheklamaydi)
+  const catLines = settings?.categoryLines || {};
+  const setCatLine = (cat, v) => { const next = { ...catLines }; if (v) next[cat] = v; else delete next[cat]; onSaveSettings?.({ ...settings, categoryLines: next }); };
   const [open, setOpen] = useState(null);
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState("");
@@ -52,6 +55,7 @@ export function CategoriesView({ transactions, categories, isAdmin, onAddCategor
 
   return (
     <div>
+      {isAdmin && onSaveSettings && <BigLimitCard settings={settings} onSave={onSaveSettings} />}
       {isAdmin && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
           <Button onClick={() => setNewCatOpen((v) => !v)}><Plus size={14} /> Yangi kategoriya</Button>
@@ -102,6 +106,15 @@ export function CategoriesView({ transactions, categories, isAdmin, onAddCategor
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: THEME.rose }}>{money(t.month)}</div>
                     <div style={{ fontSize: 10.5, color: THEME.muted }}>shu oy</div>
                   </div>
+                  {isAdmin && onSaveSettings && (
+                    <select value={catLines[cat] || ""} onChange={(e) => setCatLine(cat, e.target.value)} aria-label={`${cat}: standart yo'nalish`} data-cat-line={cat} title="Yangi rasxodda yo'nalish o'zi qo'yiladi (o'zgartirish mumkin)"
+                      style={{ ...getInputStyle(), width: "auto", padding: "4px 6px", fontSize: 12, minHeight: 30 }}>
+                      <option value="">Yo'nalish: —</option>
+                      <option value="UVIXPRINT">UVIXPRINT</option>
+                      <option value="UVONYX">UVONYX</option>
+                      <option value="common">Umumiy</option>
+                    </select>
+                  )}
                   {isAdmin && renaming !== cat && (
                     <>
                       <button onClick={() => { setRenaming(cat); setRenameVal(cat); }} title="Nomini o'zgartirish" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={13} /></button>
@@ -163,5 +176,21 @@ export function CategoriesView({ transactions, categories, isAdmin, onAddCategor
         />
       )}
     </div>
+  );
+}
+
+function BigLimitCard({ settings, onSave }) {
+  const cur = Math.max(0, Number(settings?.bigExpenseLimit) || 0);
+  const [v, setV] = useState(cur ? fmt(cur) : "");
+  const n = Number(String(v).replace(/\D/g, "")) || 0;
+  return (
+    <Card style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }} data-testid="big-limit-card">
+      <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+        <b style={{ fontSize: 14 }}>Yirik rasxod chegarasi</b>
+        <div style={{ fontSize: 12, color: THEME.muted, marginTop: 2 }}>Shu summadan katta rasxod «Yirik» deb belgilanadi, sizga Telegram'da xabar keladi va Dashboard'da alohida ko'rinadi. Hech narsani cheklamaydi. 0 — o'chiq.</div>
+      </div>
+      <input value={v} onChange={(e) => { const d = e.target.value.replace(/\D/g, ""); setV(d ? fmt(Number(d)) : ""); }} placeholder="masalan 2 000 000" inputMode="numeric" style={{ ...getInputStyle(), width: 170 }} data-testid="big-limit" />
+      <Button onClick={() => onSave({ ...settings, bigExpenseLimit: n })} disabled={n === cur} data-testid="big-limit-save">Saqlash</Button>
+    </Card>
   );
 }

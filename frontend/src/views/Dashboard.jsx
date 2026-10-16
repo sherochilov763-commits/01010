@@ -10,6 +10,7 @@ import { CardStyleContext } from "../components/CardStyleMenu.jsx";
 import { WorkStatsContext, scopeByLine, useLine } from "../lib/lines.js";
 import { LineTag } from "../components/LineSwitcher.jsx";
 import { ProfitLoss } from "./dashboard/ProfitLoss.jsx";
+import { BigExpenses } from "./dashboard/BigExpenses.jsx";
 
 // Grafiklar alohida bo'lakda — dashboard raqamlari grafik kutubxonasini kutmasdan chiqadi
 const MoneyBarChart = lazy(() => import("./dashboard/Charts.jsx").then((m) => ({ default: m.MoneyBarChart })));
@@ -22,7 +23,7 @@ function Chart({ kind, ...props }) {
   return <Suspense fallback={<ChartSkeleton />}><C {...props} /></Suspense>;
 }
 
-export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm }) {
+export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses }) {
   // Huquqlar (rahbar beradi): kassa qoldig'i va foyda ko'rinishi
   const canCash = isAdmin || perm?.cash !== false;
   const canProfit = isAdmin || perm?.profit !== false;
@@ -549,6 +550,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
       {isAdmin && line === "all" && !editMode && (
         <ProfitLoss orders={ordersIn} transactions={expensesIn} month={periodMode === "month" && periodMonth ? periodMonth : todayStr().slice(0, 7)} />
       )}
+      {isAdmin && !editMode && <BigExpenses list={allExpenses || expensesIn} orders={ordersIn} onSeen={onMarkBigSeen} onOpenAll={() => onNavigate?.("expense")} />}
       <style>{EDITOR_CSS}</style>
       {editMode && (
         <EditToolbar isAdmin={isAdmin} cfg={cfg} onDone={() => setEditMode(false)} onAdd={() => setGalleryOpen(true)} hiddenCount={cfg.editing.layout.filter((w) => !w.visible).length} />

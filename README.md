@@ -1047,3 +1047,8 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Xodimlar → ✏️ «Rol va huquqlar»: rol, kassa qoldig'i (Dashboard qoldiqlari, «Jami pul», to'lov turlari), foyda (qo'shilgan qiymat, kraska), tasdiqlash chegarasi. `employee.perm = { cash, profit, approveLimit }`.
 - Mijozlar: «Mas'ul menejer» — operator boshqa menejerga biriktirilgan mijozni ko'rmaydi; mas'ulni faqat rahbar yoki katta menejer o'zgartiradi (server ham).
 - Test: `tests/e2e/test_roles.py`.
+
+## 💰 Yo'nalishlar — 8-etap: kategoriyalar va yirik rasxodlar (2026-10)
+- Kategoriyalar (rahbar): har kategoriyaga standart yo'nalish (`settings.categoryLines`) — yangi rasxodda o'zi qo'yiladi, cheklamaydi.
+- «Yirik rasxod chegarasi» (`settings.bigExpenseLimit`): «Yirik» belgisi, rahbarga Telegram (yo'nalish sozlamasidan qat'i nazar) va ilova bildirishnomasi, Dashboard'da «Yirik rasxodlar» kartasi (oxirgi 30 kun, «Ko'rildi» → `tx.bigSeenAt`), Rasxod'da «Faqat yiriklar».
+- Test: `tests/e2e/test_bigexp.py`.

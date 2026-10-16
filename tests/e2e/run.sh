@@ -9,7 +9,7 @@ PORT="${E2E_PORT:-4990}"
 mkdir -p "$OUT"
 export E2E_BASE="http://localhost:$PORT" E2E_OUT="$OUT"
 [ -f "$ROOT/frontend/dist/index.html" ] || { echo "frontend/dist yo'q — avval: npm run build"; exit 1; }
-SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_tg_lines test_stages test_roles test_themes}"
+SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_tg_lines test_stages test_roles test_bigexp test_themes}"
 fail=0
 for s in $SUITES; do
   TMP="$(mktemp -d)"; export E2E_DB="$TMP/uvix.db"

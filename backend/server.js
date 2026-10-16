@@ -748,7 +748,20 @@ function notifyExpensesDiff(oldValue, newValue) {
     const newTx = JSON.parse(newValue);
     if (!Array.isArray(newTx)) return;
     const oldIds = new Set(oldTx.map((t) => t.id));
+    let st = {};
+    try { st = JSON.parse(getStmt.get("uvix:settings")?.value || "{}") || {}; } catch { st = {}; }
+    const bigLimit = Math.max(0, Number(st.bigExpenseLimit) || 0);
     newTx.forEach((t) => {
+      if (!oldIds.has(t.id) && t.type === "chiqim" && bigLimit > 0 && (Number(t.amount) || 0) >= bigLimit) {
+        // Yirik rasxod — rahbarga alohida (Telegram yo'nalishi sozlamasidan qat'i nazar), ilovada ham
+        const ln = t.line === "common" ? "Umumiy" : t.line === "UVONYX" ? "UVONYX" : t.line === "UVIXPRINT" ? "UVIXPRINT" : "";
+        const text = `🔴 <b>Yirik rasxod</b>${ln ? ` · ${ln}` : ""}\nSumma: <b>${fmtMoney(t.amount)}</b>\nKategoriya: ${escHtml(t.category)}${t.subcategory ? " / " + escHtml(t.subcategory) : ""}\nKiritdi: ${escHtml(t.createdBy || "—")}${t.note ? `\nIzoh: ${escHtml(t.note)}` : ""}`;
+        for (const id of adminIds()) {
+          try { notifications.emit("expenses", { title: `Yirik rasxod: ${fmtMoney(t.amount)}`, body: `${t.category}${ln ? ` · ${ln}` : ""} · ${t.createdBy || ""}`, view: "dashboard", to: id }); } catch { /* ixtiyoriy */ }
+          Promise.resolve(staffBot.sendToEmployee(id, text)).catch(() => false);
+        }
+        return;
+      }
       if (!oldIds.has(t.id) && t.type === "chiqim") {
         notify("expenses",
           `💸 <b>Yangi rasxod</b>\nKategoriya: ${escHtml(t.category)}${t.subcategory ? " / " + escHtml(t.subcategory) : ""}\nSumma: ${fmtMoney(t.amount)}${t.note ? `\nIzoh: ${escHtml(t.note)}` : ""}`
