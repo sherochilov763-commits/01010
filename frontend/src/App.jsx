@@ -53,6 +53,7 @@ import { Dashboard } from "./views/Dashboard.jsx";
 // Dashboard darhol kerak bo'lgani uchun asosiy faylda qoladi.
 const WorkerApp = lazy(() => import("./views/tasks/WorkerApp.jsx").then((m) => ({ default: m.WorkerApp })));
 const TaskAssignModal = lazy(() => import("./views/crm/TaskAssignModal.jsx").then((m) => ({ default: m.TaskAssignModal })));
+const KassaView = lazy(() => import("./views/KassaView.jsx").then((m) => ({ default: m.KassaView })));
 const CategoriesView = lazy(() => import("./views/CategoriesView.jsx").then((m) => ({ default: m.CategoriesView })));
 const EmployeesView = lazy(() => import("./views/EmployeesView.jsx").then((m) => ({ default: m.EmployeesView })));
 const OperationsView = lazy(() => import("./views/OperationsView.jsx").then((m) => ({ default: m.OperationsView })));
@@ -1150,6 +1151,9 @@ function AppInner() {
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
             )}
             {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
+            {view === "kassa" && (isAdmin || currentUser.role === "manager") && (
+              <KassaView orders={activeOrders} transactions={activeTransactions} isAdmin={isAdmin} canCash={meEmp?.perm?.cash !== false} currentUser={currentUser} showToast={showToast} />
+            )}
             {view === "categories" && (
               <CategoriesView
                 transactions={activeTransactions}

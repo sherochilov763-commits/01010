@@ -56,6 +56,7 @@ function visible(key, item, scope, orderLineById, orders) {
   if (key === "uvix:customers") return customerVisible(item, scope, orders);
   if (key === "uvix:orders") return lineOfOrder(item) === scope;
   if (key === "uvix:transactions") { const l = txLine(item, orderLineById); return l === scope || l === "common"; }
+  if (key === "uvix:transfers") return item.from?.line === scope || item.to?.line === scope; // kassalar orasidagi o'tkazma
   return true;
 }
 // Xodim o'zgartira oladigan yozuvmi (umumiy rasxod — faqat rahbar)
@@ -67,7 +68,7 @@ function editable(key, item, scope, orderLineById, orders) {
   if (key === "uvix:transactions") return txLine(item, orderLineById) === scope;
   return true;
 }
-const SCOPED_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:customers"]);
+const SCOPED_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:customers", "uvix:transfers"]);
 
 // Umumiy xodim oyligi: shu oyda bajargan ishlari nisbatida (ish bo'lmasa — null, ya'ni tushum ulushi)
 function workShare(line, t, work) {

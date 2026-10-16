@@ -1052,3 +1052,9 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Kategoriyalar (rahbar): har kategoriyaga standart yo'nalish (`settings.categoryLines`) — yangi rasxodda o'zi qo'yiladi, cheklamaydi.
 - «Yirik rasxod chegarasi» (`settings.bigExpenseLimit`): «Yirik» belgisi, rahbarga Telegram (yo'nalish sozlamasidan qat'i nazar) va ilova bildirishnomasi, Dashboard'da «Yirik rasxodlar» kartasi (oxirgi 30 kun, «Ko'rildi» → `tx.bigSeenAt`), Rasxod'da «Faqat yiriklar».
 - Test: `tests/e2e/test_bigexp.py`.
+
+## 🏦 Yo'nalishlar — 9-etap: alohida kassalar (2026-10)
+- «Kassalar» (rahbar; katta menejer — kassa huquqi bilan, o'z yo'nalishi): UVIXPRINT / UVONYX × naqd / karta / bank — kirim (to'lovlar), chiqim (rasxodlar), o'tkazma, qoldiq. Hisob: `frontend/src/lib/kassa.js`.
+- Umumiy rasxod: `tx.paidFrom` — qaysi kassadan to'langan (belgilanmagan eski umumiy rasxod — UVIXPRINT). Foyda/zarar hisobida umumiy rasxod avvalgidek ulush bo'yicha.
+- Ichki o'tkazma: `uvix:transfers` (faqat rahbar yozadi; xodimga faqat o'z yo'nalishiga tegishlisi beriladi). O'chirish — belgilanadi (`deletedAt`), tarix saqlanadi.
+- Test: `tests/e2e/test_kassa.py`.

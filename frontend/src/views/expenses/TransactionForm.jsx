@@ -19,6 +19,8 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   // Kimga tegishli: joriy yo'nalish yoki «Umumiy» (ikkalasiga — oylik tushum ulushiga qarab bo'linadi)
   const curLine = useLine();
   const rules = useExpenseRules();
+  // Umumiy rasxod qaysi yo'nalish kassasidan to'langan (kassa qoldig'i uchun; foyda — ulush bo'yicha)
+  const [paidFrom, setPaidFrom] = useState(initial?.paidFrom === "UVONYX" ? "UVONYX" : "UVIXPRINT");
   // Xodim — har doim o'z yo'nalishi (umumiy rasxodni faqat rahbar kiritadi); rahbar — tanlaydi
   const [txLineSel, setTxLineSel] = useState(curLine.line !== "all" ? curLine.line : initial?.line || (!initial && ["UVIXPRINT", "UVONYX", "common"].includes(rules.categoryLines[category]) ? rules.categoryLines[category] : "common"));
   const lineOptions = [...new Set([...(curLine.line === "all" ? ["UVIXPRINT", "UVONYX"] : [curLine.line]), ...(initial?.line && initial.line !== "common" ? [initial.line] : []), "common"])];
@@ -140,6 +142,7 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
       relatedOrderId: isBrak ? linkedOrderId : (initial?.relatedOrderId || undefined),
       // Brak — yo'nalishni buyurtmadan oladi
       line: isBrak ? undefined : txLineSel,
+      paidFrom: !isBrak && txLineSel === "common" ? paidFrom : undefined,
       employeeId: isStaff && employeeId ? employeeId : undefined,
       ...(cleanPaint.length ? { paintLines: cleanPaint } : {}),
     };
@@ -177,6 +180,17 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
               })}
             </div>
             {txLineSel === "common" && <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>Ijara, svet, internet kabi — yo'nalishlarga oylik tushum ulushiga qarab bo'linadi.</div>}
+            {txLineSel === "common" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12.5, color: THEME.muted }}>Qaysi kassadan to'landi:</span>
+                <div role="group" aria-label="Qaysi kassadan" data-testid="tx-paid-from" style={{ display: "flex", gap: 4 }}>
+                  {["UVIXPRINT", "UVONYX"].map((l) => (
+                    <button key={l} type="button" onClick={() => setPaidFrom(l)} aria-pressed={paidFrom === l} data-line={l}
+                      style={{ height: 30, padding: "0 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, border: `1.5px solid ${paidFrom === l ? lineColor(l, THEME.isDark) : THEME.border}`, background: THEME.card, color: paidFrom === l ? lineColor(l, THEME.isDark) : THEME.muted }}>{LINE_META[l].name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
           </Field>
         )}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
