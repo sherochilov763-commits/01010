@@ -8,7 +8,6 @@ import { orderDebt } from "../../lib/finance.js";
 import { fmt, localDateStr, money, moneyCompact } from "../../lib/format.js";
 import { fetchTelegramChats } from "../../storage.js";
 import { THEME } from "../../theme.js";
-import { LINES, lineColor, useLine } from "../../lib/lines.js";
 
 const UZ_MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 const UZ_WEEKDAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
@@ -100,7 +99,6 @@ function Spark({ values, color }) {
 }
 
 export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canExpense, onOpenChat, onOpenOrder, onNavigate, onQuickAdd, onScan }) {
-  const { line: curLine } = useLine();
   const now = new Date();
   const [chats, setChats] = useState(null); // null — yuklanmoqda, false — o'chiq/xato
   useEffect(() => {
@@ -172,7 +170,7 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
             <div key={c.key} data-card={c.key} role={c.go ? "button" : undefined} tabIndex={c.go ? 0 : undefined} onClick={c.go} onKeyDown={(e) => c.go && e.key === "Enter" && c.go()}
               className="uvix-today-card"
               style={c.hero
-                ? { background: LINES.includes(curLine) ? lineColor(curLine) : THEME.primarySolid, color: "#fff", border: 0 }
+                ? { background: THEME.primarySolid, color: "#fff", border: 0 }
                 : { background: THEME.card, color: THEME.text, border: `1px solid ${THEME.border}`, cursor: "pointer" }}>
               <div style={{ fontSize: 14.5, opacity: c.hero ? 0.88 : 1, color: c.hero ? "#fff" : THEME.muted }}>{c.label}</div>
               <div style={{ marginTop: 6, fontSize: 30, fontWeight: 700, letterSpacing: -0.8, fontFamily: THEME.fontNum, fontVariantNumeric: "tabular-nums", color: c.hero ? "#fff" : c.tone || THEME.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>

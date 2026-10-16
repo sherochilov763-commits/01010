@@ -78,7 +78,7 @@ function issueToken(employee) {
   // jti — seans raqami: «Ochiq qurilmalar» ro'yxati va masofadan chiqarish uchun
   const token = jwt.sign({ sub: employee.id, role: employee.role, name: employee.name, jti: crypto.randomBytes(9).toString("hex") }, JWT_SECRET, { expiresIn: TOKEN_TTL });
   // mustChangePin — vaqtinchalik PIN bilan kirildi: ilova avval yangi PIN so'raydi
-  return { token, employee: { id: employee.id, name: employee.name, role: employee.role }, ...(employee.mustChangePin ? { mustChangePin: true } : {}) };
+  return { token, employee: { id: employee.id, name: employee.name, role: employee.role, line: employee.line || null }, ...(employee.mustChangePin ? { mustChangePin: true } : {}) };
 }
 let passkeyApi = null; // pastda, requireAuth'dan keyin ulanadi
 let sessionsApi = null; // ochiq seanslar (qurilmalar) — pastda ulanadi
@@ -235,12 +235,14 @@ function requireAuth(req, res, next) {
   // «Ochiq qurilmalar»dan chiqarilgan (yoki «Chiqish» bosilgan) seans — darhol yaroqsiz
   if (sessionsApi && !sessionsApi.check(payload, req)) return res.status(401).json({ error: "session_revoked" });
   req.auth = payload;
-  req.user = { sub: employee.id, id: employee.id, name: employee.name, role: employee.role };
+  req.user = { sub: employee.id, id: employee.id, name: employee.name, role: employee.role, line: employee.line };
+  req.lineScope = linesApi.scopeOf(req.user, employee);
   next();
 }
 // Dizayner va Pechatchi — faqat o'z vazifalarini ko'radigan "ishchi" rollar (pul ma'lumotlarisiz)
 const WORKER_ROLES = new Set(["designer", "printer"]);
 const isWorker = (user) => WORKER_ROLES.has(user?.role);
+const linesApi = require("./lines");
 // Ishchi rollar o'qishi/yozishi mumkin bo'lgan KV kalitlari (qolgani — 403)
 const WORKER_READ_KEYS = new Set(["uvix:employees", "uvix:appearance", "uvix:settings"]);
 const WORKER_WRITE_KEYS = new Set(["uvix:employees"]); // faqat o'z PIN'ini o'zgartirish uchun
@@ -571,8 +573,23 @@ app.get("/api/kv/:key", (req, res) => {
       return res.json({ key, rev, value: JSON.stringify(sanitizeSettingsForClient(JSON.parse(row.value), isAdmin, req.user)) });
     } catch { /* buzilgan JSON — pastda xom holda qaytaramiz */ }
   }
+  if (req.lineScope && linesApi.SCOPED_KEYS.has(key)) {
+    try {
+      const allOrders = key === "uvix:orders" ? JSON.parse(row.value) : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
+      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), req.lineScope, allOrders)) });
+    } catch { return res.status(500).json({ error: "read_failed" }); }
+  }
   res.json({ key: row.key, rev, value: row.value });
 });
+// Yo'nalish bo'yicha javob: xodimga faqat o'z yo'nalishi ko'rinadi
+function scopedValue(req, key, value) {
+  if (!req.lineScope || !linesApi.SCOPED_KEYS.has(key)) return value;
+  try {
+    const list = JSON.parse(value);
+    const allOrders = key === "uvix:orders" ? list : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
+    return JSON.stringify(linesApi.filterForClient(key, list, req.lineScope, allOrders));
+  } catch { return value; }
+}
 
 // ==================== Telegram xabarnomalari ====================
 function escHtml(s) {
@@ -750,6 +767,8 @@ function mergeEmployees(incoming, user) {
     const { pin: _ignored, hasPasskey: _hp, mustChangePin: _mc, tempPinExp: _te, ...rest } = e;
     const { pin: _oldPin, ...oldRest } = old || {};
     const next = { ...oldRest, ...rest, name, role, pin };
+    const ln = linesApi.cleanEmpLine(rest.line !== undefined ? rest.line : old?.line);
+    if (ln) next.line = ln; else delete next.line;
     if (old && pin !== old.pin) { delete next.mustChangePin; delete next.tempPinExp; } // admin PIN'ni qo'lda o'zgartirdi
     result.push(next);
   }
@@ -867,14 +886,23 @@ app.post("/api/kv/:key/merge", (req, res) => {
       return { oldValue, value };
     }
     const oldList = list;
+    let scopedUpserts = upserts;
+    let scopedDeletes = deletes;
+    if (req.lineScope && linesApi.SCOPED_KEYS.has(key)) {
+      // Boshqa yo'nalish (yoki umumiy rasxod) yozuvlarini xodim o'zgartira/o'chira olmaydi
+      const lm = linesApi.lineMap(key === "uvix:orders" ? oldList : JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
+      const byId = new Map(oldList.filter(Boolean).map((x) => [String(x.id), x]));
+      scopedDeletes = deletes.filter((id) => { const o = byId.get(String(id)); return !o || linesApi.editable(key, o, req.lineScope, lm); });
+      scopedUpserts = upserts.map((u) => { const it = linesApi.prepareUpsert(key, u.item, byId.get(String(u.item.id)), req.lineScope, lm); return it ? { ...u, item: it } : null; }).filter(Boolean);
+    }
     // Operator buyurtmani o'chira olmaydi (faqat admin tasdig'i bilan) — o'chirish so'rovi e'tiborsiz qoladi
-    const blocked = key === "uvix:orders" && !isAdminUser ? oldList.filter((x) => deletes.map(String).includes(String(x?.id))) : [];
-    const del = new Set(deletes.map(String).filter((id) => !blocked.some((x) => String(x.id) === id)));
+    const blocked = key === "uvix:orders" && !isAdminUser ? oldList.filter((x) => scopedDeletes.map(String).includes(String(x?.id))) : [];
+    const del = new Set(scopedDeletes.map(String).filter((id) => !blocked.some((x) => String(x.id) === id)));
     list = list.filter((x) => !del.has(String(x?.id)));
     const pos = new Map(list.map((x, i) => [String(x?.id), i]));
     const toStart = [];
     const toEnd = [];
-    for (const u of upserts) {
+    for (const u of scopedUpserts) {
       const id = String(u.item.id);
       if (pos.has(id)) list[pos.get(id)] = u.item;
       else (u.at === "start" ? toStart : toEnd).push(u.item);
@@ -898,7 +926,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     console.error("Birlashtirib saqlashda xato:", e.message);
     return res.status(500).json({ error: "merge_failed" });
   }
-  res.json({ key, rev: revOf(key), value: result.value });
+  res.json({ key, rev: revOf(key), value: scopedValue(req, key, result.value) });
   if (violations.length) moneyGuard.report(req.user, violations, dev);
   if (key === "uvix:orders") { notifyOrdersDiff(result.oldValue, result.value); customerMsg.onOrdersChanged(result.oldValue, result.value).catch((e) => console.error("Mijozga kvitansiya:", e.message)); }
   else if (key === "uvix:transactions") notifyExpensesDiff(result.oldValue, result.value);
@@ -976,10 +1004,11 @@ app.put("/api/kv/:key", (req, res) => {
     // Dizayner/pechatchi holati va server kiritgan to'lovlar eskirgan nusxa bilan yo'qolmasin
     try {
       const oldList = oldValue ? JSON.parse(oldValue) : [];
-      const g = moneyGuard.guardOrders(JSON.parse(value), oldList, req.user);
+      const incoming = linesApi.mergeScopedPut(key, JSON.parse(value), oldList, req.lineScope, oldList);
+      const g = moneyGuard.guardOrders(incoming, oldList, req.user);
       const merged = JSON.stringify(mergeOrderState(g.list, oldList));
       upsertStmt.run(key, merged);
-      res.json({ key, rev: revOf(key), value: merged });
+      res.json({ key, rev: revOf(key), value: scopedValue(req, key, merged) });
       if (g.violations.length) moneyGuard.report(req.user, g.violations, moneyGuard.deviceOf(req));
       notifyOrdersDiff(oldValue, merged);
       customerMsg.onOrdersChanged(oldValue, merged).catch((e) => console.error("Mijozga kvitansiya:", e.message));
@@ -989,8 +1018,13 @@ app.put("/api/kv/:key", (req, res) => {
   if (req.params.key === "uvix:settings") {
     try { settingsLog.settingsChanged(req.user.name, oldValue ? JSON.parse(oldValue) : {}, JSON.parse(value)); } catch { /* jurnal ixtiyoriy */ }
   }
+  if (key === "uvix:transactions" && req.lineScope) {
+    try {
+      value = JSON.stringify(linesApi.mergeScopedPut(key, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [], req.lineScope, JSON.parse(getStmt.get("uvix:orders")?.value || "[]")));
+    } catch { return res.status(400).json({ error: "invalid_json" }); }
+  }
   upsertStmt.run(req.params.key, value);
-  res.json({ key: req.params.key, rev: revOf(req.params.key), value });
+  res.json({ key: req.params.key, rev: revOf(req.params.key), value: scopedValue(req, req.params.key, value) });
 
   // Telegram xabarnomalari — javob yuborilgandan keyin, orqa fonda (foydalanuvchini kutdirmasdan)
   if (req.params.key === "uvix:orders") {

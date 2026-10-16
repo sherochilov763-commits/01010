@@ -175,7 +175,9 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     if (lead.stage === "new") { lead.stage = "negotiation"; lead.stageAt = at; }
     lead.updatedAt = at;
   }
-  const findOrder = (orders, id) => (Array.isArray(orders) ? orders.find((o) => o && o.id === id && !o.deletedAt) : null);
+  const findOrderAny = (orders, id) => (Array.isArray(orders) ? orders.find((o) => o && o.id === id && !o.deletedAt) : null);
+  // Yo'nalish: xodim faqat o'z yo'nalishidagi buyurtma bilan ishlaydi (boshqasi «topilmadi»)
+  const findOrder = (orders, id, req) => { const o = findOrderAny(orders, id); return o && (!req?.lineScope || (o.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") === req.lineScope) ? o : null; };
   function syncLeadOf(order, orders, at) {
     if (!order.leadId) return null;
     const leads = readJson("uvix:leads", []);
@@ -273,7 +275,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const customer = str(lead?.customer || b.customer, 120);
     if (!customer) throw new Bad("Mijoz nomini kiriting");
     const manager = str(b.manager, 80) || lead?.manager || req.user.name;
-    const subcategory = b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT";
+    const subcategory = req.lineScope || (b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
     const date = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") ? b.date : localDate(now());
 
     // Vazifalarni oldindan tekshiramiz (xato bo'lsa hech narsa yozilmaydi)
@@ -373,7 +375,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     if (!amount) throw new Bad("To'lov summasini kiriting");
     const ordersRaw = raw("uvix:orders");
     const orders = JSON.parse(ordersRaw || "[]");
-    const targets = ids.map((id) => findOrder(orders, id));
+    const targets = ids.map((id) => findOrder(orders, id, req));
     if (targets.some((o) => !o)) throw new Bad("Buyurtma topilmadi", 404);
     const sorted = targets.slice().sort((x, y) => String(x.date).localeCompare(String(y.date)) || String(x.orderNumber).localeCompare(String(y.orderNumber)));
     const due = new Map(sorted.map((o) => [o.id, dueOf(o)]));
@@ -412,7 +414,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const stage = String(req.body?.stage || "");
     if (!PROD_STAGES.includes(stage)) throw new Bad("Holat noto'g'ri");
     const orders = readJson("uvix:orders", []);
-    const order = findOrder(orders, req.params.id);
+    const order = findOrder(orders, req.params.id, req);
     if (!order) throw new Bad("Buyurtma topilmadi", 404);
     const prev = order.prodStage;
     const at = now().toISOString();
@@ -437,7 +439,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     const emp = readEmployees().find((e) => e.id === b.assigneeId);
     if (!emp || emp.role !== (kind === "design" ? "designer" : "printer")) throw new Bad(kind === "design" ? "Dizaynerni tanlang" : "Pechatchini tanlang");
     const orders = readJson("uvix:orders", []);
-    const order = findOrder(orders, req.params.id);
+    const order = findOrder(orders, req.params.id, req);
     if (!order) throw new Bad("Buyurtma topilmadi", 404);
     const at = now().toISOString();
     const prev = order[kind] || {};

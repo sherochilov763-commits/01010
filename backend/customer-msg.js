@@ -238,7 +238,7 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
   });
   app.post("/api/customer-msg/recipient", requireAuth, (req, res) => {
     if (!staff(req, res)) return;
-    const o = (readJson("uvix:orders", []) || []).find((x) => x.id === req.body?.orderId);
+    const o = (readJson("uvix:orders", []) || []).find((x) => x.id === req.body?.orderId && (!req.lineScope || (x.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") === req.lineScope));
     if (!o) return res.status(404).json({ error: "not_found", message: "Buyurtma topilmadi" });
     const r = recipientFor(o.customer, o.id);
     res.json({ recipient: r ? { label: r.label, via: r.via, name: r.name } : null, connected: !!sender?.isConnected?.() });
@@ -246,7 +246,7 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
   app.post("/api/customer-msg/invoice", requireAuth, async (req, res) => {
     if (!staff(req, res)) return;
     const { orderId, image, caption } = req.body || {};
-    const o = (readJson("uvix:orders", []) || []).find((x) => x.id === orderId);
+    const o = (readJson("uvix:orders", []) || []).find((x) => x.id === orderId && (!req.lineScope || (x.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") === req.lineScope));
     if (!o) return res.status(404).json({ error: "not_found", message: "Buyurtma topilmadi" });
     const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ""));
     if (!m || m[2].length > 4 * 1024 * 1024) return res.status(400).json({ error: "bad_image", message: "Hisob-faktura rasmi noto'g'ri" });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CalendarClock, Check, CircleUser, FileImage, LayoutGrid, List, ListChecks, Loader2, LogOut, Pause, Play, Printer, RefreshCw, RotateCcw, ScanLine, Search, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { roleLabel } from "../../constants.js";
+import { LINE_META, lineColor } from "../../lib/lines.js";
 import { SC, THEME, readableOn } from "../../theme.js";
 import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
@@ -288,7 +289,7 @@ function TaskCard({ task: t, busy, onStart, onDone, onBack }) {
           background: overdue ? THEME.roseBg : THEME.violetSoft, color: overdue ? THEME.rose : THEME.violet }}>
           <CalendarClock size={13} /> {t.deadline ? (overdue ? `Muddat o'tgan: ${dayLabel(t.deadline)}` : `Muddat: ${dayLabel(t.deadline)}`) : dayLabel(t.assignedAt) || "Muddatsiz"}
         </span>
-        <span style={{ fontSize: 12.5, color: THEME.muted, fontWeight: 600, whiteSpace: "nowrap" }}>№ {t.taskNo}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: THEME.muted, fontWeight: 600, whiteSpace: "nowrap" }}><LineShort line={t.line} />№ {t.taskNo}</span>
       </div>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 2 }}>
         <span style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: "grid", placeItems: "center", background: THEME.chip, color: t.kind === "design" ? THEME.blue : THEME.cyan }}><Icon size={18} /></span>
@@ -342,7 +343,7 @@ function TaskList({ tasks, busyId, onStart, onDone }) {
         <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderTop: i ? `1px solid ${THEME.border}` : 0 }}>
           <span style={{ width: 9, height: 9, borderRadius: "50%", background: dot[t.status], flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.jobTitle}</div>
+            <div style={{ fontSize: 14.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><LineShort line={t.line} />{t.jobTitle}</div>
             <div style={{ fontSize: 12.5, color: isOverdue(t) ? THEME.rose : THEME.muted }}>
               {[t.customer, `№ ${t.taskNo}`, t.deadline && `muddat ${dayLabel(t.deadline)}`].filter(Boolean).join(" · ")}
             </div>
@@ -485,4 +486,11 @@ export function ScanTaskSheet({ orderId, tasks, busyId, onChange, onReload, onCl
       </div>
     </>
   );
+}
+
+// Vazifa qaysi yo'nalishniki: kichik «UV» / «ON» belgisi (umumiy xodim ikkalasini ko'radi)
+function LineShort({ line }) {
+  if (!LINE_META[line]) return null;
+  const c = lineColor(line, THEME.isDark);
+  return <span data-task-line={line} style={{ display: "inline-flex", alignItems: "center", height: 18, padding: "0 6px", marginRight: 6, borderRadius: 5, fontSize: 10.5, fontWeight: 800, letterSpacing: 0.3, color: c, background: c + "1F", verticalAlign: 2 }}>{LINE_META[line].short}</span>;
 }

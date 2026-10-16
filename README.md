@@ -1004,3 +1004,10 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - **Raqamlash**: UVONYX buyurtmalari `ON-YYMMDD-NNN`, UVIXPRINT — `UV-…` (serverdagi smeta → buyurtma ham).
 - **Bo'yoq ombori** faqat UVIXPRINT yo'nalishida. Rahbar standart holatda «Ikkalasi»ni ko'radi (avvalgidek), boshqa xodimlar — UVIXPRINT. Ishchi ilovasi, Chatlar va CRM o'zgarmadi.
 - Fayllar: `frontend/src/lib/lines.js`, `frontend/src/components/LineSwitcher.jsx`; testlar: `tests/unit/lines.test.mjs`, `tests/e2e/test_lines.py`.
+
+## 👥 Yo'nalishlar — 1-etap: xodim o'z yo'nalishida (2026-10)
+- **Xodimlar** bo'limida «Yo'nalish» ustuni (faqat rahbar o'zgartiradi): **UVIXPRINT**, **UVONYX** yoki **Umumiy** (pechatnik, dizayner — ikkala yo'nalishdagi o'z vazifalari, pulsiz). Belgilanmagan eski xodim — UVIXPRINT.
+- Xodim faqat o'z yo'nalishini ko'radi: buyurtmalar, rasxodlar (o'zi + umumiy, umumiy rasxod ulushi bilan), Dashboard, Hisob. Bo'yoq ombori — faqat UVIXPRINT xodimlarida.
+- **Server himoyasi** (`backend/lines.js`): `/api/kv/uvix:orders` va `uvix:transactions` xodimga yo'nalish bo'yicha filtrlangan holda beriladi; boshqa yo'nalish yozuvini o'zgartirish/o'chirish, umumiy rasxodni tahrirlash e'tiborsiz qoladi; xodim yozgan yangi buyurtma/rasxod uning yo'nalishiga yoziladi; smeta→buyurtma, holat, to'lov, hisob-faktura — faqat o'z yo'nalishi buyurtmalari.
+- Yo'nalishni almashtirish kartasi, telefondagi yorliq va rangli chiziq **olib tashlandi**. Rahbar hammasini ko'radi; Dashboard'da «Barchasi / UVIXPRINT / UVONYX» tugmalari buyurtma va rasxodni birga ajratadi.
+- Testlar: `tests/unit/lines-server.test.mjs`, `tests/e2e/test_lines.py`.

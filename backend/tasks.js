@@ -108,6 +108,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
       taskNo: (order.orderNumber || "") + group,
       jobTitle: order.title || (kind === "design" ? "Maket tayyorlash" : "Bosma ish"),
       customer: order.customer || "",
+      line: order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT",
       status: t.status,
       assigneeId: t.assigneeId || null,
       assigneeName: (t.assigneeId && empById.get(t.assigneeId)?.name) || null,
@@ -142,6 +143,7 @@ function registerTaskRoutes(app, { getStmt, upsertStmt, readEmployees, requireAu
         const t = order[kind];
         if (!t || !t.status) continue;
         if (worker && t.assigneeId !== req.user.id) continue;
+        if (!worker && req.lineScope && (order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT") !== req.lineScope) continue;
         // Xodim buyurtmani qo'lda keyingi holatga o'tkazgan bo'lsa — ochiq qolgan vazifa ro'yxatdan chiqadi
         const passed = kind === "design" ? ["printing", "ready", "delivered"] : ["ready", "delivered"];
         if (t.status !== "done" && passed.includes(order.prodStage)) continue;

@@ -4,6 +4,7 @@ import { fetchPinHelp, fetchStaffTelegram, giveTempPin } from "../storage.js";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
 import { uid } from "../lib/format.js";
 import { roleLabel } from "../constants.js";
+import { EMP_LINE_OPTIONS, empLineLabel, lineColor } from "../lib/lines.js";
 import { THEME } from "../theme.js";
 
 /* ---------------- EMPLOYEES VIEW ---------------- */
@@ -25,6 +26,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
   const [modal, setModal] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");
+  const [line, setLine] = useState("UVIXPRINT");
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
@@ -52,9 +54,13 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
     if (!name.trim()) return setError("Ismni kiriting");
     if (!/^\d{4,6}$/.test(pin)) return setError("PIN 4-6 xonali raqam bo'lishi kerak");
     if (employees.some((e) => e.name.toLowerCase() === name.trim().toLowerCase())) return setError("Bu ism band");
-    const next = [...employees, { id: uid(), name: name.trim(), role, pin }];
+    const next = [...employees, { id: uid(), name: name.trim(), role, pin, ...(role === "admin" ? {} : { line }) }];
     onSave(next);
-    setModal(false); setName(""); setPin(""); setRole("operator"); setError("");
+    setModal(false); setName(""); setPin(""); setRole("operator"); setLine("UVIXPRINT"); setError("");
+  }
+  // Yo'nalishni rahbar biriktiradi: xodim faqat shu yo'nalish buyurtma/rasxodlarini ko'radi (server ham tekshiradi)
+  function setEmpLine(emp, v) {
+    onSave(employees.map((e) => (e.id === emp.id ? { ...e, line: v } : e)));
   }
   function removeEmployee(emp) {
     onSave(employees.filter((e) => e.id !== emp.id));
@@ -78,6 +84,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Ism</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Kirish</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Rol</th>
+                <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Yo'nalish</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>Ruxsatlar</th>
                 <th style={{ padding: "13px 16px", fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}></th>
               </tr>
@@ -105,6 +112,14 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
                     <Badge color={ROLE_BADGE(e.role).color} bg={ROLE_BADGE(e.role).bg}>
                       {roleLabel(e.role)}
                     </Badge>
+                  </td>
+                  <td style={{ padding: "13px 16px" }} data-emp-line={e.id}>
+                    {isAdmin && e.role !== "admin" ? (
+                      <select value={e.line === "UVONYX" || e.line === "common" ? e.line : "UVIXPRINT"} onChange={(ev) => setEmpLine(e, ev.target.value)} aria-label={`${e.name}: yo'nalish`}
+                        style={{ ...getInputStyle(), width: "auto", minWidth: 128, padding: "5px 8px", fontSize: 12.5, fontWeight: 700, color: e.line === "common" ? THEME.text : lineColor(e.line === "UVONYX" ? "UVONYX" : "UVIXPRINT", THEME.isDark) }}>
+                        {EMP_LINE_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.name}</option>)}
+                      </select>
+                    ) : <span style={{ fontSize: 12.5, fontWeight: 600, color: THEME.muted }}>{empLineLabel(e)}</span>}
                   </td>
                   <td style={{ padding: "13px 16px", color: THEME.muted, fontSize: 12 }}>
                     {ROLE_DESCRIPTIONS[e.role] || ROLE_DESCRIPTIONS.operator}
@@ -148,13 +163,13 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
       )}
 
       {modal && (
-        <Modal title="Yangi xodim qo'shish" onClose={() => setModal(false)} width={380}>
+        <Modal title="Yangi xodim qo'shish" onClose={() => setModal(false)} width={440}>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Field label="Ism">
               <input value={name} onChange={(e) => setName(e.target.value)} style={getInputStyle()} placeholder="Ism familiya" />
             </Field>
             <Field label="Rol">
-              <select value={role} onChange={(e) => setRole(e.target.value)} style={getInputStyle()}>
+              <select value={role} onChange={(e) => { setRole(e.target.value); setLine(["designer", "printer"].includes(e.target.value) ? "common" : "UVIXPRINT"); }} style={getInputStyle()}>
                 <option value="operator">Operator</option>
                 <option value="designer">Dizayner</option>
                 <option value="printer">Pechatchi</option>
@@ -162,6 +177,24 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
               </select>
               <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]}</div>
             </Field>
+            {role !== "admin" && (
+              <Field label="Yo'nalish">
+                <div role="group" aria-label="Yo'nalish" data-testid="new-emp-line" style={{ display: "flex", gap: 6 }}>
+                  {EMP_LINE_OPTIONS.map((o) => {
+                    const on = line === o.key;
+                    const c = o.key === "common" ? THEME.text : lineColor(o.key, THEME.isDark);
+                    return (
+                      <button key={o.key} type="button" onClick={() => setLine(o.key)} aria-pressed={on} data-line={o.key}
+                        style={{ flex: 1, padding: "7px 6px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", textAlign: "left", background: THEME.card, color: THEME.text, border: `1.5px solid ${on ? c : THEME.border}` }}>
+                        <b style={{ display: "block", fontSize: 12.5, color: c }}>{o.name}</b>
+                        <small style={{ fontSize: 10.5, color: THEME.muted }}>{o.sub}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>Xodim faqat o'z yo'nalishini ko'radi. «Umumiy» — ikkala yo'nalishdagi o'z ishlari (pechatnik, dizayner).</div>
+              </Field>
+            )}
             <Field label="PIN kod (4-6 raqam)">
               <input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} style={getInputStyle()} placeholder="0000" inputMode="numeric" maxLength={6} />
             </Field>

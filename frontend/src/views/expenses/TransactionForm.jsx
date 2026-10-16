@@ -17,7 +17,8 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   const [note, setNote] = useState(initial?.note || "");
   // Kimga tegishli: joriy yo'nalish yoki «Umumiy» (ikkalasiga — oylik tushum ulushiga qarab bo'linadi)
   const curLine = useLine();
-  const [txLineSel, setTxLineSel] = useState(initial?.line || (initial ? "common" : curLine.line !== "all" ? curLine.line : "common"));
+  // Xodim — har doim o'z yo'nalishi (umumiy rasxodni faqat rahbar kiritadi); rahbar — tanlaydi
+  const [txLineSel, setTxLineSel] = useState(curLine.line !== "all" ? curLine.line : initial?.line || "common");
   const lineOptions = [...new Set([...(curLine.line === "all" ? ["UVIXPRINT", "UVONYX"] : [curLine.line]), ...(initial?.line && initial.line !== "common" ? [initial.line] : []), "common"])];
   const [error, setError] = useState("");
   const [newCatOpen, setNewCatOpen] = useState(false);
@@ -135,7 +136,7 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
         <Field label="Sana">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={getInputStyle()} />
         </Field>
-        {!isBrak && (
+        {!isBrak && curLine.line === "all" && (
           <Field label="Kimga tegishli">
             <div role="group" aria-label="Kimga tegishli" data-testid="tx-line" style={{ display: "flex", gap: 4, background: THEME.surface, borderRadius: 11, padding: 3 }}>
               {lineOptions.map((v) => {

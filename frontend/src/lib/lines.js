@@ -3,7 +3,7 @@
 //   "UVIXPRINT" | "UVONYX" | "common" (umumiy). Yo'nalishsiz eski rasxod: buyurtmaga bog'langan bo'lsa — o'sha
 //   buyurtmaning yo'nalishi, aks holda «Umumiy».
 // «Umumiy» rasxod yo'nalishlarga shu oydagi tushum (to'lovlar) ulushiga qarab bo'linadi; tushum bo'lmasa — teng.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useMemo } from "react";
 
 export const LINES = ["UVIXPRINT", "UVONYX"];
 export const ALL = "all";
@@ -58,41 +58,30 @@ export function scopeByLine(line, orders, tx, allOrders = orders) {
     if (l === line) { txList.push(t); txStats.push(t); continue; }
     if (l !== COMMON) continue;
     txList.push(t);
-    const share = shareOf(line, String(t.date || "").slice(0, 7), income);
+    // Server xodimga umumiy rasxodni _lineShare bilan yuboradi (boshqa yo'nalish tushumini ko'rmagani uchun)
+    const share = typeof t._lineShare === "number" ? t._lineShare : shareOf(line, String(t.date || "").slice(0, 7), income);
     txStats.push({ ...t, amount: Math.round((t.amount || 0) * share), _share: share, _fullAmount: t.amount });
   }
   return { orders: ords, txList, txStats };
 }
 
-// ---------- Joriy yo'nalish (har xodimga, shu qurilmada eslab qolinadi) ----------
-const KEY = (id) => `uvix_line:${id || "x"}`;
+// ---------- Xodimning yo'nalishi (rahbar biriktiradi; xodim o'zi almashtirmaydi) ----------
+// employee.line: "UVIXPRINT" | "UVONYX" | "common". Rahbar va «Umumiy» xodim — hammasi (ALL),
+// qolganlar — o'z yo'nalishi (belgilanmagan eski xodim — UVIXPRINT). Server ham shunday ajratadi.
+export const EMP_LINE_OPTIONS = [
+  { key: "UVIXPRINT", name: "UVIXPRINT", sub: "faqat UV bosma" },
+  { key: "UVONYX", name: "UVONYX", sub: "faqat oniks / shisha" },
+  { key: COMMON, name: "Umumiy", sub: "ikkalasi · pechatnik, dizayner" },
+];
+export function lineOfUser(user) {
+  if (!user) return ALL;
+  if (user.role === "admin" || user.line === COMMON) return ALL;
+  return user.line === "UVONYX" ? "UVONYX" : "UVIXPRINT";
+}
+export const empLineLabel = (e) => (e?.role === "admin" ? "Ikkalasi (rahbar)" : e?.line === COMMON ? "Umumiy" : e?.line === "UVONYX" ? "UVONYX" : "UVIXPRINT");
 export function useLineState(user) {
-  const isAdmin = user?.role === "admin";
-  const allowed = useMemo(() => (isAdmin ? [...LINES, ALL] : LINES), [isAdmin]);
-  // Standart: rahbar — ikkalasi (avvalgidek hammasini ko'radi), boshqalar — UVIXPRINT
-  const def = isAdmin ? ALL : LINES[0];
-  const read = useCallback(() => { try { const v = localStorage.getItem(KEY(user?.id)); return allowed.includes(v) ? v : def; } catch { return def; } }, [user?.id, allowed, def]);
-  const [line, setLineRaw] = useState(read);
-  useEffect(() => { setLineRaw(read()); }, [read]);
-  const setLine = useCallback((v) => {
-    if (!allowed.includes(v)) return;
-    setLineRaw(v);
-    try { localStorage.setItem(KEY(user?.id), v); } catch { /* */ }
-  }, [allowed, user?.id]);
-  // Ctrl+1 / Ctrl+2 (admin: Ctrl+3 — ikkalasi)
-  useEffect(() => {
-    if (!user) return undefined;
-    const on = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
-      const i = ["1", "2", "3"].indexOf(e.key);
-      if (i < 0 || !allowed[i]) return;
-      e.preventDefault();
-      setLine(allowed[i]);
-    };
-    window.addEventListener("keydown", on);
-    return () => window.removeEventListener("keydown", on);
-  }, [user, allowed, setLine]);
-  return { line, setLine, allowed, isAll: line === ALL };
+  const line = lineOfUser(user);
+  return useMemo(() => ({ line, isAll: line === ALL, allowed: line === ALL ? [...LINES, ALL] : [line], setLine: () => {} }), [line]);
 }
 
 export const LineContext = createContext({ line: ALL, setLine: () => {}, allowed: [...LINES, ALL], isAll: true });
