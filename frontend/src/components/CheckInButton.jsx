@@ -1,5 +1,6 @@
 // CheckInButton.jsx — "Keldim" (joylashuv + selfi) / "Ketdim". Kelgandan keyin tugmaning o'zida jonli ish vaqti taymeri.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Camera, Check, Clock, Loader2, LogOut, MapPin, X } from "lucide-react";
 import { checkAttendance } from "../storage.js";
 import { getPosition } from "../lib/geo.js";
@@ -180,8 +181,9 @@ export function CheckInButton({ compact = false }) {
           )}
         </div>
       )}
-      {showPrompt && (
-        <div role="dialog" aria-label="Ish vaqti tugadi" data-testid="out-prompt" style={{ position: "fixed", inset: 0, zIndex: 390, background: "rgba(10,10,14,.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 16 }}>
+      {/* body'ga chiqariladi: tugma sarlavha (header) ichida — u yerda oyna pastki menyu ostida qolib, bosilmay qolardi */}
+      {showPrompt && createPortal(
+        <div role="dialog" aria-label="Ish vaqti tugadi" data-testid="out-prompt" style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(10,10,14,.45)", display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 16 }}>
           <div style={{ width: "min(420px, 100%)", background: THEME.card, borderRadius: 22, padding: "22px 20px 18px", boxShadow: THEME.shadowLg, textAlign: "center", marginBottom: "max(8px, env(safe-area-inset-bottom))" }}>
             <div style={{ width: 54, height: 54, borderRadius: 16, background: THEME.greenBg, color: THEME.green, display: "grid", placeItems: "center", margin: "0 auto" }}><LogOut size={26} /></div>
             <div style={{ fontWeight: 700, fontSize: 19, marginTop: 12 }}>{ended ? "Ish vaqti tugadi" : "Ketyapsizmi?"}</div>
@@ -191,7 +193,7 @@ export function CheckInButton({ compact = false }) {
             <button type="button" data-testid="out-prompt-go" onClick={() => { setForced(false); run("out"); }} style={{ width: "100%", height: 54, marginTop: 16, borderRadius: 16, border: 0, background: THEME.greenSolid, color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><LogOut size={20} /> Ketdim</button>
             <button type="button" onClick={dismissPrompt} style={{ width: "100%", height: 44, marginTop: 8, borderRadius: 14, border: 0, background: "none", color: THEME.muted, fontWeight: 600, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}>Hali ishlayapman</button>
           </div>
-        </div>
+        </div>, document.body
       )}
       {selfieModal}
     </div>

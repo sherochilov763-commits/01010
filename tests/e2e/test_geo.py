@@ -10,6 +10,11 @@ ME = {"latitude": 41.3111, "longitude": 69.2797}          # ishchi turgan joy
 LATER = NOW + datetime.timedelta(hours=3)
 T_TIME = LATER.strftime("%H:%M") if LATER.date() == NOW.date() else None
 
+async def stay(pg):
+    # 18:00 dan keyin ishchida «Ish vaqti tugadi» oynasi chiqadi — test vaqtiga bog'liq bo'lmasin
+    if await pg.locator("[data-testid=out-prompt]").count():
+        await pg.locator("[data-testid=out-prompt] button", has_text="Hali ishlayapman").click(); await pg.wait_for_timeout(300)
+
 def jobs(tok): return api("/api/jobs", token=tok).get("jobs", [])
 def iso(dt): return dt.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
@@ -58,6 +63,7 @@ async def main():
         cs = w.locator("[data-testid=geo-consent]")
         ok("ishchi: rozilik so'raladi (Keldim → Ketdim, 30 kun)", await cs.count() == 1 and "Ketdim" in await cs.inner_text())
         await w.screenshot(path=OUT + "geo_consent.png")
+        await stay(w)
         await cs.locator("[data-testid=geo-agree]").click(); await w.wait_for_timeout(2500)
         ok("rozilik saqlandi", bool(api("/api/geo/me", token=bt).get("consent")))
         live = {x["id"]: x for x in api("/api/geo/live", token=adm)["staff"]}
@@ -76,6 +82,7 @@ async def main():
         ok("«Yo'l» — Yandex navigator (joriy joydan)", href.startswith("https://yandex.uz/maps/?rtext=41.3111,69.2797~41.32,69.285"), href)
         await w.screenshot(path=OUT + "geo_myday.png")
         # Ish tugadi → bitta karta: eng yaqin keyingi ish
+        await stay(w)
         await nx.locator(f"[data-myjob-done='{near['id']}']").click(); await w.wait_for_timeout(300)
         await w.locator("button", has_text="Ha, bajarildi").click(); await w.wait_for_timeout(2000)
         nh = w.locator("[data-testid=next-hint]")
@@ -84,6 +91,7 @@ async def main():
         ok("masofa va vaqt ko'rsatiladi", "km" in dist and "daq" in dist, dist)
         ok("«Yo'lga chiqish» → navigator", (await nh.locator("[data-testid=hint-go]").get_attribute("href")).startswith("https://yandex.uz/maps/?rtext="))
         await w.screenshot(path=OUT + "geo_nexthint.png")
+        await stay(w)
         await nh.locator("[data-testid=hint-other]").click(); await w.wait_for_timeout(500)
         ok("«Boshqasini tanlash» → ro'yxatga qaytadi", await w.locator("[data-testid=next-hint]").count() == 0 and await mj.locator("[data-myjob-next]").count() == 1)
 
