@@ -134,7 +134,7 @@ async def main():
         await m.locator("[data-tile=jobs]").click(); await m.wait_for_timeout(1500)
         await m.locator("[data-testid=jobs-gear]").click(); await m.wait_for_timeout(400)
         ms = m.locator("[data-testid=jobs-settings]")
-        ok("telefon ⚙️: sodda — ko'rinishlar + 2 tugma, ustun qo'shish yo'q", await ms.locator("[role=switch]").count() == 6 and await ms.locator("[data-testid=field-add]").count() == 0 and "kompyuterda" in await ms.inner_text())
+        ok("telefon ⚙️: sodda — ko'rinishlar + 2 tugma, ustun qo'shish yo'q", await ms.locator("[role=switch]").count() == 7 and await ms.locator("[data-testid=field-add]").count() == 0 and "kompyuterda" in await ms.inner_text())
         await m.screenshot(path=OUT + "jobs4_phone_gear.png")
         await b.close()
     ok("JS xatolar yo'q", not errs, errs)

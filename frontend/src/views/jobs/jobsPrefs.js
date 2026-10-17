@@ -1,6 +1,6 @@
 // jobsPrefs.js — «Vazifalar» bo'limini sozlash: ko'rinishlar, tepadagi kartalar, ro'yxat ustunlari, filtrlar.
 // Saqlangan tartib + yangi qo'shilgan ustunlar (oxiriga, yoqilgan) birlashtiriladi.
-export const VIEW_DEFS = [["list", "Ro'yxat"], ["board", "Doska"], ["brigade", "Brigada jadvali"], ["calendar", "Kalendar"]];
+export const VIEW_DEFS = [["list", "Ro'yxat"], ["board", "Doska"], ["brigade", "Brigada jadvali"], ["calendar", "Kalendar"], ["map", "Xarita"]];
 export const CARD_DEFS = [["late", "Kechikkan"], ["today", "Bugun"], ["tomorrow", "Ertaga"], ["nodate", "Sanasiz"], ["done", "Bajarildi"]];
 export const COL_DEFS = [["when", "Qachon"], ["people", "Mas'ul"], ["status", "Holat"], ["address", "Manzil"], ["line", "Yo'nalish"], ["checklist", "Tekshiruv"]];
 export const FILTER_DEFS = [["kinds", "Tur (O'lchov, Montaj…)"], ["person", "Mas'ul"], ["line", "Yo'nalish"], ["mine", "Mening ishlarim"]];

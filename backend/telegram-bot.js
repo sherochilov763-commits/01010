@@ -48,9 +48,25 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
   // ---- bot xabarlarini qabul qilish (long polling) ----
   let offset = 0, polling = false, stopped = false, lastToken = null;
   let health = { ok: null, problem: "", at: 0 }; // bot xabarlarni qabul qila olyaptimi (/start ishlashi uchun)
+  let locHandler = null; // jonli lokatsiya (geo.js) — ish vaqtidagi kuzatuv
   async function handleUpdate(u) {
-    const msg = u.message;
+    const msg = u.message || u.edited_message;
     if (!msg?.chat?.id || msg.chat.type !== "private") return;
+    if (msg.location && locHandler) {
+      const empId = Object.keys(links()).find((k) => links()[k].chatId === String(msg.chat.id));
+      if (empId) {
+        const r = locHandler(empId, { lat: Number(msg.location.latitude), lng: Number(msg.location.longitude), acc: msg.location.horizontal_accuracy ?? null, at: new Date(((msg.edit_date || msg.date) || 0) * 1000 || Date.now()).toISOString(), live: !!msg.location.live_period });
+        // Birinchi (yangi) xabarga qisqa javob — nima bo'lganini xodim bilsin
+        if (u.message && r && !r.skipped) {
+          const txt = r.ok ? (msg.location.live_period ? "✅ Jonli joylashuv qabul qilindi — ish vaqtida rahbarga ko'rinadi." : "✅ Joylashuv qabul qilindi. Kun bo'yi uchun «Jonli joylashuv»ni ulashing.")
+            : r.reason === "off_shift" ? "ℹ️ Hozir ish vaqti emas («Keldim» bosilmagan yoki «Ketdim» bosilgan) — joylashuv saqlanmadi."
+            : r.reason === "consent" ? "ℹ️ Avval UVIX ilovasida kuzatuvga rozilik bering." : r.reason === "disabled" ? "ℹ️ Kuzatuv o'chirilgan." : "";
+          if (txt) await api("sendMessage", { chat_id: String(msg.chat.id), text: txt }).catch(() => {});
+        }
+      }
+      return;
+    }
+    if (!u.message) return;
     const text = String(msg.text || "").trim();
     const chatId = String(msg.chat.id);
     if (text.startsWith("/start")) {
@@ -99,7 +115,7 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 35000);
       try {
-        const updates = await api("getUpdates", { offset, timeout: 25, allowed_updates: ["message"] }, tk, ac.signal);
+        const updates = await api("getUpdates", { offset, timeout: 25, allowed_updates: ["message", "edited_message"] }, tk, ac.signal);
         for (const u of updates) { offset = u.update_id + 1; await handleUpdate(u).catch((e) => console.error("Bot xabari:", e.message)); }
         health = { ok: true, problem: "", at: Date.now() };
       } catch (e) {
@@ -190,7 +206,7 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
       return r.ok;
     } catch { return false; }
   }
-  return { sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], health: () => (token() ? health : { ok: null, problem: "", at: 0 }), stop: () => { stopped = true; } };
+  return { onLocation: (fn) => { locHandler = fn; }, sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], health: () => (token() ? health : { ok: null, problem: "", at: 0 }), stop: () => { stopped = true; } };
 };
 
 // Birinchi kirishda «Telegram'ni ulang» oynasi ko'rsatilsinmi.

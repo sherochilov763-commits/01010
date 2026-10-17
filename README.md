@@ -1063,3 +1063,15 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Sozlamalar → Savdo → «Yo'nalishlar» (`settings.lineProfiles[line]`): `color`, `prefix` (2–4 belgi, ikkalasi har xil), `logo` (PNG data URL, ≤480px), `companyLine`, `cardNumber`, `cardHolder`, `managerPhone`, `managerName`.
 - Rang va prefiks: `applyLineProfiles()` (`frontend/src/lib/lines.js`), server — `linePrefix()` (`backend/quotes.js`). Rekvizitlar: hisob-faktura (`InvoiceModal`), «tayyor» va qarz eslatmasi (`backend/customer-msg.js` → `withLine`).
 - Test: `tests/e2e/test_lineprof.py`.
+
+## 📋 Vazifalar — 11–13-etaplar: ro'yxat, Doska, Brigada, ⚙️ sozlash (2026-10)
+- Fayllar: `frontend/src/views/jobs/` — `JobsView.jsx` (ro'yxat, holat kartalari, tezkor qo'shish), `JobDrawer.jsx` (tafsilot paneli), `Board.jsx`, `Brigade.jsx`, `Calendar.jsx`, `JobsSettings.jsx` + `jobsPrefs.js` (⚙️), `CustomFields.jsx` (o'z ustunlari), `MyJobs.jsx` (ishchi «Mening kunim»).
+- Server: `backend/jobs.js` — tekshiruv ro'yxati, tarix, rasm, davomiylik, `uvix:jobsConfig` (o'z ustunlari, holatlar, «hamma uchun» sozlama), `uvix:jobsPrefs` (shaxsiy).
+- Testlar: `tests/e2e/test_jobs2.py`, `test_jobs3.py`, `test_jobs4.py`, `tests/unit/jobs.test.mjs`.
+
+## 📍 Vazifalar — 14-etap: joy, eng yaqin ish, ish vaqtidagi kuzatuv (2026-10)
+- Xarita: Leaflet + OpenStreetMap (kalit kerak emas), manzil qidiruvi — Nominatim; navigator — Yandex (`yandex.uz/maps/?rtext=…`). Masofa — to'g'ri chiziq × 1,35 (yo'l bo'yicha taxmin), vaqt — 25 km/soat.
+- Frontend: `geoLib.js` (masofa, `planDay` — kun tartibi va maslahat, `recommend` — eng yaqin va bo'sh xodim, havolalarni o'qish), `LeafletMap.jsx`, `GeoField.jsx` (joy belgilash), `JobsMap.jsx` («Xarita» va «Xodimlar · hozir»), `GeoTracker.jsx` (rozilik, ilova ochiq paytda joy yuborish — daqiqasiga ko'pi bilan bir marta).
+- Server: `backend/geo.js` — `/api/geo/me|consent|ping|config|live|trail|resolve-link`. Joy faqat: kuzatuv yoqilgan + rozilik bor + ish vaqti (`attendance.onShift`: bugun «Keldim» bor, «Ketdim» yo'q). Telegram jonli joylashuv — `telegram-bot.js` (`edited_message`). Saqlash: `uvix:geoLast`, `uvix:geo:YYYY-MM-DD` (20 s / 15 m dan siyrak), 30 kundan keyin o'chadi; KV orqali yopiq.
+- Cheklov: brauzer telefon qulflanganda joy yubormaydi — uzluksiz kuzatuv uchun Telegram «jonli joylashuv» (8 soat).
+- Testlar: `tests/e2e/test_geo.py`, `tests/unit/geo.test.mjs`.

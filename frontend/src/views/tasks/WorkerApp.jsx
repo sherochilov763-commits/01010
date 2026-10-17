@@ -6,6 +6,7 @@ import { Button, Card, ConfirmDialog, Field, getInputStyle, useIsMobile } from "
 import { roleLabel } from "../../constants.js";
 import { LINE_META, lineColor } from "../../lib/lines.js";
 import { MyJobs } from "../jobs/JobsView.jsx";
+import { GeoConsentCard, GeoTracker } from "../jobs/GeoTracker.jsx";
 import { SC, THEME, readableOn } from "../../theme.js";
 import { fetchTasks, setTaskStatus } from "../../storage.js";
 import { storageGet, storageSet } from "../../lib/kv.js";
@@ -114,10 +115,11 @@ export function WorkerApp({ currentUser, onLogout }) {
     <div style={{ minHeight: "100vh", background: THEME.surface, color: THEME.text, fontFamily: THEME.font }}>
       <style>{`body{background:${THEME.surface}} @keyframes uvixSpin{to{transform:rotate(360deg)}} .uvix-spin{animation:uvixSpin .9s linear infinite} @media (max-width:860px){input,select,textarea{font-size:16px!important}} @media (max-width:430px){.uvix-worker-name{display:none}} ${WORKER_NAV_CSS}`}</style>
 
+      <GeoTracker user={currentUser} />
       {/* Yuqori panel */}
       <header style={{ position: "sticky", top: 0, zIndex: 20, background: THEME.card, borderBottom: `1px solid ${THEME.border}`, paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "10px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-          {screen === "settings" ? (
+        {screen === "settings" ? (
             <button type="button" onClick={goBack} aria-label="Orqaga" style={{ display: "flex", alignItems: "center", gap: 6, border: 0, background: "none", color: THEME.text, fontSize: 15, fontWeight: 600, cursor: "pointer", minHeight: 44, padding: 0 }}>
               <ArrowLeft size={20} /> Vazifalar
             </button>
@@ -393,6 +395,7 @@ function WorkerSettings({ currentUser, onLogout }) {
         {msg && <div style={{ fontSize: 12.5, marginTop: 8, color: msg.err ? THEME.rose : THEME.green }}>{msg.t}</div>}
       </Card>
       <TelegramLinkCard />
+      <GeoConsentCard Card={Card} />
       <TgPrefsCard Card={Card} showLink={false} />
       <PasskeySection currentUser={currentUser} theme={THEME} Card={Card} />
       <Button variant="ghost" onClick={onLogout} style={{ alignSelf: "flex-start" }}><LogOut size={15} /> Tizimdan chiqish</Button>

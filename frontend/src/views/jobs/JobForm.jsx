@@ -1,28 +1,35 @@
 // JobForm.jsx — vazifani qo'shish/tahrirlash oynasi (tur, buyurtma, vaqt, davomiyligi, manzil, mas'ullar, holat).
-import { useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Sparkles, Trash2 } from "lucide-react";
 import { Button, ConfirmDialog, Field, Modal, getInputStyle } from "../../components/ui.jsx";
 import { useLine } from "../../lib/lines.js";
-import { createJob, deleteJob, updateJob } from "../../storage.js";
+import { createJob, deleteJob, fetchGeoLive, updateJob } from "../../storage.js";
 import { THEME } from "../../theme.js";
 import { JOB_KINDS, STATUS, today } from "./jobsLib.js";
 import { CustomInput } from "./CustomFields.jsx";
 import { fieldsFor } from "./jobsPrefs.js";
+import { GeoField } from "./GeoField.jsx";
+import { Avatar } from "./JobParts.jsx";
+import { fmtKm, okGeo, recommend } from "./geoLib.js";
 
 export const DURATION = { measure: 60, install: 120, deliver: 40, other: 60 };
 
-export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId, preset, config }) {
+export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderId, preset, config, allJobs = [] }) {
   const { line } = useLine();
   const [f, setF] = useState(() => ({
     kind: job?.kind || preset?.kind || "measure", orderId: job?.orderId || presetOrderId || "", leadId: job?.leadId || preset?.leadId || null, title: job?.title || preset?.title || "", date: job ? job.date || "" : preset?.date !== undefined ? preset.date || "" : today(), time: job?.time || preset?.time || "",
-    address: job?.address || preset?.address || "", phone: job?.phone || preset?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || preset?.assigneeIds || [], custom: { ...(job?.custom || {}) }, duration: job?.duration || preset?.duration || DURATION[job?.kind || preset?.kind || "measure"], line: job?.line || preset?.line || (line !== "all" ? line : "UVIXPRINT"),
+    address: job?.address || preset?.address || "", phone: job?.phone || preset?.phone || "", note: job?.note || "", assigneeIds: job?.assigneeIds || preset?.assigneeIds || [], custom: { ...(job?.custom || {}) }, geo: job?.geo || preset?.geo || null, duration: job?.duration || preset?.duration || DURATION[job?.kind || preset?.kind || "measure"], line: job?.line || preset?.line || (line !== "all" ? line : "UVIXPRINT"),
   }));
   const [err, setErr] = useState("");
+  const [live, setLive] = useState({ pos: {}, workshop: null });
+  useEffect(() => { fetchGeoLive().then((r) => setLive({ pos: Object.fromEntries((r.staff || []).filter((x) => x.pos).map((x) => [x.id, x.pos])), workshop: r.workshop })).catch(() => {}); }, []);
   const [busy, setBusy] = useState(false);
   const [del, setDel] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const openOrders = useMemo(() => (orders || []).filter((o) => !o.deletedAt && (o.prodStage !== "delivered" || o.id === f.orderId)).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 300), [orders, f.orderId]);
   const people = (employees || []).filter((e) => e.role !== "admin" || e.id === job?.createdById);
+  const field = people.filter((e) => e.role === "installer");
+  const recs = useMemo(() => (okGeo(f.geo) && f.date ? recommend({ target: f.geo, date: f.date, time: f.time, duration: f.duration, people: field.length ? field : people.filter((e) => e.role !== "admin"), jobs: allJobs, live: live.pos, workshop: live.workshop, today: today(), excludeId: job?.id }) : []), [f.geo, f.date, f.time, f.duration, allJobs, live, job?.id]);
   const toggle = (id) => set("assigneeIds", f.assigneeIds.includes(id) ? f.assigneeIds.filter((x) => x !== id) : [...f.assigneeIds, id]);
 
   async function save(extra = {}) {
@@ -83,6 +90,10 @@ export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderI
             </div>
           </Field>
         )}
+        <Field label="Joyi xaritada (ixtiyoriy — eng yaqin xodim va yo'l uchun)">
+          <GeoField value={f.geo} onChange={(g) => set("geo", g)} address={f.address} />
+        </Field>
+        {recs.length > 0 && <Recommend recs={recs} chosen={f.assigneeIds} onToggle={toggle} />}
         <Field label="Mas'ul (bir yoki bir nechta)">
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} data-testid="job-people">
             {people.map((e) => {
@@ -127,3 +138,27 @@ export function JobForm({ job, employees, orders, onClose, onSaved, presetOrderI
   );
 }
 
+
+const hm2 = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+// Menejerga bitta tavsiya: shu vaqtda bo'sh va eng yaqin xodim — bir bosishda «Berish»
+function Recommend({ recs, chosen, onToggle }) {
+  const [best, ...rest] = recs;
+  const line = (r) => `${r.km != null ? fmtKm(r.km) : "masofa noma'lum"} · ${r.busy ? "band" : `${hm2(r.freeFrom)}–${hm2(r.freeTo)} bo'sh`}`;
+  const on = chosen.includes(best.p.id);
+  return (
+    <div data-testid="job-recommend" style={{ border: `1.5px solid #0E7C6B`, boxShadow: "0 0 0 3px #0E7C6B1A", borderRadius: 14, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: "#0B5F52", display: "flex", alignItems: "center", gap: 5 }}><Sparkles size={13} /> TAVSIYA · ENG YAQIN VA BO'SH</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Avatar id={best.p.id} name={best.p.name} size={34} />
+        <div style={{ flex: 1, minWidth: 0 }}><b style={{ fontSize: 14 }}>{best.p.name}</b><div style={{ fontSize: 12.5, color: THEME.muted }} data-rec-best={best.p.id}>{line(best)}{best.from === "live" ? " · hozirgi joyidan" : best.from === "job" ? " · oldingi ishidan" : best.from === "workshop" ? " · sexdan" : ""}</div></div>
+        <button type="button" onClick={() => onToggle(best.p.id)} aria-pressed={on} data-testid="rec-give"
+          style={{ height: 34, padding: "0 14px", borderRadius: 10, border: 0, background: on ? THEME.greenSolid : "#0E7C6B", color: "#fff", fontFamily: "inherit", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>{on ? "✓ Berildi" : "Berish"}</button>
+      </div>
+      {rest.slice(0, 3).map((r) => (
+        <div key={r.p.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: r.busy ? THEME.dim : THEME.text }}>
+          <Avatar id={r.p.id} name={r.p.name} size={24} /><b style={{ fontWeight: 600 }}>{r.p.name.split(" ")[0]}</b><span style={{ color: THEME.muted }}>{line(r)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}

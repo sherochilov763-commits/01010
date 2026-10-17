@@ -34,6 +34,7 @@ const { lineOfLead } = require("./lines");
 const rid = () => crypto.randomBytes(8).toString("hex");
 const str = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 const dateOk = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || "") ? v : null);
+const geoOk = (g) => { const lat = Number(g?.lat), lng = Number(g?.lng); return g && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0) ? { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 } : null; };
 const timeOk = (v) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(v || "") ? v : null);
 
 function tashkent(d = new Date()) {
@@ -134,6 +135,7 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       date: b.date === undefined ? prev?.date || null : dateOk(b.date),
       time: b.time === undefined ? prev?.time || null : timeOk(b.time),
       address: b.address === undefined ? prev?.address || "" : str(b.address, 200),
+      geo: b.geo === undefined ? prev?.geo || null : geoOk(b.geo),
       phone: b.phone === undefined ? prev?.phone || "" : str(b.phone, 40),
       note: b.note === undefined ? prev?.note || "" : str(b.note, 1000),
       duration: b.duration === undefined ? prev?.duration || DURATION[kind] : Math.max(15, Math.min(720, Math.round(Number(b.duration) || DURATION[kind]))),

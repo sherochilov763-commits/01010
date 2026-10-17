@@ -680,6 +680,15 @@ export const fetchJobs = () => jobsCall("");
 export const createJob = (job) => jobsCall("", "POST", job);
 export const updateJob = (id, patch) => jobsCall(`/${encodeURIComponent(id)}`, "PATCH", patch);
 export const deleteJob = (id) => jobsCall(`/${encodeURIComponent(id)}`, "DELETE");
+// ---------- Kuzatuv (faqat ish vaqtida) va vazifa joylari ----------
+export const fetchGeoMe = () => apiReq("/geo/me");
+export const geoConsent = (agree = true) => apiReq("/geo/consent", "POST", { agree });
+export const geoPing = (p) => apiReq("/geo/ping", "POST", p);
+export const fetchGeoLive = () => apiReq("/geo/live");
+export const fetchGeoTrail = (emp, date) => apiReq(`/geo/trail?emp=${encodeURIComponent(emp)}${date ? `&date=${date}` : ""}`).then((d) => d.points || []);
+export const fetchGeoConfig = () => apiReq("/geo/config");
+export const saveGeoConfig = (c) => apiReq("/geo/config", "PUT", c).then((d) => d.config);
+export const resolveMapLink = (url) => apiReq("/geo/resolve-link", "POST", { url });
 export const saveJobsConfig = (cfg) => jobsCall("/config", "PUT", cfg).then((d) => d.config);
 export const saveJobsPrefs = (prefs) => jobsCall("/prefs", "PUT", { prefs }).then((d) => d.prefs);
 export async function uploadJobPhotos(id, files) {

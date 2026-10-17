@@ -4,6 +4,7 @@ import { openSettingsSection, setOpenTab } from "./lib/deeplink.js";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "./components/PhoneToDesktop.jsx";
 import { TodayView } from "./views/dashboard/TodayView.jsx";
 import { JobsView } from "./views/jobs/JobsView.jsx";
+import { GeoTracker } from "./views/jobs/GeoTracker.jsx";
 import { LineContext, WorkStatsContext, applyLineProfiles, scopeByLine, useLineState } from "./lib/lines.js";
 import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
@@ -841,6 +842,7 @@ function AppInner() {
     <LineContext.Provider value={lineState}>
     <ExpenseRulesContext.Provider value={expenseRules}>
     <WorkStatsContext.Provider value={workStats}>
+    {!isAdmin && <GeoTracker user={currentUser} />}
     {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
     <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`

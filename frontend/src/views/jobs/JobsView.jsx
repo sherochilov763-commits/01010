@@ -3,7 +3,7 @@
 // Ko'rinishlar: Ro'yxat (guruhlangan qatorlar + o'ng panel), Kalendar. Dizayn/pechat vazifalari (buyurtma ichidagi) — faqat ko'rish.
 // MyJobs — ishchi telefoni uchun «Mening kunim» (MyJobs.jsx).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlarmClock, AlignLeft, CalendarDays, Columns3, Check, CheckCircle2, ChevronDown, ChevronRight, Inbox, List as ListIcon, Loader2, MapPin, Navigation, Play, Plus, Settings, Sun, Sunrise, Star, Zap } from "lucide-react";
+import { AlarmClock, AlignLeft, CalendarDays, Columns3, Check, CheckCircle2, ChevronDown, ChevronRight, Inbox, List as ListIcon, Loader2, Map as MapIcon, MapPin, Navigation, Play, Plus, Settings, Sun, Sunrise, Star, Zap } from "lucide-react";
 import { ConfirmDialog, useIsMobile } from "../../components/ui.jsx";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 import { useLine } from "../../lib/lines.js";
@@ -14,6 +14,7 @@ import { Brigade } from "./Brigade.jsx";
 import { WeekCalendar } from "./Calendar.jsx";
 import { JobDrawer } from "./JobDrawer.jsx";
 import { JobForm } from "./JobForm.jsx";
+import { JobsMap } from "./JobsMap.jsx";
 import { Avatars, JobsEmpty, KindBadge, StatusPill } from "./JobParts.jsx";
 import { CustomValue } from "./CustomFields.jsx";
 import { JobsSettings } from "./JobsSettings.jsx";
@@ -24,7 +25,7 @@ export { JOB_KINDS } from "./jobsLib.js";
 export { JobForm } from "./JobForm.jsx";
 export { MyJobs } from "./MyJobs.jsx";
 
-const MODES = [["list", "Ro'yxat", ListIcon], ["board", "Doska", Columns3], ["brigade", "Brigada", AlignLeft], ["calendar", "Kalendar", CalendarDays]];
+const MODES = [["list", "Ro'yxat", ListIcon], ["board", "Doska", Columns3], ["brigade", "Brigada", AlignLeft], ["calendar", "Kalendar", CalendarDays], ["map", "Xarita", MapIcon]];
 const GROUP_ICON = { late: AlarmClock, today: Sun, tomorrow: Sunrise, later: CalendarDays, nodate: Inbox, done: CheckCircle2 };
 const lsGet = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
@@ -245,6 +246,8 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
         <Board list={list} stages={config.stages || []} isMobile={isMobile} showLine={showLine} canManage={canManage} employees={people} onOpen={(j) => setOpenId(j.id)} onPatch={patchJob} onDone={(j) => setConfirm(j)} onPlan={(j) => plan(j)} />
       ) : curMode === "brigade" ? (
         <Brigade list={list} employees={employees} isMobile={isMobile} canManage={canManage} onOpen={(j) => !j.ro && setOpenId(j.id)} onPatch={patchJob} onPlan={plan} />
+      ) : curMode === "map" ? (
+        <JobsMap list={list} employees={people} isMobile={isMobile} canWatch={["admin", "manager"].includes(currentUser?.role)} isAdmin={currentUser?.role === "admin"} onOpen={(j) => !j.ro && setOpenId(j.id)} onPatch={patchJob} onPlan={(j) => setEdit(j)} />
       ) : curMode === "calendar" ? (
         <WeekCalendar list={list} week={week} setWeek={setWeek} isMobile={isMobile} onOpen={(j) => setOpenId(j.id)} showLine={showLine} />
       ) : visibleGroups.length === 0 ? (
@@ -296,7 +299,7 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
         <JobsSettings prefs={prefs} setPrefs={setPrefs} config={config} canConfig={canConfig} scope={scope} setScope={setScope} isMobile={isMobile}
           onSaveConfig={saveConfig} onReset={resetPrefs} onClose={() => setShowSettings(false)} />
       )}
-      {edit && <JobForm job={edit.id ? edit : null} preset={edit._preset} config={config} employees={employees} orders={orders} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
+      {edit && <JobForm allJobs={jobs || []} job={edit.id ? edit : null} preset={edit._preset} config={config} employees={employees} orders={orders} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} />}
       {confirm && (
         <ConfirmDialog title="Bajarildimi?" message={`«${confirm.title}» bajarildi deb belgilansinmi?${confirm.orderId && ["install", "deliver"].includes(confirm.kind) ? " Buyurtma «Topshirildi» bo'ladi." : ""}`}
           confirmLabel="Ha, bajarildi" tone="primary" icon={Check} onCancel={() => setConfirm(null)} onConfirm={() => markDone(confirm)} />

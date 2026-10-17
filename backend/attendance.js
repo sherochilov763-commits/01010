@@ -66,7 +66,7 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false, bio = null, onConfigChanged = () => {} }) {
+module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false, bio = null, onConfigChanged = () => {}, onChecked = () => {} }) {
   // Selfilar saqlash joyi tashqaridan beriladi (serverda — disk, demo'da — brauzer xotirasi):
   //   photoStore.save(empId, date, base64) -> { id } | { error }
   //   photoStore.send(res, id)              -> rasmni javob sifatida yuboradi
@@ -377,6 +377,7 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     const emp = readEmployees().find((e) => e.id === req.user.id);
     const today = evalDay(emp, date, rec, cfg, now);
     res.json({ ok: true, record: rec, today });
+    try { onChecked(req.user.id, type); } catch { /* ixtiyoriy */ }
     // Xodimning o'ziga tasdiq: kechikkan bo'lsa — kechikish (shu oydagi jami bilan), aks holda oddiy tasdiq
     const dm = dayLen(scheduleFor(emp, cfg));
     if (type === "in" && today.status === "late" && cfg.personal.late) {
@@ -486,7 +487,14 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     res.json({ ok: !!ok, text, message: ok ? "Yuborildi" : "Yuborilmadi — Sozlamalarda bot token, guruh chat ID yoki shaxsiy Telegram'ingizni ulang" });
   });
 
-  return { report, tick, dailyText, periodText, local, cleanupPhotos, fmtDur };
+  // Hozir ishdami: bugun «Keldim» bor va undan keyin «Ketdim» yo'q
+  function onShift(empId, t = nowFn()) {
+    const { date } = local(t);
+    const rec = readMonth(date)?.[empId]?.[date];
+    if (!rec?.in || Date.parse(rec.in) > t.getTime() + 60000) return false;
+    return !rec.out || Date.parse(rec.out) < Date.parse(rec.in);
+  }
+  return { report, tick, dailyText, periodText, local, cleanupPhotos, fmtDur, onShift, office: () => config().office || null };
 };
 module.exports.DEFAULT_CONFIG = DEFAULT_CONFIG;
 module.exports.fmtDur = fmtDur;
