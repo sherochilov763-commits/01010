@@ -181,10 +181,10 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
           style={{ width: 40, height: 40, borderRadius: 11, border: `1.5px solid ${showSettings ? THEME.blue : THEME.border}`, background: showSettings ? THEME.blueBg : THEME.card, color: showSettings ? THEME.blue : THEME.text, display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0 }}>
           <Settings size={18} />
         </button>
-        {views.length > 1 && <div role="group" aria-label="Ko'rinish" style={{ display: "inline-flex", background: THEME.chip, borderRadius: 11, padding: 3, gap: 2, flex: isMobile ? 1 : "0 0 auto", minWidth: 0 }}>
+        {views.length > 1 && <div role="group" aria-label="Ko'rinish" className={isMobile ? "uvix-scroll" : undefined} style={{ display: "inline-flex", background: THEME.chip, borderRadius: 11, padding: 3, gap: 2, flex: isMobile ? 1 : "0 0 auto", minWidth: 0, overflowX: isMobile ? "auto" : "visible" }}>
           {views.map(([v, l, I]) => (
-            <button key={v} type="button" onClick={() => setModeP(v)} aria-pressed={curMode === v} data-jobs-mode={v}
-              style={{ flex: isMobile ? 1 : "0 0 auto", justifyContent: "center", height: 34, padding: isMobile ? "0 4px" : "0 14px", border: 0, borderRadius: 9, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, background: curMode === v ? THEME.card : "transparent", color: curMode === v ? THEME.text : THEME.muted, boxShadow: curMode === v ? THEME.shadowSm : "none" }}>
+            <button key={v} type="button" onClick={(e) => { setModeP(v); e.currentTarget.scrollIntoView?.({ inline: "nearest", block: "nearest" }); }} aria-pressed={curMode === v} data-jobs-mode={v}
+              style={{ flex: isMobile ? (views.length > 3 ? "0 0 auto" : 1) : "0 0 auto", justifyContent: "center", height: 34, padding: isMobile ? (views.length > 3 ? "0 11px" : "0 4px") : "0 14px", whiteSpace: "nowrap", border: 0, borderRadius: 9, cursor: "pointer", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6, background: curMode === v ? THEME.card : "transparent", color: curMode === v ? THEME.text : THEME.muted, boxShadow: curMode === v ? THEME.shadowSm : "none" }}>
               {!isMobile && <I size={15} />}{l}
             </button>
           ))}

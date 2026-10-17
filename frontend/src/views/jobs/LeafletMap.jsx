@@ -7,7 +7,7 @@ import { THEME } from "../../theme.js";
 
 export const TASHKENT = { lat: 41.3111, lng: 69.2797 };
 
-export function LeafletMap({ markers = [], lines = [], center, zoom = 12, fit = true, fitKey = "", onClick, height = 420, style, testid = "leaflet-map", rounded = 16 }) {
+export function LeafletMap({ markers = [], lines = [], circles = [], center, zoom = 12, fit = true, fitKey = "", onClick, height = 420, style, testid = "leaflet-map", rounded = 16, zoomPos = "bottomright", fitPad = null }) {
   const el = useRef(null);
   const map = useRef(null);
   const layer = useRef(null);
@@ -17,7 +17,7 @@ export function LeafletMap({ markers = [], lines = [], center, zoom = 12, fit = 
 
   useEffect(() => {
     const m = L.map(el.current, { zoomControl: false, attributionControl: true }).setView([(center || TASHKENT).lat, (center || TASHKENT).lng], zoom);
-    L.control.zoom({ position: "bottomright" }).addTo(m);
+    L.control.zoom({ position: zoomPos }).addTo(m);
     // Ilova «Referrer-Policy: same-origin» yuboradi — OSM esa Referer'siz so'rovlarni bloklaydi (403 «Access blocked»).
     // Shuning uchun xarita rasmlariga sayt manzili (origin) yuboriladi; OSM baribir rad etsa — CARTO xaritasiga o'tiladi.
     const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap", referrerPolicy: "strict-origin-when-cross-origin" });
@@ -42,6 +42,7 @@ export function LeafletMap({ markers = [], lines = [], center, zoom = 12, fit = 
   useEffect(() => {
     const m = map.current, g = layer.current; if (!m || !g) return;
     g.clearLayers();
+    for (const c of circles) L.circle([c.lat, c.lng], { radius: c.radius || 150, color: c.color || "#18181B", weight: 1.5, opacity: 0.55, fillOpacity: 0.07, dashArray: "4 6", interactive: false }).addTo(g);
     for (const ln of lines) {
       if (!ln.points?.length) continue;
       L.polyline(ln.points, { color: ln.color || THEME.blue, weight: ln.weight || 4, opacity: ln.opacity ?? 0.85, dashArray: ln.dashed ? "6 9" : null, lineCap: "round" }).addTo(g);
@@ -57,9 +58,9 @@ export function LeafletMap({ markers = [], lines = [], center, zoom = 12, fit = 
       fitted.current = key;
       const pts = [...markers.map((x) => [x.lat, x.lng]), ...lines.flatMap((l) => l.points || [])];
       if (pts.length === 1) m.setView(pts[0], 14);
-      else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts).pad(0.18), { maxZoom: 15 });
+      else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts).pad(fitPad ? 0.06 : 0.18), { maxZoom: 15, ...(fitPad ? { paddingTopLeft: fitPad.tl, paddingBottomRight: fitPad.br } : {}) });
     }
-  }, [markers, lines, fit, fitKey]);
+  }, [markers, lines, circles, fit, fitKey]);
 
   useEffect(() => { if (center && map.current && !fit) map.current.setView([center.lat, center.lng], map.current.getZoom()); }, [center?.lat, center?.lng, fit]);
 
@@ -79,3 +80,13 @@ export function avatarHtml(color, initials, text, dot) {
     ${dot ? `<i style="width:7px;height:7px;border-radius:50%;background:${dot};display:inline-block"></i>` : ""}${text || ""}</div>`;
 }
 export const meHtml = () => `<div style="width:18px;height:18px;border-radius:50%;background:#1F5FD6;border:3px solid #fff;box-shadow:0 0 0 6px rgba(31,95,214,.22)"></div>`;
+
+// Sex (ishxona) belgisi: qora kvadrat-bino + yozuv — vazifa pinlaridan ajralib turadi
+export function workshopHtml(label = "Sex") {
+  return `<div style="display:inline-flex;align-items:center;gap:6px;transform:translate(-15px,-15px);white-space:nowrap">
+    <div style="width:30px;height:30px;border-radius:9px;background:#18181B;border:2.5px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.35);display:grid;place-items:center">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V9l6 4V9l6 4V5h4v15"/></svg></div>
+    <span style="background:#18181B;color:#fff;border-radius:7px;padding:3px 8px;font:700 12px/1.2 Onest,system-ui,sans-serif;box-shadow:0 2px 6px rgba(0,0,0,.25)">${label}</span></div>`;
+}
+export const workshopMarker = (ws) => (ws ? { id: "ws", lat: ws.lat, lng: ws.lng, html: workshopHtml(), size: [0, 0], anchor: [0, 0], z: -100, title: "Sex (ishxona)" } : null);
+export const workshopCircle = (ws) => (ws ? [{ lat: ws.lat, lng: ws.lng, radius: ws.radius || 150 }] : []);

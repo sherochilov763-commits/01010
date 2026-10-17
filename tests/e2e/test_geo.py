@@ -43,6 +43,9 @@ async def main():
     ok("Sardor: rozilik bor, lekin «Keldim» yo'q → ish vaqti emas", api("/api/geo/ping", {"lat": 41.3, "lng": 69.2}, st).get("reason") == "off_shift")
     # Bekzod ishga keldi (1 soat oldin)
     mkey = f"uvix:att:{TODAY[:7]}"
+    # Sex (ishxona) — davomat sozlamasidagi kenglik/uzunlik
+    dbset("uvix:attConfig", {"office": {"lat": 41.2995, "lng": 69.2401, "radius": 150}})
+    ok("sex joyi xarita uchun beriladi (davomatdan)", api("/api/geo/config", token=bt).get("workshop", {}).get("lat") == 41.2995)
     dbset(mkey, {"bekzod": {TODAY: {"in": iso(NOW - datetime.timedelta(hours=1))}}})
 
     errs = []
@@ -91,7 +94,17 @@ async def main():
         await nav(d, "Vazifalar"); await d.wait_for_timeout(1200)
         await d.locator("[aria-label=\"Ko'rinish\"] button", has_text="Xarita").click(); await d.wait_for_timeout(1500)
         jm = d.locator("[data-testid=jobs-map]")
-        ok("Xarita: joyi bor ochiq vazifalar pin bo'lib chiqadi", await jm.locator(".leaflet-marker-icon").count() == 2, await jm.locator(".leaflet-marker-icon").count())
+        ok("Xarita: joyi bor ochiq vazifalar pin + sex belgisi", await jm.locator(".leaflet-marker-icon").count() == 3, await jm.locator(".leaflet-marker-icon").count())
+        ok("sex xaritada belgilangan (bino belgisi va hudud doirasi)", await jm.locator(".leaflet-marker-icon[title='Sex (ishxona)']").count() == 1 and await jm.locator("path.leaflet-interactive, .leaflet-overlay-pane path").count() >= 1 and await jm.locator("[data-testid=legend-ws][data-ws='1']").count() == 1)
+        bb = await jm.bounding_box()
+        ok("xarita ekran pastigacha to'liq (ajratilgan joyni egallaydi)", bb["y"] + bb["height"] >= 950 - 30 and bb["height"] >= 600, bb)
+        await d.locator("[data-testid=panel-close]").click(); await d.wait_for_timeout(300)
+        ok("panelni yig'ish → xarita to'liq ochiladi", await d.locator("[data-testid=map-panel]").count() == 0 and await d.locator("[data-testid=panel-open]").count() == 1)
+        await d.locator("[data-testid=panel-open]").click(); await d.wait_for_timeout(300)
+        await d.locator("[data-testid=route-who]").select_option("bekzod"); await d.wait_for_timeout(600)
+        ok("xodim yo'li sexdan boshlanadi", "Sexdan chiqish" in await d.locator("[data-testid=map-route]").inner_text())
+        await d.screenshot(path=OUT + "geo_route.png")
+        await d.locator("[data-testid=route-who]").select_option(""); await d.wait_for_timeout(400)
         rp = await jm.locator("img.leaflet-tile").first.get_attribute("referrerpolicy")
         ok("xarita rasmlari sayt manzili bilan so'raladi (OSM 403 bermasin)", rp == "strict-origin-when-cross-origin", rp)
         ok("joyi belgilanmaganlar ro'yxati", await jm.locator(f"[data-nogeo='{nogeo['id']}']").count() == 1)

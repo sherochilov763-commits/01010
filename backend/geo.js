@@ -113,7 +113,8 @@ module.exports = function registerGeo(app, { getStmt, upsertStmt, deleteStmt = n
     res.json(ingest(req.user.id, { lat: Number(b.lat), lng: Number(b.lng), acc: b.acc == null ? null : Number(b.acc), src: "app" }));
   });
   // Joriy joy (eng yaqin ish maslahati uchun) — kuzatuv o'chiq bo'lsa ham saqlanmaydi, faqat javob
-  app.get("/api/geo/config", requireAuth, (req, res) => res.json({ config: cfg(), canEdit: req.user.role === "admin" }));
+  // Sex (ishxona) — davomat sozlamasidagi kenglik/uzunlik; xaritada doim belgilanadi
+  app.get("/api/geo/config", requireAuth, (req, res) => res.json({ config: cfg(), canEdit: req.user.role === "admin", workshop: workshop() }));
   app.put("/api/geo/config", requireAuth, (req, res) => {
     if (req.user.role !== "admin") return res.status(403).json({ error: "forbidden", message: "Kuzatuvni rahbar yoqadi" });
     const b = req.body || {};
