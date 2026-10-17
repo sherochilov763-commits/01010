@@ -92,6 +92,8 @@ async def main():
         await d.locator("[aria-label=\"Ko'rinish\"] button", has_text="Xarita").click(); await d.wait_for_timeout(1500)
         jm = d.locator("[data-testid=jobs-map]")
         ok("Xarita: joyi bor ochiq vazifalar pin bo'lib chiqadi", await jm.locator(".leaflet-marker-icon").count() == 2, await jm.locator(".leaflet-marker-icon").count())
+        rp = await jm.locator("img.leaflet-tile").first.get_attribute("referrerpolicy")
+        ok("xarita rasmlari sayt manzili bilan so'raladi (OSM 403 bermasin)", rp == "strict-origin-when-cross-origin", rp)
         ok("joyi belgilanmaganlar ro'yxati", await jm.locator(f"[data-nogeo='{nogeo['id']}']").count() == 1)
         await d.screenshot(path=OUT + "geo_map.png")
         # Joyi yo'q vazifa → belgilash → havola → tavsiya

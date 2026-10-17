@@ -18,7 +18,18 @@ export function LeafletMap({ markers = [], lines = [], center, zoom = 12, fit = 
   useEffect(() => {
     const m = L.map(el.current, { zoomControl: false, attributionControl: true }).setView([(center || TASHKENT).lat, (center || TASHKENT).lng], zoom);
     L.control.zoom({ position: "bottomright" }).addTo(m);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
+    // Ilova «Referrer-Policy: same-origin» yuboradi — OSM esa Referer'siz so'rovlarni bloklaydi (403 «Access blocked»).
+    // Shuning uchun xarita rasmlariga sayt manzili (origin) yuboriladi; OSM baribir rad etsa — CARTO xaritasiga o'tiladi.
+    const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap", referrerPolicy: "strict-origin-when-cross-origin" });
+    let fails = 0, switched = false;
+    osm.on("tileerror", () => {
+      if (switched || ++fails < 3) return;
+      switched = true;
+      m.removeLayer(osm);
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 20, subdomains: "abcd", attribution: "© OpenStreetMap · © CARTO", referrerPolicy: "strict-origin-when-cross-origin" }).addTo(m);
+    });
+    osm.on("tileload", () => { fails = 0; });
+    osm.addTo(m);
     layer.current = L.layerGroup().addTo(m);
     m.on("click", (e) => clickRef.current?.({ lat: e.latlng.lat, lng: e.latlng.lng }));
     map.current = m;

@@ -11,7 +11,7 @@ const btn = { height: 36, padding: "0 12px", borderRadius: 10, border: `1px soli
 
 // OpenStreetMap qidiruvi (Nominatim) — brauzerdan, kalitsiz
 async function geocode(q) {
-  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=uz&accept-language=uz&q=${encodeURIComponent(q)}`);
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=6&countrycodes=uz&accept-language=uz&q=${encodeURIComponent(q)}`, { referrerPolicy: "strict-origin-when-cross-origin" });
   if (!r.ok) throw new Error("Qidiruv ishlamadi");
   return (await r.json()).map((x) => ({ lat: Number(x.lat), lng: Number(x.lon), name: x.display_name }));
 }
