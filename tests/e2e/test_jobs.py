@@ -63,8 +63,7 @@ async def main():
         ok("ishchi: «Joydagi ishlar» bo'limi", await mj.count() == 1)
         ok("ishchi: bugungi o'lchov va sanasiz yetkazish («Bugun»da)", await mj.locator("[data-myjob]").count() == 2, await mj.inner_text() if await mj.count() else "")
         await w.screenshot(path=OUT + "jobs_worker.png")
-        await mj.locator(f"[data-myjob-done='{auto[0]['id']}']").click(); await w.wait_for_timeout(300)
-        await w.locator("button", has_text="Ha, bajarildi").click(); await w.wait_for_timeout(1200)
+        await swipe_card(w, mj.locator(f"[data-myjob='{auto[0]['id']}']")); await w.wait_for_timeout(800)
         o2 = [o for o in orders(adm) if o["id"] == "o2"][0]
         ok("yetkazish bajarildi → buyurtma «Topshirildi»", o2.get("prodStage") == "delivered", o2.get("prodStage"))
         ok("ishchi: bajarilgani ro'yxatdan ketdi", await mj.locator("[data-myjob]").count() == 1)

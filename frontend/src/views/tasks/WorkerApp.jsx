@@ -18,6 +18,8 @@ import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
 import { CheckInButton } from "../../components/CheckInButton.jsx";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "../../components/PhoneToDesktop.jsx";
 
+// Pastki menyudagi «Skaner» — hozircha o'chiq (keyin yo'lga qo'yiladi)
+const WORKER_SCANNER = false;
 const COLUMNS = [
   { key: "new", label: "Yangi", get color() { return SC.blue; } },
   { key: "in_progress", label: "Jarayonda", get color() { return SC.amber; } },
@@ -236,7 +238,8 @@ export function WorkerApp({ currentUser, onLogout }) {
         <nav className="uvix-worker-nav" aria-label="Asosiy menyu" style={{ background: THEME.card, borderTop: `1px solid ${THEME.border}` }}>
           {[
             { k: "tasks", l: isInstaller ? "Ishlarim" : "Vazifalar", I: ListChecks, on: () => (screen === "settings" ? goBack() : null), active: screen !== "settings" },
-            { k: "scan", l: "Skaner", I: ScanLine, on: () => openScanner("order"), active: false, main: true },
+            // Skaner hozircha xodimlarga ko'rsatilmaydi (keyin yoqiladi: WORKER_SCANNER = true)
+            ...(WORKER_SCANNER ? [{ k: "scan", l: "Skaner", I: ScanLine, on: () => openScanner("order"), active: false, main: true }] : []),
             { k: "profile", l: "Profil", I: CircleUser, on: () => (screen === "settings" ? null : goScreen("settings")), active: screen === "settings" },
           ].map((t) => (
             <button key={t.k} type="button" data-wtab={t.k} onClick={t.on} aria-current={t.active ? "page" : undefined}

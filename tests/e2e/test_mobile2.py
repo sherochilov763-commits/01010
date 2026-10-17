@@ -150,8 +150,8 @@ async def main():
         # ---------- 4. Ishchi (pechatchi): skaner → Boshlash → Tayyor ----------
         w = await (await b.new_context(user_agent=AND, permissions=["camera"], device_scale_factor=2, **PHONE)).new_page(); w.on("pageerror", lambda e: errs.append("W:" + str(e)))
         await phone_login(w, "Jasur", "2222", ".uvix-worker-nav")
-        ok("ishchi: pastki menyu Vazifalar · Skaner · Profil", await w.evaluate("[...document.querySelectorAll('.uvix-worker-nav [data-wtab]')].map(e=>e.dataset.wtab).join()") == "tasks,scan,profile")
-        await w.locator("[data-wtab=scan]").click()
+        ok("ishchi: pastki menyu Vazifalar · Profil (skaner hozircha yashirin)", await w.evaluate("[...document.querySelectorAll('.uvix-worker-nav [data-wtab]')].map(e=>e.dataset.wtab).join()") == "tasks,profile")
+        await w.evaluate("(id) => window.dispatchEvent(new CustomEvent('uvix:order-scan', { detail: { id } }))", order(adm, "UV-261013-003")["id"])
         await w.wait_for_selector("[data-testid=scan-task]", timeout=10000); await w.wait_for_timeout(500)
         ok("skanerlandi → o'z vazifasi: raqam va holat", (await w.locator("[data-testid=scan-no]").inner_text()).startswith("UV-261013-003") and "Navbatda" in await w.locator("[data-testid=scan-status]").inner_text())
         await w.screenshot(path=OUT + "m2_worker_scan.png")

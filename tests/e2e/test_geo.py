@@ -83,8 +83,9 @@ async def main():
         await w.screenshot(path=OUT + "geo_myday.png")
         # Ish tugadi → bitta karta: eng yaqin keyingi ish
         await stay(w)
-        await nx.locator(f"[data-myjob-done='{near['id']}']").click(); await w.wait_for_timeout(300)
-        await w.locator("button", has_text="Ha, bajarildi").click(); await w.wait_for_timeout(2000)
+        await nx.locator(f"[data-myjob-start='{near['id']}']").click(); await w.wait_for_timeout(1500)
+        await stay(w)
+        await slide_done(w, mj.locator("[data-myjob-next] [data-testid=slide-done]"), commit=False); await w.wait_for_timeout(500)
         nh = w.locator("[data-testid=next-hint]")
         ok("ish tugagach: «Eng yaqin keyingi ish» kartasi", await nh.count() == 1 and await nh.locator(f"[data-hint-job='{timed['id']}']").count() == 1, await nh.inner_text() if await nh.count() else "")
         dist = await nh.locator("[data-testid=hint-dist]").inner_text()
@@ -94,6 +95,8 @@ async def main():
         await stay(w)
         await nh.locator("[data-testid=hint-other]").click(); await w.wait_for_timeout(500)
         ok("«Boshqasini tanlash» → ro'yxatga qaytadi", await w.locator("[data-testid=next-hint]").count() == 0 and await mj.locator("[data-myjob-next]").count() == 1)
+        await w.wait_for_timeout(5200)
+        ok("5 soniyadan keyin serverga yozildi (bajarildi)", [x for x in jobs(adm) if x["id"] == near["id"]][0]["status"] == "done")
 
         # ---------- Rahbar: xarita, tavsiya, «Xodimlar · hozir» ----------
         d = await (await b.new_context(viewport={"width": 1440, "height": 950}, timezone_id="Asia/Tashkent")).new_page(); d.on("pageerror", lambda e: errs.append("D:" + str(e)))

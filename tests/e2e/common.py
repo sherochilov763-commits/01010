@@ -58,3 +58,21 @@ def audit(tok): return json.loads(api("/api/kv/uvix:audit", token=tok)["value"])
 async def open_payments(pg, num):
     row = pg.locator("tr.uvix-row", has_text=num)
     await row.hover(); await row.locator("[aria-label=\"To'lovlar\"]").click(); await pg.wait_for_timeout(500)
+
+# ---- Ishchi: «Surib yakunlang» va kartani o'ngga surish (5 soniya «Bekor qilish» bilan) ----
+async def slide_done(pg, slider, commit=True):
+    knob = slider.locator("[role=slider]")
+    kb = await knob.bounding_box(); sb = await slider.bounding_box()
+    y = kb["y"] + kb["height"] / 2
+    await pg.mouse.move(kb["x"] + kb["width"] / 2, y); await pg.mouse.down()
+    end = sb["x"] + sb["width"] - 10
+    for i in range(1, 13): await pg.mouse.move(kb["x"] + kb["width"] / 2 + (end - kb["x"]) * i / 12, y); await pg.wait_for_timeout(15)
+    await pg.mouse.up(); await pg.wait_for_timeout(300)
+    if commit: await pg.wait_for_timeout(5600)
+
+async def swipe_card(pg, card, commit=True):
+    bb = await card.bounding_box()
+    await pg.mouse.move(bb["x"] + 30, bb["y"] + bb["height"] / 2); await pg.mouse.down()
+    for i in range(1, 8): await pg.mouse.move(bb["x"] + 30 + i * 20, bb["y"] + bb["height"] / 2); await pg.wait_for_timeout(20)
+    await pg.mouse.up(); await pg.wait_for_timeout(400)
+    if commit: await pg.wait_for_timeout(5600)

@@ -1,7 +1,8 @@
 // JobDrawer.jsx — vazifa tafsiloti: kompyuterda o'ngdan panel, telefonda pastdan varaq.
 // Holat, qachon/qayerda/kim, tekshiruv ro'yxati, rasmlar, tarix, izoh. Mas'ul xodim ham belgilaydi va rasm yuklaydi.
 import { useEffect, useRef, useState } from "react";
-import { Camera, Check, Loader2, MessageSquare, Navigation, Pencil, Phone, Play, Send, X } from "lucide-react";
+import { Camera, Check, Loader2, MessageSquare, Navigation, Pencil, Phone, Play, RotateCcw, Send, X } from "lucide-react";
+import { SlideToDone } from "./SlideToDone.jsx";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 import { useBackToClose } from "../../lib/history.js";
 import { updateJob, uploadJobPhotos } from "../../storage.js";
@@ -11,7 +12,7 @@ import { hm2min, isLate, isOpen, mapsUrl, min2hm, whenText } from "./jobsLib.js"
 
 const fmtAt = (s) => { if (!s) return ""; const d = new Date(s); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${d.toTimeString().slice(0, 5)}`; };
 
-export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit, onDone, customFields = [], renderCustom, stages = [] }) {
+export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit, onDone, customFields = [], renderCustom, stages = [], slideDone = false }) {
   const [j, setJ] = useState(job);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -150,7 +151,11 @@ export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit
         {j.phone && isMobile && <a href={`tel:${j.phone.replace(/[^\d+]/g, "")}`} style={footBtn(false)} aria-label="Qo'ng'iroq"><Phone size={16} /></a>}
         {isOpen(j) && (j.status === "new"
           ? <button type="button" disabled={busy} onClick={() => patch({ status: "doing" })} style={{ ...footBtn(true), background: "#0E7C6B" }} data-testid="drawer-start"><Play size={16} /> Boshlash</button>
-          : <button type="button" disabled={busy} onClick={() => onDone?.(j)} style={footBtn(true)} data-testid="drawer-done"><Check size={17} /> Bajarildi</button>)}
+          : slideDone
+            ? <div style={{ flexBasis: "100%", display: "flex" }}><SlideToDone testid="drawer-slide" jobId={j.id} disabled={busy} onDone={() => onDone?.(j)} /></div>
+            : <button type="button" disabled={busy} onClick={() => onDone?.(j)} style={footBtn(true)} data-testid="drawer-done"><Check size={17} /> Bajarildi</button>)}
+        {/* Xato yakunlangan ish — rahbar/menejer qayta ochadi (tarixda yoziladi) */}
+        {canManage && j.status === "done" && <button type="button" disabled={busy} onClick={() => patch({ status: "doing" })} style={{ ...footBtn(true), background: THEME.amberSolid || "#B45309" }} data-testid="drawer-reopen"><RotateCcw size={16} /> Qayta ochish</button>}
       </div>
     </div>
   );

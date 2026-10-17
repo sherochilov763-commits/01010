@@ -3,11 +3,11 @@
 // Karta bosilsa — pastdan vazifa varag'i (tekshiruv ro'yxati, rasm, izoh).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, CheckCircle2, Lightbulb, LocateFixed, MapPin, Navigation, Phone, Play, Sparkles } from "lucide-react";
-import { ConfirmDialog } from "../../components/ui.jsx";
 import { fetchJobs, updateJob } from "../../storage.js";
 import { THEME } from "../../theme.js";
 import { JobDrawer } from "./JobDrawer.jsx";
 import { KindBadge } from "./JobParts.jsx";
+import { SlideToDone, UndoToast } from "./SlideToDone.jsx";
 import { CustomValue } from "./CustomFields.jsx";
 import { fieldsFor } from "./jobsPrefs.js";
 import { usePosition } from "./GeoTracker.jsx";
@@ -18,7 +18,9 @@ import { JOB_KINDS, MONTHS, WD_FULL, addDays, byWhen, isLate, isOpen, mapsUrl, t
 export function MyJobs({ currentUser, hideEmpty }) {
   const [jobs, setJobs] = useState(null);
   const [tab, setTab] = useState("today");
-  const [confirm, setConfirm] = useState(null);
+  const [pending, setPending] = useState(null); // «Bajarildi» — 5 soniya «Bekor qilish» kutadi, keyin serverga
+  const pendRef = useRef(null);
+  const commitRef = useRef(null);
   const [openId, setOpenId] = useState(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -27,8 +29,16 @@ export function MyJobs({ currentUser, hideEmpty }) {
   const pos = usePosition(!!jobs?.some((j) => isOpen(j) && okGeo(j.geo)));
   const load = useCallback(async () => { try { const r = await fetchJobs(); setConfig(r.config || null); setJobs((r.jobs || []).filter((j) => (j.assigneeIds || []).includes(currentUser.id))); } catch (e) { setErr(e.message); setJobs((x) => x || []); } }, [currentUser.id]);
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
+  // Ilova yopilsa / boshqa ilovaga o'tilsa — kutayotgan «Bajarildi» darhol yuboriladi (yo'qolmasin)
+  useEffect(() => {
+    const flush = () => { if (pendRef.current) commitRef.current?.(pendRef.current); };
+    const vis = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", vis);
+    return () => { window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", vis); flush(); };
+  }, []);
   if (jobs === null) return null;
-  const open = jobs.filter(isOpen);
+  const open = jobs.filter((j) => isOpen(j) && j.id !== pending?.job.id);
   const t = today();
   const doneToday = jobs.filter((j) => j.status === "done" && String(j.doneAt || "").slice(0, 10) === t).length;
   const tabs = [
@@ -52,11 +62,26 @@ export function MyJobs({ currentUser, hideEmpty }) {
 
   async function setStatus(j, status) {
     setBusy(true);
-    try {
-      await updateJob(j.id, { status }); setConfirm(null);
-      if (status === "done" && jobs.some((x) => x.id !== j.id && isOpen(x) && okGeo(x.geo))) setHint({ done: j, from: pos || (okGeo(j.geo) ? j.geo : null) });
-      await load();
-    } catch (e) { setErr(e.message); setConfirm(null); } finally { setBusy(false); }
+    try { await updateJob(j.id, { status }); await load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  // «Bajarildi»: darhol ro'yxatdan ketadi, lekin serverga 5 soniyadan keyin yoziladi — shu orada «Bekor qilish»
+  async function commit(p) {
+    if (pendRef.current !== p) return;
+    clearTimeout(p.timer); pendRef.current = null; setPending(null);
+    try { await updateJob(p.job.id, { status: "done" }); } catch (e) { setErr(e.message); }
+    load();
+  }
+  commitRef.current = commit;
+  function markDone(j) {
+    if (pendRef.current) commit(pendRef.current);
+    const p = { job: j, timer: null };
+    p.timer = setTimeout(() => commitRef.current(p), 5000);
+    pendRef.current = p; setPending(p); setOpenId(null);
+    if (jobs.some((x) => x.id !== j.id && isOpen(x) && okGeo(x.geo))) setHint({ done: j, from: pos || (okGeo(j.geo) ? j.geo : null) });
+  }
+  function undo() {
+    const p = pendRef.current; if (!p) return;
+    clearTimeout(p.timer); pendRef.current = null; setPending(null); setHint(null);
   }
   const wd = WD_FULL[weekdayOf(t)];
   const btn = { flex: 1, height: 48, borderRadius: 13, cursor: "pointer", fontFamily: "inherit", fontSize: 15, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, textDecoration: "none" };
@@ -98,19 +123,17 @@ export function MyJobs({ currentUser, hideEmpty }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <KindBadge kind={next.kind} small suffix={next.time || null} />
                     {next.status === "doing" && <span style={{ fontSize: 12, fontWeight: 700, color: THEME.amber }}>● jarayonda</span>}
-                    <div style={{ flex: 1 }} />
-                    <DoneCircle j={next} onDone={() => setConfirm(next)} />
                   </div>
                   <div style={{ fontSize: 18, fontWeight: 800, lineHeight: 1.3, marginTop: 8 }}>{next.title}</div>
                   {(next.address || distOf(next)) && <div style={{ fontSize: 14.5, color: THEME.muted, marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}><MapPin size={15} />{next.address}{distOf(next) && <DistTag d={distOf(next)} near={plan.nearestId === next.id} />}</div>}
                   {next.phone && <div style={{ fontSize: 14.5, color: THEME.muted, marginTop: 4, display: "flex", gap: 6, alignItems: "center" }}><Phone size={15} />{next.order?.customer ? `${next.order.customer} · ` : ""}{next.phone}</div>}
                   {next.checklist?.length > 0 && <div style={{ fontSize: 13, color: THEME.muted, marginTop: 4 }}>☑ {next.checklist.filter((c) => c.done).length}/{next.checklist.length} tekshiruv</div>}
-                  <div style={{ display: "flex", gap: 8, marginTop: 14 }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }} onClick={(e) => e.stopPropagation()}>
                     {(next.address || okGeo(next.geo)) && <a href={okGeo(next.geo) ? yandexRoute(pos, next.geo) : mapsUrl(next.address)} target="_blank" rel="noreferrer" style={{ ...btn, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text }}><Navigation size={17} /> Yo'l</a>}
                     {!next.address && next.phone && <a href={`tel:${next.phone.replace(/[^\d+]/g, "")}`} style={{ ...btn, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text }}><Phone size={17} /> Qo'ng'iroq</a>}
                     {next.status === "new"
                       ? <button type="button" disabled={busy} onClick={() => setStatus(next, "doing")} data-myjob-start={next.id} style={{ ...btn, border: 0, background: k.c, color: "#fff" }}><Play size={17} /> Boshlash</button>
-                      : <button type="button" disabled={busy} onClick={() => setConfirm(next)} data-myjob-finish={next.id} style={{ ...btn, border: 0, background: THEME.greenSolid, color: "#fff" }}><Check size={18} /> Bajarildi</button>}
+                      : <div style={{ flexBasis: "100%", marginTop: 10, display: "flex" }}><SlideToDone key={next.id} jobId={next.id} disabled={busy} onDone={() => markDone(next)} /></div>}
                   </div>
                 </div>
               </>
@@ -118,23 +141,14 @@ export function MyJobs({ currentUser, hideEmpty }) {
           })()}
           {plan?.hint && <div data-testid="day-hint" style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: THEME.amberText || "#B45309", background: THEME.amberBg || "#FFFBEB", borderRadius: 11, padding: "9px 11px" }}><Lightbulb size={15} style={{ flexShrink: 0 }} />{plan.hint.time} gacha vaqt bor — avval {(JOB_KINDS[plan.hint.job.kind] || JOB_KINDS.other).l.toLowerCase()}ga boring</div>}
           {next && rest.length > 0 && <div style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", color: THEME.muted, marginTop: 6 }}>Keyin</div>}
-          {rest.map((j) => <SwipeCard key={j.id} j={j} dist={distOf(j)} near={plan?.nearestId === j.id} onOpen={() => setOpenId(j.id)} onDone={() => setConfirm(j)} />)}
+          {rest.map((j) => <SwipeCard key={j.id} j={j} dist={distOf(j)} near={plan?.nearestId === j.id} onOpen={() => setOpenId(j.id)} onDone={() => markDone(j)} />)}
           <div style={{ fontSize: 12, color: THEME.dim, textAlign: "center", marginTop: 2 }}>Kartani o'ngga suring — «Bajarildi»</div>
         </div>
       )}
-      {opened && <JobDrawer job={opened} canManage={false} isMobile onClose={() => setOpenId(null)} onChanged={(nj) => setJobs((l) => l.map((x) => (x.id === nj.id ? nj : x)))} onDone={(j) => setConfirm(j)}
+      {opened && <JobDrawer job={opened} canManage={false} isMobile onClose={() => setOpenId(null)} onChanged={(nj) => setJobs((l) => l.map((x) => (x.id === nj.id ? nj : x)))} onDone={(j) => markDone(j)} slideDone
         stages={config?.stages || []} customFields={fieldsFor(config, opened.kind)} renderCustom={(f, j, patch) => <CustomValue f={f} j={j} onSave={(c) => patch({ custom: c })} align="right" />} />}
-      {confirm && <ConfirmDialog title="Bajarildimi?" message={`«${confirm.title}» bajarildi deb belgilansinmi?`} confirmLabel="Ha, bajarildi" tone="primary" icon={Check} onCancel={() => setConfirm(null)} onConfirm={() => setStatus(confirm, "done")} />}
+      {pending && <UndoToast key={pending.job.id} title={pending.job.title} onUndo={undo} />}
     </section>
-  );
-}
-
-function DoneCircle({ j, onDone }) {
-  return (
-    <button type="button" onClick={(e) => { e.stopPropagation(); onDone(); }} data-myjob-done={j.id} aria-label="Bajarildi" title="Bajarildi"
-      style={{ width: 34, height: 34, borderRadius: "50%", border: `2px solid ${THEME.border2}`, background: THEME.card, color: THEME.greenText, display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0, padding: 0 }}>
-      <Check size={17} />
-    </button>
   );
 }
 
@@ -169,7 +183,6 @@ function SwipeCard({ j, onOpen, onDone, dist, near }) {
           {(j.address || dist) && <div style={{ fontSize: 13.5, color: THEME.muted, marginTop: 3, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}><MapPin size={13} />{j.address}{dist && <DistTag d={dist} near={near} />}</div>}
           {j.assignees?.length > 1 && <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 2 }}>Brigada: {j.assignees.map((a) => a.name.split(" ")[0]).join(", ")}</div>}
         </div>
-        <DoneCircle j={j} onDone={onDone} />
       </div>
     </div>
   );
