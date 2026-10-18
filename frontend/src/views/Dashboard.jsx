@@ -5,6 +5,7 @@ import { DASHBOARD_GROUPS, DASHBOARD_SIZE_SPANS, DASHBOARD_WIDGET_CATALOG } from
 import { computeFinanceStats, orderDebt } from "../lib/finance.js";
 import { dateLabel, fmt, localDateStr, money, monthKey, monthLabel, todayStr, usd } from "../lib/format.js";
 import { THEME, CHART_COLORS } from "../theme.js";
+import { usePerms } from "../lib/perms.jsx";
 import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardConfig, useDragReorder } from "./dashboard/DashboardEditor.jsx";
 import { CardStyleContext } from "../components/CardStyleMenu.jsx";
 import { WorkStatsContext, scopeByLine, useLine } from "../lib/lines.js";
@@ -25,8 +26,9 @@ function Chart({ kind, ...props }) {
 
 export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses }) {
   // Huquqlar (rahbar beradi): kassa qoldig'i va foyda ko'rinishi
-  const canCash = isAdmin || perm?.cash !== false;
-  const canProfit = isAdmin || perm?.profit !== false;
+  const { can } = usePerms();
+  const canCash = isAdmin || (can("kassa.view") && perm?.cash !== false);
+  const canProfit = isAdmin || (can("report.view") && perm?.profit !== false);
   const { line } = useLine();
   // Rahbar (ikkala yo'nalish) — yo'nalish tugmalari buyurtma VA rasxodni birga ajratadi (umumiy rasxod — ulush bilan)
   const [lineFilter, setLineFilter] = useState("all");
@@ -547,10 +549,10 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         )}
       </div>
 
-      {isAdmin && line === "all" && !editMode && (
+      {can("report.view", "all") && line === "all" && !editMode && (
         <ProfitLoss orders={ordersIn} transactions={expensesIn} month={periodMode === "month" && periodMonth ? periodMonth : todayStr().slice(0, 7)} />
       )}
-      {isAdmin && !editMode && <BigExpenses list={allExpenses || expensesIn} orders={ordersIn} onSeen={onMarkBigSeen} onOpenAll={() => onNavigate?.("expense")} />}
+      {can("expense.big") && !editMode && <BigExpenses list={allExpenses || expensesIn} orders={ordersIn} onSeen={onMarkBigSeen} onOpenAll={() => onNavigate?.("expense")} />}
       <style>{EDITOR_CSS}</style>
       {editMode && (
         <EditToolbar isAdmin={isAdmin} cfg={cfg} onDone={() => setEditMode(false)} onAdd={() => setGalleryOpen(true)} hiddenCount={cfg.editing.layout.filter((w) => !w.visible).length} />

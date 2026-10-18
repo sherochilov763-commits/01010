@@ -210,7 +210,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
               <div role="menu" data-testid="sheet-menu" style={{ position: "absolute", right: 16, bottom: "calc(100% + 8px)", zIndex: 2, minWidth: 220, padding: 6, borderRadius: 14, background: THEME.card, border: `1px solid ${THEME.border}`, boxShadow: THEME.shadowLg }}>
                 {[
                   { k: "invoice", l: "Hisob-faktura", icon: FileText, on: onInvoice },
-                  { k: "edit", l: "Tahrirlash", icon: Pencil, on: onEdit },
+                  ...(onEdit ? [{ k: "edit", l: "Tahrirlash", icon: Pencil, on: onEdit }] : []),
                   onLabel ? { k: "label", l: "QR yorliq chop etish", icon: QrCode, on: onLabel } : null,
                   phoneHref ? { k: "call", l: `Qo'ng'iroq${phone ? ` · ${phone}` : ""}`, icon: Phone, href: phoneHref } : null,
                   canDelete ? { k: "delete", l: "O'chirish", icon: Trash2, on: onDelete, danger: true } : null,
@@ -229,7 +229,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
       <div style={{ padding: "12px 18px", borderTop: `1px solid ${THEME.border}`, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Button onClick={onPayments} style={{ flex: 1 }}>To'lov qabul qilish</Button>
         <Button variant="ghost" onClick={onInvoice} title="Hisob-faktura"><FileText size={14} /> Faktura</Button>
-        <Button variant="ghost" onClick={onEdit} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={14} /></Button>
+        {onEdit && <Button variant="ghost" onClick={onEdit} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={14} /></Button>}
         {canDelete && <Button variant="ghost" onClick={onDelete} title="O'chirish" aria-label="O'chirish"><Trash2 size={14} color={THEME.rose} /></Button>}
       </div>
       )}

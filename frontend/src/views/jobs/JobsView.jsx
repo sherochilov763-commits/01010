@@ -2,6 +2,7 @@
 // Tepada holat kartalari (Kechikkan / Bugun / Ertaga / Sanasiz / Bu hafta bajarildi), tur filtrlari, tezkor qo'shish satri.
 // Ko'rinishlar: Ro'yxat (guruhlangan qatorlar + o'ng panel), Kalendar. Dizayn/pechat vazifalari (buyurtma ichidagi) — faqat ko'rish.
 // MyJobs — ishchi telefoni uchun «Mening kunim» (MyJobs.jsx).
+import { usePerms } from "../../lib/perms.jsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlarmClock, AlignLeft, CalendarDays, Columns3, Check, CheckCircle2, ChevronDown, ChevronRight, Inbox, List as ListIcon, Loader2, Map as MapIcon, MapPin, Navigation, Play, Plus, Settings, Sun, Sunrise, Star, Zap } from "lucide-react";
 import { ConfirmDialog, useIsMobile } from "../../components/ui.jsx";
@@ -52,6 +53,8 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
   const [config, setConfig] = useState({ fields: [], stages: [], defaults: null });
   const [saved, setSaved] = useState(undefined); // undefined — hali yuklanmagan; null — shaxsiy sozlama yo'q
   const [canConfig, setCanConfig] = useState(false);
+  const [srvFlags, setSrvFlags] = useState({ reopen: true, map: true });
+  const { can } = usePerms();
   const [scope, setScope] = useState("me");
   const [showSettings, setShowSettings] = useState(false);
   const [cf, setCf] = useState({}); // o'z ustunlari bo'yicha filtr
@@ -65,13 +68,14 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
       setJobs(r.jobs || []); setTasks(t || []); setCanManage(r.canManage !== false); setErr("");
       if (r.config) setConfig(r.config);
       setCanConfig(!!r.canConfig);
+      setSrvFlags({ reopen: r.canReopen !== false, map: r.canMap !== false });
       setSaved((v) => { if (v === undefined) { if (r.prefs?.mine || (!r.prefs && r.config?.defaults?.mine)) setMine(true); return r.prefs || null; } return v; });
     } catch (e) { setErr(e.message); setJobs((x) => x || []); }
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, [load]);
 
   const prefs = useMemo(() => resolvePrefs(scope === "all" ? config.defaults : saved, config), [saved, config, scope]);
-  const views = prefs.views.filter((v) => v.on).map((v) => MODES.find((m) => m[0] === v.k)).filter(Boolean);
+  const views = prefs.views.filter((v) => v.on && (v.k !== "map" || srvFlags.map)).map((v) => MODES.find((m) => m[0] === v.k)).filter(Boolean);
   const curMode = views.some((v) => v[0] === mode) ? mode : views[0]?.[0] || "list";
   function setPrefs(next) {
     if (scope === "all") setConfig((c) => ({ ...c, defaults: next })); else setSaved(next);
@@ -247,7 +251,7 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
       ) : curMode === "brigade" ? (
         <Brigade list={list} employees={employees} isMobile={isMobile} canManage={canManage} onOpen={(j) => !j.ro && setOpenId(j.id)} onPatch={patchJob} onPlan={plan} />
       ) : curMode === "map" ? (
-        <JobsMap list={list} employees={people} isMobile={isMobile} canWatch={["admin", "manager"].includes(currentUser?.role)} isAdmin={currentUser?.role === "admin"} onOpen={(j) => !j.ro && setOpenId(j.id)} onPatch={patchJob} onPlan={(j) => setEdit(j)} />
+        <JobsMap list={list} employees={people} isMobile={isMobile} canWatch={can("geo.view")} isAdmin={can("geo.config")} onOpen={(j) => !j.ro && setOpenId(j.id)} onPatch={patchJob} onPlan={(j) => setEdit(j)} />
       ) : curMode === "calendar" ? (
         <WeekCalendar list={list} week={week} setWeek={setWeek} isMobile={isMobile} onOpen={(j) => setOpenId(j.id)} showLine={showLine} />
       ) : visibleGroups.length === 0 ? (
@@ -290,7 +294,7 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
       )}
 
       {opened && (
-        <JobDrawer job={opened} canManage={canManage} isMobile={isMobile} onClose={() => setOpenId(null)}
+        <JobDrawer job={opened} canManage={canManage} canReopen={srvFlags.reopen} isMobile={isMobile} onClose={() => setOpenId(null)}
           onChanged={(nj) => setJobs((l) => (l || []).map((x) => (x.id === nj.id ? nj : x)))}
           onEdit={(j) => setEdit(j)} onDone={(j) => setConfirm(j)} stages={config.stages || []}
           customFields={fieldsFor(config, opened.kind)} renderCustom={(f, j, patch) => <CustomValue f={f} j={j} employees={people} onSave={(c) => patch({ custom: c })} align="right" />} />

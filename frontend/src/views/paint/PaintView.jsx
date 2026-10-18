@@ -1,4 +1,5 @@
 // PaintView.jsx — Bo'yoq ombori: qoldiq va prognoz, haftalik sanash, oylik kunma-kun hisobot, sozlamalar.
+import { usePerms } from "../../lib/perms.jsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Download, Info, Plus, RefreshCw, Send, Trash2, TrendingDown } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
@@ -43,7 +44,9 @@ function Tabs({ tabs, tab, setTab }) {
   );
 }
 
-export function PaintView({ currentUser, isAdmin, orders, categories, onAddCategory, onAddSubcategory, onSaveTx }) {
+export function PaintView({ currentUser, isAdmin: isAdminProp, orders, categories, onAddCategory, onAddSubcategory, onSaveTx }) {
+  const { can } = usePerms();
+  const isAdmin = isAdminProp || can("paint.edit"); // bo'yoq: kirim, chiqim, sanoq, sozlash
   const [tab, setTab] = useState(() => takeOpenTab("paint", ["stock","month","counts", ...(isAdmin ? ["settings"] : [])]) || "stock");
   const [state, setState] = useState(null);
   const [err, setErr] = useState("");

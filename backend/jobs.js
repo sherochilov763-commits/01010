@@ -88,12 +88,24 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
     return out;
   }
 
+  // Rollar va huquqlar (req.perms) — bo'lmasa eski qoidalar (rahbar / katta menejer / ishchi)
+  const P = (user) => user?.perms || null;
+  const permOk = (user, k, need) => { const p = P(user); if (!p) return null; const v = p[k]; if (typeof v === "boolean") return v; if (!need) return v !== "none"; const R = { none: 0, own: 1, line: 2, all: 3 }; return (R[v] || 0) >= (R[need] || 0); };
   function canSee(user, scope, j) {
     if ((j.assigneeIds || []).includes(user.id)) return true;
+    const v = P(user)?.["jobs.view"];
+    if (v) {
+      if (v === "none" || v === "own") return false;
+      if (v === "all") return true;
+      // «Yo'nalishi»: xodimning yo'nalishi (yo'nalishi yozilmagan bo'lsa — server aniqlagan asosiy yo'nalish)
+      const ln = user.line && user.line !== "common" ? user.line : user.line === "common" ? null : scope;
+      return !ln || j.line === ln;
+    }
     if (isWorker(user)) return false;
     return !scope || j.line === scope;
   }
-  const isStaffManager = (user) => !isWorker(user);
+  const isStaffManager = (user) => { const r = permOk(user, "jobs.manage"); return r === null ? !isWorker(user) : r; };
+  const canConfig = (user) => { const r = permOk(user, "jobs.config"); return r === null ? ["admin", "manager"].includes(user.role) : r; };
   function publicJob(j, emps, orders) {
     const o = j.orderId ? orders.find((x) => x && x.id === j.orderId) : null;
     return {
@@ -202,7 +214,7 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
   // ---------- API ----------
   // Sozlama: o'z ustunlari va doska holatlari (rahbar / katta menejer), «Hamma uchun» ko'rinish
   app.put("/api/jobs/config", requireAuth, (req, res) => {
-    if (!["admin", "manager"].includes(req.user.role)) return res.status(403).json({ error: "forbidden", message: "Ustunlarni rahbar yoki katta menejer sozlaydi" });
+    if (!canConfig(req.user)) return res.status(403).json({ error: "forbidden", message: "Ustunlarni rahbar yoki katta menejer sozlaydi" });
     const prev = config(); const b = req.body || {};
     const next = {
       fields: b.fields !== undefined ? cleanFields(b.fields, prev.fields) : prev.fields,
@@ -224,7 +236,7 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
     const orders = read("uvix:orders", []);
     const list = jobs().filter((j) => canSee(req.user, req.lineScope, j)).map((j) => publicJob(j, emps, orders));
     const prefs = read(PREFS, {})?.[req.user.id] || null;
-    res.json({ jobs: list, canManage: isStaffManager(req.user), config: config(), prefs, canConfig: req.user.role === "admin" || req.user.role === "manager" });
+    res.json({ jobs: list, canManage: isStaffManager(req.user), config: config(), prefs, canConfig: canConfig(req.user), canReopen: permOk(req.user, "jobs.reopen") ?? isStaffManager(req.user), canMap: permOk(req.user, "jobs.map") ?? isStaffManager(req.user) });
   });
 
   app.post("/api/jobs", requireAuth, (req, res) => {
@@ -286,6 +298,9 @@ module.exports = function registerJobs(app, { getStmt, upsertStmt, readEmployees
       let order = null;
       if (b.status && STATUSES.includes(b.status) && b.status !== j.status) {
         if (b.status === "cancelled" && !isStaffManager(req.user)) return res.status(403).json({ error: "forbidden", message: "Bekor qilishni menejer qiladi" });
+        // Yakunlash: «o'ziniki» — faqat o'ziga biriktirilgan; qayta ochish — alohida huquq
+        if (b.status === "done") { const d = P(req.user)?.["jobs.done"]; if (d === "none" || (d === "own" && !(j.assigneeIds || []).includes(req.user.id))) return res.status(403).json({ error: "forbidden", message: "Bu vazifani yakunlash uchun ruxsat yo'q" }); }
+        if (j.status === "done" && permOk(req.user, "jobs.reopen") === false) return res.status(403).json({ error: "forbidden", message: "Yakunlangan vazifani qayta ochish uchun ruxsat yo'q" });
         j.status = b.status;
         if (b.status !== "doing") delete j.stage;
         logIt(j, req.user.name, `«${STATUS_L[b.status]}»`, at);

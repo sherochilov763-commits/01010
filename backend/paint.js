@@ -247,7 +247,7 @@ module.exports = function registerPaint(app, { getStmt, upsertStmt, requireAuth,
     const ym = /^\d{4}-\d{2}$/.test(String(req.query.ym || "")) ? req.query.ym : today().slice(0, 7);
     res.json(month(ym));
   });
-  app.post("/api/paint/count", requireAuth, (req, res) => {
+  app.post("/api/paint/count", requireAuth, requireAdmin, (req, res) => {
     if (!staffOnly(req, res)) return;
     const { values = {}, note = "" } = req.body || {};
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.date || "")) ? req.body.date : today();

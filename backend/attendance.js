@@ -66,7 +66,7 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false, bio = null, onConfigChanged = () => {}, onChecked = () => {} }) {
+module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireView = null, requireManage = null, sendTelegram, nowFn = () => new Date(), photoStore = null, notifyEmployee = async () => false, bio = null, onConfigChanged = () => {}, onChecked = () => {} }) {
   // Selfilar saqlash joyi tashqaridan beriladi (serverda — disk, demo'da — brauzer xotirasi):
   //   photoStore.save(empId, date, base64) -> { id } | { error }
   //   photoStore.send(res, id)              -> rasmni javob sifatida yuboradi
@@ -392,8 +392,9 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
   });
 
   // ---- Admin ----
-  app.get("/api/attendance/config", requireAuth, requireAdmin, (req, res) => res.json({ config: config() }));
-  app.put("/api/attendance/config", requireAuth, requireAdmin, (req, res) => {
+  const canView = requireView || requireAdmin, canManage = requireManage || requireAdmin;
+  app.get("/api/attendance/config", requireAuth, canView, (req, res) => res.json({ config: config() }));
+  app.put("/api/attendance/config", requireAuth, canManage, (req, res) => {
     const b = req.body?.config || {};
     const hm = (v, d) => (/^\d{2}:\d{2}$/.test(v || "") ? v : d);
     const days = (arr) => (Array.isArray(arr) ? [...new Set(arr.map(Number).filter((n) => n >= 0 && n <= 6))].sort() : undefined);
@@ -433,16 +434,22 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     res.json({ config: next });
   });
 
-  app.get("/api/attendance/report", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/attendance/report", requireAuth, canView, (req, res) => {
     const re = /^\d{4}-\d{2}-\d{2}$/;
     const { from, to } = req.query;
     if (!re.test(from || "") || !re.test(to || "") || from > to) return res.status(400).json({ error: "bad_range" });
     if (dateRange(from, to).length > 400) return res.status(400).json({ error: "range_too_long" });
-    res.json(report(from, to));
+    const r = report(from, to);
+    // «O'z yo'nalishi» — faqat shu yo'nalish va «Umumiy» xodimlar
+    if (req.perms && req.perms["att.view"] === "line" && req.user.line && req.user.line !== "common") {
+      const lineOf = new Map(readEmployees().map((e) => [e.id, e.line || "UVIXPRINT"]));
+      r.rows = r.rows.filter((x) => [req.user.line, "common"].includes(lineOf.get(x.employee.id)));
+    }
+    res.json(r);
   });
 
   // Qo'lda to'g'rilash (telefoni o'chib qolgan va h.k.) — sababi bilan, kim o'zgartirgani yoziladi
-  app.post("/api/attendance/manual", requireAuth, requireAdmin, (req, res) => {
+  app.post("/api/attendance/manual", requireAuth, canManage, (req, res) => {
     const { employeeId, date, in: inHm, out: outHm, reason } = req.body || {};
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return res.status(400).json({ error: "bad_date" });
     if (!readEmployees().some((e) => e.id === employeeId)) return res.status(404).json({ error: "no_employee" });
@@ -467,14 +474,14 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
   });
 
   // Selfi (faqat admin)
-  app.get("/api/attendance/photo/:month/:file", requireAuth, requireAdmin, (req, res) => {
+  app.get("/api/attendance/photo/:month/:file", requireAuth, canView, (req, res) => {
     const { month, file } = req.params;
     if (!photoStore || !/^\d{4}-\d{2}$/.test(month) || !/^[a-zA-Z0-9_-]+_\d{4}-\d{2}-\d{2}_in\.jpg$/.test(file)) return res.status(400).end();
     photoStore.send(res, `${month}/${file}`);
   });
 
   // Hisobotni hozir ko'rish / yuborish (sinash uchun)
-  app.post("/api/attendance/send-report", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/attendance/send-report", requireAuth, canManage, async (req, res) => {
     const type = req.body?.type;
     const today = local(nowFn()).date;
     let text = null;

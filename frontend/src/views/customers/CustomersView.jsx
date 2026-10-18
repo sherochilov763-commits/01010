@@ -1,3 +1,4 @@
+import { usePerms } from "../../lib/perms.jsx";
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
 // CustomersView.jsx — Mijozlar bazasi (buyurtmalar va lidlardan avtomatik) va Qarzdorlar ro'yxati.
 import { useEffect, useMemo, useState } from "react";
@@ -48,11 +49,13 @@ function ContactButtons({ c, onOpenChat }) {
 export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, transactions, employees, onSaveCustomer, onAddPayment, onDeletePayment, onOpenChat, onOpenOrders }) {
   const today = todayStr();
   // Mas'ul menejer: operator boshqa menejerga biriktirilgan mijozni ko'rmaydi; rahbar va katta menejer — hammasini
-  const canAssign = isAdmin || currentUser?.role === "manager";
+  const { can } = usePerms();
+  const canAssign = isAdmin || can("customers.assign");
+  const canMsg = isAdmin || can("custmsg.config");
   const all = useMemo(() => buildCustomers(orders, leads, profiles, today).filter((c) => canAssign || !c.managerId || c.managerId === currentUser?.id), [orders, leads, profiles, today, canAssign, currentUser?.id]);
   const empName = (id) => (employees || []).find((e) => e.id === id)?.name || "";
   const debtors = useMemo(() => all.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt), [all]);
-  const [tab, setTab] = useState(() => takeOpenTab("customers", ["list","debt", ...(isAdmin ? ["msg"] : [])]) || "list");
+  const [tab, setTab] = useState(() => takeOpenTab("customers", ["list","debt", ...(canMsg ? ["msg"] : [])]) || "list");
   const [openId, setOpenId] = useState(null);
   const [edit, setEdit] = useState(null); // customer | {} (yangi)
   const [payFor, setPayFor] = useState(null);
@@ -71,13 +74,13 @@ export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, t
         <Kpi label="Jami qarz" value={moneyCompact(totalDebt)} icon={Wallet} color={THEME.rose} onClick={() => setTab("debt")} />
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <Tabs tabs={[["list", "Mijozlar"], ["debt", `Qarzdorlar${debtors.length ? ` (${debtors.length})` : ""}`], ...(isAdmin ? [["msg", "Xabarlar"]] : [])]} tab={tab} setTab={setTab} />
+        <Tabs tabs={[["list", "Mijozlar"], ["debt", `Qarzdorlar${debtors.length ? ` (${debtors.length})` : ""}`], ...(canMsg ? [["msg", "Xabarlar"]] : [])]} tab={tab} setTab={setTab} />
         <div style={{ flex: 1 }} />
         <Button onClick={() => setEdit({})} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={15} /> Mijoz</Button>
       </div>
       {tab === "list" && <ListTab all={all} me={currentUser?.id} empName={empName} onOpen={(c) => setOpenId(c.id)} onOpenChat={onOpenChat} />}
-      {tab === "debt" && <DebtTab debtors={debtors} totalDebt={totalDebt} isAdmin={isAdmin} onOpen={(c) => setOpenId(c.id)} onPay={setPayFor} onInvoice={(order, customer) => setInvoiceFor({ order, customer })} onOpenChat={onOpenChat} />}
-      {tab === "msg" && isAdmin && <MessagesTab />}
+      {tab === "debt" && <DebtTab debtors={debtors} totalDebt={totalDebt} isAdmin={canMsg} onOpen={(c) => setOpenId(c.id)} onPay={setPayFor} onInvoice={(order, customer) => setInvoiceFor({ order, customer })} onOpenChat={onOpenChat} />}
+      {tab === "msg" && canMsg && <MessagesTab />}
       {invoiceFor && <InvoiceModal order={invoiceFor.order} customer={invoiceFor.customer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}
       {open && <CustomerCard c={open} managerName={empName(open.managerId)} onClose={() => setOpenId(null)} onEdit={() => setEdit(open)} onPay={setPayFor} onInvoice={(order) => setInvoiceFor({ order, customer: open })} onOpenChat={onOpenChat} onOpenOrders={onOpenOrders} />}
       {edit && <EditCustomer c={edit.id ? edit : null} all={all} managers={canAssign ? (employees || []).filter((e) => ["admin", "manager", "operator"].includes(e.role)) : null} onClose={() => setEdit(null)}

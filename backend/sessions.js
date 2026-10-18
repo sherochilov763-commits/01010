@@ -55,7 +55,7 @@ module.exports = function registerSessions(app, { getStmt, upsertStmt, readEmplo
   app.get("/api/auth/me", requireAuth, (req, res) => {
     const e = readEmployees().find((x) => x.id === req.user.id);
     if (!e) return res.status(401).json({ error: "invalid_token" });
-    res.json({ employee: { id: e.id, name: e.name, role: e.role, line: e.line || null }, ...(e.mustChangePin ? { mustChangePin: true } : {}), exp: req.auth?.exp || null });
+    res.json({ employee: { id: e.id, name: e.name, role: e.role, line: e.line || null }, ...(e.mustChangePin ? { mustChangePin: true } : {}), exp: req.auth?.exp || null, ...(req.viewAs ? { viewAs: req.viewAs } : {}) });
   });
 
   app.post("/api/auth/logout", requireAuth, (req, res) => {

@@ -1075,3 +1075,11 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Server: `backend/geo.js` — `/api/geo/me|consent|ping|config|live|trail|resolve-link`. Joy faqat: kuzatuv yoqilgan + rozilik bor + ish vaqti (`attendance.onShift`: bugun «Keldim» bor, «Ketdim» yo'q). Telegram jonli joylashuv — `telegram-bot.js` (`edited_message`). Saqlash: `uvix:geoLast`, `uvix:geo:YYYY-MM-DD` (20 s / 15 m dan siyrak), 30 kundan keyin o'chadi; KV orqali yopiq.
 - Cheklov: brauzer telefon qulflanganda joy yubormaydi — uzluksiz kuzatuv uchun Telegram «jonli joylashuv» (8 soat).
 - Testlar: `tests/e2e/test_geo.py`, `tests/unit/geo.test.mjs`.
+
+## 🔐 Rollar va huquqlar (2026-10)
+- Ro'yxat: `backend/permissions.js` (48 ta huquq: kalit, guruh, tur, har rol uchun andoza). Brauzer nusxasi — `frontend/src/lib/permissions.js` (o'zgartirgach qayta yarating: `sed -e 's/^module.exports = { \(.*\) };$/export { \1 };/' backend/permissions.js > frontend/src/lib/permissions.js`; unit test bir xilligini tekshiradi).
+- Turlar: `scope` (none / own / line / all), `bool`, `req` (yes / req — «So'rov», rahbar tasdiqlaydi / no), `limit` (so'm, -1 — cheksiz). Qulflangan (faqat rahbar): `sys.integrations`, `sys.backup`, `sys.trash`, `sys.journal`, `sys.roles`.
+- Hisoblash: andoza → `uvix:roles[role]` (faqat farqlar) → `employee.permOver` (xodimga istisno; eski `employee.perm` avtomatik o'giriladi). Rahbar — doim hammasi.
+- Server: `requireAuth` → `req.perms`, `req.can(key, need)`, `req.scopeFor(kvKey)`; `requirePerm(key)`; `/api/me/perms`, `/api/roles` (GET/PUT, rahbar), `/api/auth/view-as` («bo'lib ko'rish»: 1 soatlik faqat-o'qish tokeni, yozish — 403).
+- Frontend: `lib/perms.jsx` (`usePerms().can(...)`, menyu — `NAV_PERM`), `views/settings/RolesSection.jsx` (sozlama, `EmpOverrides`), `components/ViewAsBanner.jsx`.
+- Testlar: `tests/e2e/test_perms.py`, `test_roles.py`, `tests/unit/permissions.test.mjs`.

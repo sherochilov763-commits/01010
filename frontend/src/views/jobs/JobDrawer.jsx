@@ -12,7 +12,7 @@ import { hm2min, isLate, isOpen, mapsUrl, min2hm, whenText } from "./jobsLib.js"
 
 const fmtAt = (s) => { if (!s) return ""; const d = new Date(s); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${d.toTimeString().slice(0, 5)}`; };
 
-export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit, onDone, customFields = [], renderCustom, stages = [], slideDone = false }) {
+export function JobDrawer({ job, canManage, canReopen = canManage, isMobile, onClose, onChanged, onEdit, onDone, customFields = [], renderCustom, stages = [], slideDone = false }) {
   const [j, setJ] = useState(job);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -155,7 +155,7 @@ export function JobDrawer({ job, canManage, isMobile, onClose, onChanged, onEdit
             ? <div style={{ flexBasis: "100%", display: "flex" }}><SlideToDone testid="drawer-slide" jobId={j.id} disabled={busy} onDone={() => onDone?.(j)} /></div>
             : <button type="button" disabled={busy} onClick={() => onDone?.(j)} style={footBtn(true)} data-testid="drawer-done"><Check size={17} /> Bajarildi</button>)}
         {/* Xato yakunlangan ish — rahbar/menejer qayta ochadi (tarixda yoziladi) */}
-        {canManage && j.status === "done" && <button type="button" disabled={busy} onClick={() => patch({ status: "doing" })} style={{ ...footBtn(true), background: THEME.amberSolid || "#B45309" }} data-testid="drawer-reopen"><RotateCcw size={16} /> Qayta ochish</button>}
+        {canReopen && j.status === "done" && <button type="button" disabled={busy} onClick={() => patch({ status: "doing" })} style={{ ...footBtn(true), background: THEME.amberSolid || "#B45309" }} data-testid="drawer-reopen"><RotateCcw size={16} /> Qayta ochish</button>}
       </div>
     </div>
   );

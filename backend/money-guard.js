@@ -11,6 +11,7 @@
 // Ichki kalit: uvix:approvals — tasdiqlash so'rovlari.
 // Diqqat: bu faylda fs ishlatilmaydi (demo nusxasi uchun ESM'ga o'giriladi).
 
+const permsLib = require("./permissions");
 const KEY_APPROVALS = "uvix:approvals";
 const KEY_AUDIT = "uvix:audit";
 const AUDIT_MAX = 500;
@@ -46,6 +47,13 @@ function cleanNewPayment(p, user, now) {
 function guardOrders(next, old, user, nowIso = new Date().toISOString()) {
   if (!Array.isArray(next)) return { list: next, violations: [] };
   const admin = user?.role === "admin";
+  // Rollar va huquqlar: rahbar bergan ruxsatlar (yo'q bo'lsa — eski qoidalar: hammasi so'rov bilan)
+  const P = user?.perms || null;
+  const has = (k, need) => (P ? permsLib.can(P, k, need) : false);
+  const f = {
+    create: P ? has("orders.create") : true, edit: P ? P["orders.edit"] : "all", del: has("orders.delete", "direct"),
+    price: has("orders.price"), payAdd: P ? has("payments.add") : true, payEdit: has("payments.edit", "direct"),
+  };
   const byId = new Map((Array.isArray(old) ? old : []).filter(Boolean).map((o) => [o.id, o]));
   const violations = [];
   const seen = new Set();
@@ -53,8 +61,12 @@ function guardOrders(next, old, user, nowIso = new Date().toISOString()) {
     if (!o || typeof o !== "object") return o;
     seen.add(o.id);
     const db = byId.get(o.id);
-    return admin ? stampAdmin(o, db, user, nowIso) : db ? guardExisting(o, db, user, nowIso, violations) : cleanNewOrder(o, user, nowIso, violations);
-  });
+    if (admin) return stampAdmin(o, db, user, nowIso);
+    if (!db) return f.create ? cleanNewOrder(o, user, nowIso, violations, f) : null;
+    // Tahrirlash huquqi yo'q (yoki «o'ziniki» — boshqaning buyurtmasi) — serverdagi holati qoladi
+    if (f.edit === "none" || (f.edit === "own" && db.createdBy && db.createdBy !== user.name)) return db;
+    return guardExisting(o, db, user, nowIso, violations, f);
+  }).filter((o) => o !== null);
   // Operator yuborgan ro'yxatda yo'q (olib tashlangan) buyurtmalar — serverdagi holatida qoladi
   if (!admin) for (const db of byId.values()) if (!seen.has(db.id)) list.push(db);
   return { list, violations };
@@ -79,10 +91,11 @@ function stampAdmin(o, db, user, now) {
   return out;
 }
 
-function cleanNewOrder(o, user, now, violations) {
+function cleanNewOrder(o, user, now, violations, f = {}) {
   const out = { ...o };
   delete out.deletedAt; delete out.deletedBy; delete out.purgedPaymentIds;
-  if (Array.isArray(o.payments)) {
+  if (f.payAdd === false) out.payments = [];
+  else if (Array.isArray(o.payments)) {
     out.payments = [];
     for (const p of o.payments) {
       const c = cleanNewPayment(p, user, now);
@@ -92,10 +105,12 @@ function cleanNewOrder(o, user, now, violations) {
   return out;
 }
 
-function guardExisting(o, db, user, now, violations) {
+function guardExisting(o, db, user, now, violations, f = {}) {
   const out = { ...o };
   // Buyurtmani o'chirish / tiklash
-  if (!db.deletedAt && o.deletedAt) {
+  if (!db.deletedAt && o.deletedAt && f.del) {
+    out.deletedAt = o.deletedAt; out.deletedBy = user.name; // huquq bor — so'rovsiz
+  } else if (!db.deletedAt && o.deletedAt) {
     if (o.deletedBy === user.name) violations.push({ kind: "order_delete", order: db });
     delete out.deletedAt; delete out.deletedBy;
     if (db.deletedBy) out.deletedBy = db.deletedBy;
@@ -104,7 +119,8 @@ function guardExisting(o, db, user, now, violations) {
   }
   // Summa: oshirish mumkin, kamaytirish — faqat tasdiq bilan
   const inc = Number(o.agreementUzs) || 0, cur = Number(db.agreementUzs) || 0;
-  if (inc < cur) {
+  if (inc < cur && f.price) out.totalAt = now; // narxni o'zgartirish huquqi bor
+  else if (inc < cur) {
     if ((o.totalAt || "") === (db.totalAt || "")) violations.push({ kind: "order_total", order: db, from: cur, to: inc });
     out.agreementUzs = db.agreementUzs; out.agreementUsd = db.agreementUsd;
     if (db.totalAt) out.totalAt = db.totalAt; else delete out.totalAt;
@@ -118,12 +134,13 @@ function guardExisting(o, db, user, now, violations) {
   const pays = dbPays.map((p) => {
     const ip = incMap.get(p.id);
     if (!ip) return p; // eskirgan nusxada yo'q — saqlab qolamiz
+    if (f.payEdit && !sameMoney(ip, p) && (ip.editedAt || "") === (p.editedAt || "")) return { ...ip, editedAt: now, editedBy: user.name, ...(ip.deletedAt ? { deletedBy: user.name } : {}) };
     if (sameMoney(ip, p)) return ip.comment !== undefined && ip.comment !== p.comment ? { ...p, comment: String(ip.comment).slice(0, 300) } : p;
     if ((ip.editedAt || "") === (p.editedAt || "")) violations.push({ kind: ip.deletedAt && !p.deletedAt ? "payment_delete" : "payment_edit", order: db, payment: p, to: ip });
     return p;
   });
   for (const ip of incPays) {
-    if (dbIds.has(ip.id)) continue;
+    if (dbIds.has(ip.id) || f.payAdd === false) continue;
     const c = cleanNewPayment(ip, user, now);
     if (c) pays.push(c); else violations.push({ kind: "payment_invalid", order: db, payment: ip });
   }
@@ -165,7 +182,7 @@ function describeRequest(r) {
   return `buyurtma summasini kamaytirmoqchi: ${money(r.old.agreementUzs)} → ${money(r.new.agreementUzs)}`;
 }
 
-module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, sendToEmployee = async () => false, emit = () => null, now = () => new Date() }) {
+module.exports = function registerMoneyGuard(app, { rolesCfg = () => ({}), getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, sendToEmployee = async () => false, emit = () => null, now = () => new Date() }) {
   const read = (k, def) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : def; } catch { return def; } };
   const write = (k, v) => upsertStmt.run(k, JSON.stringify(v));
   const adminIds = () => readEmployees().filter((e) => e.role === "admin").map((e) => e.id);
@@ -196,15 +213,18 @@ module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmp
   function canDecide(user, r) {
     if (!user || r.status !== "pending") return false;
     if (user.role === "admin") return true;
-    if (user.role !== "manager" || r.by?.id === user.id) return false;
+    if (r.by?.id === user.id) return false;
     const me = readEmployees().find((e) => e.id === user.id);
-    const limit = Math.max(0, Number(me?.perm?.approveLimit) || 0);
+    const eff = permsLib.resolve(me || user, rolesCfg());
+    const lim = eff["approve.limit"];
+    if (!(lim === -1 || lim > 0)) return false;
+    const limit = lim === -1 ? Infinity : lim;
     const scope = me?.line === "UVONYX" ? "UVONYX" : me?.line === "common" ? null : "UVIXPRINT";
     if (scope && lineOfOrderId(r.orderId) !== scope) return false;
     return requestAmount(r) <= limit;
   }
-  const visibleTo = (user, r) => user.role === "admin" || r.by?.id === user.id || (user.role === "manager" && (canDecide(user, r) || r.decidedBy === user.name));
-  const managersFor = (r) => readEmployees().filter((e) => e.role === "manager" && e.id !== r.by?.id && canDecide({ id: e.id, role: "manager", name: e.name }, r)).map((e) => e.id);
+  const visibleTo = (user, r) => user.role === "admin" || r.by?.id === user.id || canDecide(user, r) || r.decidedBy === user.name;
+  const managersFor = (r) => readEmployees().filter((e) => e.role !== "admin" && e.id !== r.by?.id && canDecide({ id: e.id, role: e.role, name: e.name }, r)).map((e) => e.id);
   const save = (list) => write(KEY_APPROVALS, list.slice(0, 300));
   const pending = (list) => list.filter((r) => r.status === "pending");
 
@@ -217,6 +237,9 @@ module.exports = function registerMoneyGuard(app, { getStmt, upsertStmt, readEmp
   app.post("/api/approvals", requireAuth, requireStaff, (req, res) => {
     const b = req.body || {};
     if (!KINDS.includes(b.kind)) return res.status(400).json({ error: "invalid_kind" });
+    // «Yo'q» huquqi — so'rov ham yuborilmaydi
+    const pk = b.kind === "order_delete" ? "orders.delete" : b.kind === "order_total" ? null : "payments.edit";
+    if (pk && req.user.perms && req.user.perms[pk] === "no") return res.status(403).json({ error: "forbidden", message: "Bu amal uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi" });
     const reason = String(b.reason || "").trim().slice(0, 300);
     if (reason.length < 3) return res.status(400).json({ error: "reason_required", message: "Sababni yozing" });
     const orders = read("uvix:orders", []);

@@ -705,3 +705,22 @@ export async function fetchWorkStats() {
   const data = await res.json().catch(() => ({}));
   return data.stats || null;
 }
+// ---- Rollar va huquqlar ----
+export const fetchMyPerms = () => apiReq("/me/perms");
+export const fetchRoles = () => apiReq("/roles");
+export const saveRolePerms = (role, perms) => apiReq("/roles", "PUT", { role, perms }).then((d) => d.roles);
+// «Rol bo'lib ko'rish»: rahbar tokeni chetga olinadi, 1 soatlik «faqat ko'rish» tokeni qo'yiladi; «Chiqish» — qaytaradi
+const VIEW_BACK = "uvix_viewas_back";
+export async function startViewAs(target) {
+  const d = await apiReq("/auth/view-as", "POST", target);
+  try { localStorage.setItem(VIEW_BACK, getToken()); } catch { /* */ }
+  setToken(d.token);
+  return d;
+}
+export function exitViewAs() {
+  let back = null;
+  try { back = localStorage.getItem(VIEW_BACK); localStorage.removeItem(VIEW_BACK); } catch { /* */ }
+  if (back) setToken(back);
+  return !!back;
+}
+export const viewAsActive = () => { try { return !!localStorage.getItem(VIEW_BACK); } catch { return false; } };

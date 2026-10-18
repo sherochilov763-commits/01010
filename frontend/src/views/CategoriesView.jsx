@@ -1,3 +1,4 @@
+import { usePerms } from "../lib/perms.jsx";
 import { useMemo, useState } from "react";
 import { ChevronDown, FolderTree, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, getIconBtn, getInputStyle } from "../components/ui.jsx";
@@ -5,7 +6,11 @@ import { fmt, money, monthKey, todayStr } from "../lib/format.js";
 import { THEME } from "../theme.js";
 
 /* ---------------- KATEGORIYALAR ---------------- */
-export function CategoriesView({ transactions, categories, isAdmin, onAddCategory, onAddSubcategory, onRenameCategory, onDeleteCategory, onDeleteSubcategory, settings, onSaveSettings }) {
+export function CategoriesView({ transactions, categories, isAdmin: isAdminProp, onAddCategory, onAddSubcategory, onRenameCategory, onDeleteCategory, onDeleteSubcategory, settings, onSaveSettings }) {
+  // Rollar va huquqlar: kategoriyalarni boshqarish / yirik rasxod chegarasi
+  const { can } = usePerms();
+  const isAdmin = isAdminProp || can("categories.manage");
+  const canBig = isAdminProp || can("expense.big");
   // Rahbar: yirik rasxod chegarasi va kategoriyaning standart yo'nalishi (hech narsani cheklamaydi)
   const catLines = settings?.categoryLines || {};
   const setCatLine = (cat, v) => { const next = { ...catLines }; if (v) next[cat] = v; else delete next[cat]; onSaveSettings?.({ ...settings, categoryLines: next }); };
@@ -55,7 +60,7 @@ export function CategoriesView({ transactions, categories, isAdmin, onAddCategor
 
   return (
     <div>
-      {isAdmin && onSaveSettings && <BigLimitCard settings={settings} onSave={onSaveSettings} />}
+      {canBig && onSaveSettings && <BigLimitCard settings={settings} onSave={onSaveSettings} />}
       {isAdmin && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
           <Button onClick={() => setNewCatOpen((v) => !v)}><Plus size={14} /> Yangi kategoriya</Button>

@@ -261,6 +261,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
   // ---------- Buyurtmaga aylantirish ----------
   app.post("/api/quotes/convert", requireAuth, requireStaff, (req, res) => send(res, () => {
     const b = req.body || {};
+    if (req.can && (!req.can("crm.edit") || !req.can("orders.create"))) { const e = new Bad("Buyurtma yaratish uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi"); e.status = 403; throw e; }
     const cfg = salesConfig();
     if (!Array.isArray(b.items) || !b.items.length) throw new Bad("Smetaga kamida bitta pozitsiya qo'shing");
     if (b.items.length > 30) throw new Bad("Bitta smetada ko'pi bilan 30 ta pozitsiya");

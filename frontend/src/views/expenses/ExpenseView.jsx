@@ -1,3 +1,4 @@
+import { usePerms } from "../../lib/perms.jsx";
 import { useMemo, useState, useEffect } from "react";
 import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Pagination, getIconBtn, usePagination, useIsMobile, MobileRow } from "../../components/ui.jsx";
@@ -11,6 +12,9 @@ import { LineTag } from "../../components/LineSwitcher.jsx";
 
 /* ---------------- EXPENSE VIEW ---------------- */
 export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, orders, employees, currentUser, categories, onAddCategory, onAddSubcategory, onSave, onDelete }) {
+  // Rollar va huquqlar: kiritish va tahrirlash/o'chirish (o'ziniki / yo'nalishi / hammasi)
+  const { can, scope } = usePerms();
+  const canEditTx = (t) => currentUser?.role === "admin" || (scope("expense.edit") !== "none" && (scope("expense.edit") !== "own" || t.createdBy === currentUser?.name));
   const isMobile = useIsMobile();
   const [modal, setModal] = useState(null);
   // Pastki menyudagi "+" tugmasidan kelinganda — formani darhol ochamiz
@@ -71,7 +75,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
           </button>
         )}
         <Button variant="ghost" onClick={exportExcel} disabled={list.length === 0}><Download size={14} /> Excel</Button>
-        <Button onClick={() => setModal({})}><Plus size={15} /> Yangi rasxod</Button>
+        {can("expense.add") && <Button onClick={() => setModal({})}><Plus size={15} /> Yangi rasxod</Button>}
       </div>
       <Card style={{ padding: 0, overflowX: "auto" }} className="uvix-scroll">
         {list.length === 0 ? <EmptyState text="Hali rasxod kiritilmagan" /> : isMobile ? (
@@ -93,8 +97,8 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                       <div style={{ fontSize: 15, fontWeight: 700, color: THEME.rose, whiteSpace: "nowrap" }}>−{money(t.amount)}</div>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => setModal({ edit: t })} aria-label="Tahrirlash" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>
-                        <button onClick={() => setConfirmDel(t)} aria-label="O'chirish" className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
+                        {canEditTx(t) && <button onClick={() => setModal({ edit: t })} aria-label="Tahrirlash" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>}
+                        {canEditTx(t) && <button onClick={() => setConfirmDel(t)} aria-label="O'chirish" className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>}
                       </div>
                     </div>
                   </div>
@@ -139,8 +143,8 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                   <td style={{ padding: "13px 16px", color: THEME.muted, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note || "-"}</td>
                   <td style={{ padding: "13px 16px" }}>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button onClick={() => setModal({ edit: t })} className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>
-                      <button onClick={() => setConfirmDel(t)} className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
+                      {canEditTx(t) && <button onClick={() => setModal({ edit: t })} className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>}
+                      {canEditTx(t) && <button onClick={() => setConfirmDel(t)} className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>}
                     </div>
                   </td>
                 </tr>

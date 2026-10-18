@@ -16,6 +16,7 @@ import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
 import { TgPrefsCard } from "../../components/TgPrefsCard.jsx";
 import { avatarColor, initials } from "../../auth/LoginScreen.jsx";
 import { CheckInButton } from "../../components/CheckInButton.jsx";
+import { usePerms } from "../../lib/perms.jsx";
 import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOrder } from "../../components/PhoneToDesktop.jsx";
 
 // Pastki menyudagi «Skaner» — hozircha o'chiq (keyin yo'lga qo'yiladi)
@@ -40,6 +41,7 @@ function isOverdue(t) {
 
 export function WorkerApp({ currentUser, onLogout }) {
   const isMobile = useIsMobile();
+  const viewOnly = !!usePerms().viewAs; // «Rol bo'lib ko'rish» — joylashuv/«Keldim» ishlamaydi
   // tasks | settings — tarix orqali, telefonning "orqaga" harakati ham ishlaydi
   const { view: screen, go: goScreen, back: goBack } = useHistoryView("tasks", true);
   const [tasks, setTasks] = useState(null);
@@ -117,7 +119,7 @@ export function WorkerApp({ currentUser, onLogout }) {
     <div style={{ minHeight: "100vh", background: THEME.surface, color: THEME.text, fontFamily: THEME.font }}>
       <style>{`body{background:${THEME.surface}} @keyframes uvixSpin{to{transform:rotate(360deg)}} .uvix-spin{animation:uvixSpin .9s linear infinite} @media (max-width:860px){input,select,textarea{font-size:16px!important}} @media (max-width:430px){.uvix-worker-name{display:none}} ${WORKER_NAV_CSS}`}</style>
 
-      <GeoTracker user={currentUser} />
+      {!viewOnly && <GeoTracker user={currentUser} />}
       {/* Yuqori panel */}
       <header style={{ position: "sticky", top: 0, zIndex: 20, background: THEME.card, borderBottom: `1px solid ${THEME.border}`, paddingTop: "env(safe-area-inset-top, 0px)" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", padding: "10px 16px", display: "flex", alignItems: "center", gap: 12 }}>
@@ -133,7 +135,7 @@ export function WorkerApp({ currentUser, onLogout }) {
           )}
           <div style={{ flex: 1 }} />
           <QrScanButton compact />
-          <CheckInButton compact />
+          {!viewOnly && <CheckInButton compact />}
           <div className="uvix-worker-name" style={{ textAlign: "right", lineHeight: 1.25 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>{currentUser.name}</div>
             <div style={{ fontSize: 12, color: THEME.muted }}>{roleLabel(currentUser.role)}</div>

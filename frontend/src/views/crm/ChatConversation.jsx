@@ -1,4 +1,5 @@
 // ChatConversation.jsx — suhbat oynasi: xabarlar (rasm, ovoz, joylashuv, javob, reaksiya) va yozish paneli
+import { usePerms } from "../../lib/perms.jsx";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Lock, Palette, Zap, CheckCheck, Copy, MoreHorizontal, Download, File as FileIcon, FileText, Image as ImageIcon, Loader2, MapPin, Mic, Pause, Paperclip, Play, Reply, Send, SmilePlus, Trash2, X } from "lucide-react";
 import { useBackToClose } from "../../lib/history.js";
@@ -398,6 +399,8 @@ function pickRecorderMime() {
 }
 
 export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSendText, onSendFile, onSendVoice, onSendLocation, replies = [], onSendNote, insert, onTyping }) {
+  const { can } = usePerms();
+  const canReply = can("chats.reply");
   const [text, setText] = useState("");
   const [mode, setMode] = useState("client"); // "client" — mijozga, "note" — ichki izoh
   const [tplOpen, setTplOpen] = useState(false); // ⚡ tugmasi bilan ochilgan to'liq ro'yxat
@@ -627,6 +630,8 @@ export function Composer({ isMobile, customerName, replyTo, onCancelReply, onSen
             <Send size={18} />
           </button>
         </div>
+      ) : !isNote && !canReply ? (
+        <div style={{ ...bar, justifyContent: "center", fontSize: 13.5, color: "#71717A", gap: 6 }} data-testid="composer-locked"><Lock size={14} /> Javob yozish uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi</div>
       ) : (
         <div style={bar}>
           {!isNote && <button type="button" className="uc-iconbtn" onClick={() => setAttachOpen((v) => !v)} aria-label="Biriktirish" aria-expanded={attachOpen} disabled={busy}><Paperclip size={21} /></button>}

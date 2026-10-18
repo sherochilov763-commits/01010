@@ -1,3 +1,4 @@
+import { usePerms } from "../../lib/perms.jsx";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus, Upload, X } from "lucide-react";
 import { Button, Field, Modal, MultiPaymentLines, PaymentTypeSelector, getIconBtn, getInputStyle } from "../../components/ui.jsx";
@@ -12,7 +13,8 @@ import { custKey } from "../../lib/customers.js";
 export function OrderForm({ initial, currentUser, categories, employees, settings, allOrders, transactions, onAddSubcategory, onClose, onSave, onUploadPhotos, onDeletePhoto, prefillCustomer, customers }) {
   const isEdit = !!initial;
   // Operator summani kamaytirsa — admin tasdig'i kerak (sabab bilan); boshqa o'zgarishlar darhol saqlanadi
-  const isAdminUser = currentUser?.role === "admin";
+  const { can } = usePerms();
+  const isAdminUser = currentUser?.role === "admin" || can("orders.price"); // narxni so'rovsiz kamaytirish huquqi
   const [totalReason, setTotalReason] = useState("");
   const [orderId] = useState(() => initial?.id || uid());
   const [photos, setPhotos] = useState(initial?.photos || []);

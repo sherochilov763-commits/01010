@@ -1,3 +1,4 @@
+import { usePerms } from "../../lib/perms.jsx";
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
 // AttendanceView.jsx — Davomat: admin uchun Bugun / Hafta / Oy / Sozlamalar, xodim uchun o'z tarixi.
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -101,13 +102,17 @@ function SelfieLightbox({ id, title, onClose }) {
 }
 
 // ================================================================
-export function AttendanceView({ currentUser, isAdmin }) {
+export function AttendanceView({ currentUser, isAdmin: isAdminProp }) {
+  // Rollar va huquqlar: hammaning ro'yxati (att.view) va qo'lda tuzatish / sozlash (att.manage)
+  const { can } = usePerms();
+  const isAdmin = isAdminProp || can("att.view");
+  const canManage = isAdminProp || can("att.manage");
   const [tab, setTab] = useState(() => takeOpenTab("attendance", isAdmin ? ["today","week","month","mine","settings"] : ["mine"]) || (isAdmin ? "today" : "mine"));
   const [config, setConfig] = useState(null);
   const reloadConfig = useCallback(() => isAdmin && fetchAttendanceConfig().then(setConfig).catch(() => {}), [isAdmin]);
   useEffect(() => { reloadConfig(); }, [reloadConfig]);
 
-  const tabs = isAdmin ? [["today", "Bugun"], ["week", "Hafta"], ["month", "Oy"], ["mine", "Mening davomatim"], ["settings", "Sozlamalar"]] : [["mine", "Mening davomatim"]];
+  const tabs = isAdmin ? [["today", "Bugun"], ["week", "Hafta"], ["month", "Oy"], ["mine", "Mening davomatim"], ...(canManage ? [["settings", "Sozlamalar"]] : [])] : [["mine", "Mening davomatim"]];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {tabs.length > 1 && (
@@ -130,7 +135,7 @@ export function AttendanceView({ currentUser, isAdmin }) {
       {tab === "week" && <PeriodTab kind="week" />}
       {tab === "month" && <PeriodTab kind="month" />}
       {tab === "mine" && <MineTab />}
-      {tab === "settings" && isAdmin && config && <SettingsTab config={config} onSaved={setConfig} />}
+      {tab === "settings" && canManage && config && <SettingsTab config={config} onSaved={setConfig} />}
     </div>
   );
 }

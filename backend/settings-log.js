@@ -1,6 +1,7 @@
 // settings-log.js — Sozlamalar o'zgarishlari jurnali: kim, qachon, nimani (eski → yangi).
 // Pulga va ishga ta'sir qiladigan sozlamalar: narxlar, avans, kurs, davomat qoidalari, Telegram, zaxira, vaqtinchalik PIN.
 // Saqlanadi: uvix:settingsLog — [{ id, at, who, section, text }] (oxirgi 1000 ta), faqat admin o'qiydi.
+const PermsLib = require("./permissions");
 const KEY = "uvix:settingsLog";
 const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const money = (n) => `${Math.round(Number(n) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")}`;
@@ -68,6 +69,28 @@ function createSettingsLog({ getStmt, upsertStmt, now = () => new Date() }) {
     if (JSON.stringify(prev.overrides || {}) !== JSON.stringify(next.overrides || {})) out.push("Xodimlarning alohida jadvali o'zgartirildi");
     add(who, "Davomat", out);
   }
-  return { add, read, settingsChanged, salesChanged, attendanceChanged };
+  // Rollar va huquqlar: rol bo'yicha o'zgarishlar va xodimga istisno
+  const ROLE_L = { manager: "Katta menejer", operator: "Operator", designer: "Dizayner", printer: "Pechatchi", installer: "Montajchi" };
+  const pv = (v) => (v === true ? "ha" : v === false ? "yo'q" : v === "all" ? "hammasi" : v === "line" ? "yo'nalishi" : v === "own" ? "o'ziniki" : v === "none" ? "yo'q" : v === "yes" ? "ha" : v === "req" ? "so'rov bilan" : v === "no" ? "yo'q" : v === -1 ? "cheksiz" : typeof v === "number" ? `${money(v)} so'm` : show(v));
+  function permsDiff(label, prev = {}, next = {}, defs = null) {
+    const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
+    const out = [];
+    for (const k of keys) {
+      const a = prev?.[k], b = next?.[k];
+      if (JSON.stringify(a ?? null) === JSON.stringify(b ?? null)) continue;
+      const P = defs?.get(k); const name = P ? P.l : k;
+      out.push(`${label}: «${name}» ${pv(a ?? (P ? P.def[defs.role] : undefined))} → ${pv(b ?? (P ? P.def[defs.role] : undefined))}`);
+    }
+    return out;
+  }
+  function rolesChanged(who, role, prev, next) {
+    const defs = new Map(PermsLib.PERMS.map((p) => [p.k, p])); defs.role = role;
+    add(who, "Rollar va huquqlar", permsDiff(ROLE_L[role] || role, prev, next, defs));
+  }
+  function empPermsChanged(who, name, role, prev, next) {
+    const defs = new Map(PermsLib.PERMS.map((p) => [p.k, p])); defs.role = role;
+    add(who, "Rollar va huquqlar", permsDiff(`${name} (istisno)`, prev, next, defs));
+  }
+  return { add, read, settingsChanged, salesChanged, attendanceChanged, rolesChanged, empPermsChanged };
 }
 module.exports = { createSettingsLog };

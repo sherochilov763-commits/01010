@@ -1,3 +1,4 @@
+import { usePerms } from "../../lib/perms.jsx";
 import { useState } from "react";
 import { Clock, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, Field, Modal, MultiPaymentLines, getIconBtn, getInputStyle } from "../../components/ui.jsx";
@@ -8,6 +9,7 @@ import { useApprovals, PENDING_LABEL } from "../../lib/approvals.jsx";
 import { ApprovalRequestModal } from "../../components/ApprovalRequestModal.jsx";
 
 export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClose, onAddPayment, onDeletePayment }) {
+  const { can } = usePerms();
   const [date, setDate] = useState(todayStr());
   const [lines, setLines] = useState([{ id: uid(), methodType: "naqd", amountStr: "" }]);
   const [comment, setComment] = useState("");
@@ -109,7 +111,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
                         </span>
                       );
                     }
-                    if (isAdmin) {
+                    if (isAdmin || can("payments.edit", "direct")) {
                       return (
                         <span style={{ display: "flex", gap: 6 }}>
                           {ap?.editPayment && <button onClick={() => setReqFor({ kind: "payment_edit", payment: p, direct: true })} aria-label="To'lovni o'zgartirish" title="O'zgartirish" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-edit"><Pencil size={13} /></button>}
@@ -117,8 +119,8 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
                         </span>
                       );
                     }
-                    // Operator: o'zgartirish va o'chirish — faqat admin tasdig'i bilan
-                    return ap ? (
+                    // Operator: o'zgartirish va o'chirish — faqat admin tasdig'i bilan («Yo'q» huquqi — tugma yo'q)
+                    return ap && can("payments.edit") ? (
                       <span style={{ display: "flex", gap: 6 }}>
                         <button onClick={() => setReqFor({ kind: "payment_edit", payment: p })} aria-label="O'zgartirishni so'rash" title="O'zgartirish (admin tasdig'i bilan)" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-edit"><Pencil size={13} /></button>
                         <button onClick={() => setReqFor({ kind: "payment_delete", payment: p })} aria-label="O'chirishni so'rash" title="O'chirish (admin tasdig'i bilan)" className="uvix-iconbtn" style={getIconBtn()} data-testid="pay-delete"><Trash2 size={13} color={THEME.rose} /></button>
@@ -152,7 +154,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
           </div>
           {error && <div style={{ color: THEME.rose, fontSize: 12.5, marginTop: 8 }}>{error}</div>}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-            <Button onClick={submit}><Plus size={14} /> To'lov qo'shish</Button>
+            {(isAdmin || can("payments.add")) && <Button onClick={submit}><Plus size={14} /> To'lov qo'shish</Button>}
           </div>
         </div>
       </div>

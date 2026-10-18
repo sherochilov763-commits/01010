@@ -9,6 +9,7 @@ import { LINE_META, LINES, lineColor, useLine } from "../lib/lines.js";
 import { PAY_LABEL, PAY_TYPES, computeKassa } from "../lib/kassa.js";
 import { fmt, money, shortDateUz, todayStr, uid } from "../lib/format.js";
 import { THEME } from "../theme.js";
+import { usePerms } from "../lib/perms.jsx";
 
 const KEY = "uvix:transfers";
 const sgn = (v) => (v < 0 ? "−" : "") + fmt(Math.abs(Math.round(v)));
@@ -23,7 +24,9 @@ export function KassaView({ orders, transactions, isAdmin, canCash, currentUser,
   const lines = line === "all" ? LINES : [line];
   async function save(next) { setTransfers(next); await storageSet(KEY, true, next); }
 
-  if (!isAdmin && !canCash) return <Card><EmptyState text="Kassani ko'rish uchun rahbar «Kassa qoldig'ini ko'radi» huquqini berishi kerak" /></Card>;
+  const { can } = usePerms();
+  const canTransfer = isAdmin || can("kassa.transfer");
+  if (!isAdmin && (!canCash || !can("kassa.view"))) return <Card><EmptyState text="Kassani ko'rish uchun rahbar «Kassa qoldig'ini ko'radi» huquqini berishi kerak" /></Card>;
   const recent = (transfers || []).filter((t) => !t.deletedAt && (line === "all" || t.from?.line === line || t.to?.line === line)).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 30);
   const th = { padding: "9px 12px", fontSize: 11.5, fontWeight: 600, color: THEME.muted, textAlign: "right", whiteSpace: "nowrap" };
   const td = { padding: "10px 12px", textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
@@ -32,7 +35,7 @@ export function KassaView({ orders, transactions, isAdmin, canCash, currentUser,
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: THEME.muted }}>Haqiqiy pul: kirim (to'lovlar) − chiqim (rasxodlar) ± o'tkazmalar. Umumiy rasxod — qaysi kassadan to'langan bo'lsa, o'shandan.</div>
         <div style={{ flex: 1 }} />
-        {isAdmin && <Button onClick={() => setForm(true)} data-testid="transfer-new"><ArrowRightLeft size={14} /> Ichki o'tkazma</Button>}
+        {canTransfer && <Button onClick={() => setForm(true)} data-testid="transfer-new"><ArrowRightLeft size={14} /> Ichki o'tkazma</Button>}
       </div>
       {line === "all" && (
         <Card data-testid="kassa-total" style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "center" }}>
@@ -76,7 +79,7 @@ export function KassaView({ orders, transactions, isAdmin, canCash, currentUser,
             <LineTag line={r.to.line} /><span style={{ fontSize: 12.5 }}>{PAY_LABEL[r.to.type]}</span>
             <span style={{ flex: 1, minWidth: 80, fontSize: 12.5, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.note}{r.createdBy ? ` · ${r.createdBy}` : ""}</span>
             <b style={{ fontVariantNumeric: "tabular-nums" }}>{money(r.amount)}</b>
-            {isAdmin && <button type="button" onClick={() => setDel(r)} className="uvix-iconbtn" style={getIconBtn()} aria-label="O'tkazmani o'chirish"><Trash2 size={13} color={THEME.rose} /></button>}
+            {canTransfer && <button type="button" onClick={() => setDel(r)} className="uvix-iconbtn" style={getIconBtn()} aria-label="O'tkazmani o'chirish"><Trash2 size={13} color={THEME.rose} /></button>}
           </div>
         ))}
       </Card>

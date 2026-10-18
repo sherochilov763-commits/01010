@@ -1,5 +1,6 @@
 // Nav.jsx — menyuni moslashtirish: joylashuv (chap / ixcham / tepa), tartib, yashirish, telefon pastki paneli.
 // Admin hamma uchun standartni belgilaydi (settings.navDefaults), har xodim o'zi uchun o'zgartira oladi (/api/me/nav).
+import { NAV_PERM, navAllowed } from "../lib/perms.jsx";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Eye, EyeOff, Search, GripVertical, LogOut, PanelLeft, PanelTop, Columns2, SlidersHorizontal, RotateCcw, Check } from "lucide-react";
 import { NAV, roleLabel } from "../constants.js";
@@ -40,7 +41,7 @@ export function normalizeNav(p, role) {
 const forSave = (n) => ({ ...n, mobileBar: n.barSet ? n.mobileBar : [] });
 
 // ---------------- Holat ----------------
-export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) {
+export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin, can = null }) {
   const [mine, setMine] = useState(null);
   const [globalDraft, setGlobalDraft] = useState(null); // admin "Hamma uchun" tahrirlayotganda darhol ko'rinishi uchun
   const [editing, setEditing] = useState(false);
@@ -69,7 +70,8 @@ export function useNavPrefs({ currentUser, settings, onSaveSettings, isAdmin }) 
   const prefs = editingGlobal ? globalPrefs : (minePrefs || globalPrefs);
 
   const byKey = Object.fromEntries(NAV.map((n) => [n.key, n]));
-  const allowed = (n) => n && (!n.adminOnly || isAdmin || (n.managerOk && role === "manager"));
+  // Rollar va huquqlar: bo'lim huquqi bo'lsa ko'rinadi (yo'q bo'lsa — eski qoida: adminOnly / managerOk)
+  const allowed = (n) => n && (can && NAV_PERM[n.key] ? navAllowed(n.key, can) : (!n.adminOnly || isAdmin || (n.managerOk && role === "manager")));
   const editorItems = prefs.order.map((k) => byKey[k]).filter(allowed);
   const items = editorItems.filter((n) => !prefs.hidden.includes(n.key));
   const mobileBar = prefs.mobileBar.filter((k) => allowed(byKey[k]));

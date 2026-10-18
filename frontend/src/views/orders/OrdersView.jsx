@@ -1,3 +1,4 @@
+import { usePerms } from "../../lib/perms.jsx";
 import { Fragment, Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Wallet, Download, FileBarChart2, FileText, Landmark, Pencil, Plus, Search, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile } from "../../components/ui.jsx";
@@ -50,6 +51,11 @@ function StageBar({ counts }) {
 const LabelModal = lazy(() => import("./LabelModal.jsx"));
 
 export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
+  // Rollar va huquqlar: o'chirish — «Ha» (so'rovsiz) / «So'rov» (rahbar tasdiqlaydi) / «Yo'q»
+  const { can, scope } = usePerms();
+  const directDel = isAdmin || can("orders.delete", "direct");
+  const canEdit = (o) => !!o && (isAdmin || scope("orders.edit") === "all" || scope("orders.edit") === "line" || (scope("orders.edit") === "own" && o.createdBy === currentUser.name));
+  const canDel = (o) => !!o && (isAdmin || (can("orders.delete") && (scope("orders.edit") === "all" || scope("orders.edit") === "line" || (scope("orders.edit") === "own" && o.createdBy === currentUser.name))));
   const isMobile = useIsMobile();
   const [modal, setModal] = useState(null); // {edit} — faqat tahrirlash (yangi buyurtma smeta orqali)
   const [quote, setQuote] = useState(null); // {lead?} — «Yangi buyurtma» (smeta → to'lov → buyurtmalar)
@@ -465,7 +471,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           <Button variant="ghost" onClick={downloadImportTemplate} title="Excel namunasini yuklab olish"><FileBarChart2 size={14} /> Namuna</Button>
           <Button variant="ghost" onClick={() => fileInputRef.current?.click()}><Upload size={14} /> Excel yuklash</Button>
           <Button variant="ghost" onClick={exportExcel} disabled={list.length === 0}><Download size={14} /> Excel</Button>
-          <Button onClick={() => setQuote({})} data-testid="new-order"><Plus size={15} /> Yangi buyurtma</Button>
+          {(isAdmin || can("orders.create")) && <Button onClick={() => setQuote({})} data-testid="new-order"><Plus size={15} /> Yangi buyurtma</Button>}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }} role="group" aria-label="Filtrlar">
           {statusChips.map((c) => chip(c.on, c.set, <>{c.l} <b style={{ fontWeight: 600, opacity: 0.75 }}>{c.n}</b></>, c.k))}
@@ -568,8 +574,8 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
                       <div className="uvix-row-actions" style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
                         <button onClick={() => setPaymentsFor(o)} title="To'lovlar" aria-label="To'lovlar" className="uvix-iconbtn" style={getIconBtn()}><Landmark size={14} /></button>
                         <button onClick={() => setInvoiceFor(o)} title="Hisob-faktura" aria-label="Hisob-faktura" className="uvix-iconbtn" style={getIconBtn()} data-invoice={o.id}><FileText size={14} /></button>
-                        <button onClick={() => setModal({ edit: o })} title="Tahrirlash" aria-label="Tahrirlash" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>
-                        {(isAdmin || o.createdBy === currentUser.name) && (
+                        {canEdit(o) && <button onClick={() => setModal({ edit: o })} title="Tahrirlash" aria-label="Tahrirlash" className="uvix-iconbtn" style={getIconBtn()}><Pencil size={14} /></button>}
+                        {canDel(o) && (
                           <button onClick={() => setConfirmDel(o)} title="O'chirish" aria-label="O'chirish" className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
                         )}
                       </div>
@@ -591,11 +597,11 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             order={selected}
             transactions={transactions}
             phone={selectedPhone}
-            canDelete={isAdmin || selected.createdBy === currentUser.name}
+            canDelete={canDel(selected)}
             onClose={() => setSelectedId(null)}
             onPayments={() => setPaymentsFor(selected)}
             onInvoice={() => setInvoiceFor(selected)}
-            onEdit={() => setModal({ edit: selected })}
+            onEdit={canEdit(selected) ? () => setModal({ edit: selected }) : null}
             onDelete={() => setConfirmDel(selected)}
             stage={stageOf(selected)}
             employees={employees}
@@ -619,11 +625,11 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             phone={ct.phone}
             phoneHref={ct.phoneHref}
             onTelegram={ct.onTelegram}
-            canDelete={isAdmin || sheetOrder.createdBy === currentUser.name}
+            canDelete={canDel(sheetOrder)}
             onClose={() => setSheetId(null)}
             onPayments={() => setPaymentsFor(sheetOrder)}
             onInvoice={() => setInvoiceFor(sheetOrder)}
-            onEdit={() => setModal({ edit: sheetOrder })}
+            onEdit={canEdit(sheetOrder) ? () => setModal({ edit: sheetOrder }) : null}
             onDelete={() => setConfirmDel(sheetOrder)}
             stage={stageOf(sheetOrder)}
             employees={employees}
@@ -685,7 +691,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           onDeletePayment={onDeletePayment}
         />
       )}
-      {confirmDel && !isAdmin && ap && (
+      {confirmDel && !directDel && ap && (
         <ApprovalRequestModal kind="order_delete" order={confirmDel} onClose={() => setConfirmDel(null)}
           onSubmit={async (b) => { await ap.request(b); showToast?.("O'chirish so'rovi adminga yuborildi"); }} />
       )}
@@ -695,7 +701,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             group={labelFor.groupId ? (allOrders || orders).filter((o) => o.groupId === labelFor.groupId && !o.deletedAt).sort((a, b) => (a.groupIdx || 0) - (b.groupIdx || 0)) : null} />
         </Suspense>
       )}
-      {confirmDel && (isAdmin || !ap) && (
+      {confirmDel && (directDel || !ap) && (
         <ConfirmDialog
           message={`${confirmDel.orderNumber} buyurtmasini (${money(confirmDel.agreementUzs)}) o'chirmoqchimisiz? Unga tegishli barcha to'lovlar tarixi ham o'chadi.`}
           onCancel={() => setConfirmDel(null)}

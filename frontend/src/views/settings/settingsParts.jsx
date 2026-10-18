@@ -10,10 +10,11 @@ export const SETTINGS_SECTIONS = [
   { id: "profil", label: "Profil", color: "#1F5FD6" },
   { id: "korinish", label: "Ko'rinish", color: "#8B5CF6" },
   { id: "bildirish", label: "Bildirishnomalar", color: "#EF4444" },
-  { id: "savdo", label: "Savdo", color: "#0B7A54", admin: true },
+  { id: "savdo", label: "Savdo", color: "#0B7A54", admin: true, perm: "sys.sales" },
   { id: "integratsiya", label: "Integratsiyalar", color: "#0EA5E9", admin: true },
   { id: "bolimlar", label: "Bo'limlar", color: "#D97706", admin: true },
   { id: "malumotlar", label: "Ma'lumotlar", color: "#64748B", admin: true },
+  { id: "huquqlar", label: "Rollar va huquqlar", color: "#7C3AED", admin: true },
   { id: "jurnal", label: "O'zgarishlar jurnali", color: "#18181B", admin: true },
 ];
 
@@ -34,6 +35,7 @@ export const SETTINGS_INDEX = [
   { label: "Zaxira nusxa va kunlik hisobot", section: "malumotlar", keys: "zaxira backup hisobot excel tiklash", admin: true },
   { label: "Savat (o'chirilganlar)", section: "malumotlar", keys: "savat o'chirilgan tiklash korzina", admin: true },
   { label: "Barcha ma'lumotlarni tozalash", section: "malumotlar", keys: "tozalash o'chirish xavfli", admin: true },
+  { label: "Rollar va huquqlar", section: "huquqlar", keys: "rol huquq ruxsat ruxsatlar dostup kirish andoza istisno", admin: true },
   { label: "O'zgarishlar jurnali", section: "jurnal", keys: "jurnal tarix kim o'zgartirdi log", admin: true },
   { label: "Davomat sozlamalari", view: ["attendance", "settings"], keys: "davomat keldim ketdim jadval sex joylashuv selfi face", admin: true },
   { label: "Bo'yoq ombori sozlamalari", view: ["paint", "settings"], keys: "bo'yoq kraska ombor", admin: true },

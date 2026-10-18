@@ -2,7 +2,7 @@
 // Admin uchun tepada «Tizim holati»; matnli o'zgarishlar pastdagi bitta «Saqlash» paneli orqali saqlanadi.
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Bell, CheckCircle2, Eye, EyeOff, Loader2, ChevronLeft, ChevronRight, Database, History, LayoutGrid, Lock, LogOut, Palette, Plug, Search, ShieldCheck, Tag, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, Eye, EyeOff, Loader2, ChevronLeft, ChevronRight, Database, History, LayoutGrid, Lock, LogOut, Palette, Plug, Search, ShieldCheck, Tag, UsersRound, Trash2, UserRound } from "lucide-react";
 import PasskeySection from "../../auth/PasskeySection.jsx";
 import { authLogin, checkBotToken, fetchMyTelegram, fetchSettingsHealth } from "../../storage.js";
 import { Badge, Button, Card, Field, Modal, getInputStyle } from "../../components/ui.jsx";
@@ -27,9 +27,11 @@ import { LineProfilesSection } from "./LineProfilesSection.jsx";
 import { buildStatusItems, ModulesSection, SettingsJournal, SystemStatus, SETTINGS_SECTIONS } from "./settingsParts.jsx";
 import { SETTINGS_EVENT } from "../../lib/deeplink.js";
 import { TgPrefsCard } from "../../components/TgPrefsCard.jsx";
+import { RolesSection } from "./RolesSection.jsx";
+import { usePerms } from "../../lib/perms.jsx";
 
 const SEC_KEY = "uvix:settingsSection";
-const ICONS = { profil: UserRound, korinish: Palette, bildirish: Bell, savdo: Tag, integratsiya: Plug, bolimlar: LayoutGrid, malumotlar: Database, jurnal: History };
+const ICONS = { profil: UserRound, korinish: Palette, bildirish: Bell, savdo: Tag, integratsiya: Plug, bolimlar: LayoutGrid, malumotlar: Database, huquqlar: UsersRound, jurnal: History };
 const useNarrow = () => {
   const q = "(max-width: 760px)";
   const [n, setN] = useState(() => typeof window !== "undefined" && window.matchMedia?.(q).matches);
@@ -45,7 +47,8 @@ function SettingsLayout(props) {
   const { isAdmin, notif } = props;
   const narrow = useNarrow();
   const bar = useSaveBar();
-  const sections = SETTINGS_SECTIONS.filter((s) => (!s.admin || isAdmin) && (s.id !== "bildirish" || notif));
+  const { can } = usePerms();
+  const sections = SETTINGS_SECTIONS.filter((s) => (!s.admin || isAdmin || (s.perm && can(s.perm))) && (s.id !== "bildirish" || notif));
   const valid = (id) => sections.some((s) => s.id === id);
   const [sec, setSec] = useState(() => { try { const v = sessionStorage.getItem(SEC_KEY); return v && valid(v) ? v : null; } catch { return null; } });
   const current = sec && valid(sec) ? sec : narrow ? null : sections[0].id;
@@ -173,6 +176,8 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   const [rateMsg, setRateMsg] = useState("");
   const sales = useSales();
   const fx = sales.fx;
+  const permsCtx = usePerms();
+  const canSales = isAdmin || permsCtx.can("sys.sales");
   const rateAuto = settings?.usdRateAuto !== false;
   const [tgToken, setTgToken] = useState(settings?.telegramBotToken || "");
   const [tgChatId, setTgChatId] = useState(settings?.telegramChatId || "");
@@ -280,7 +285,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
   }
   // ---- Saqlash paneli: o'zgargan maydonlar ----
   const rateNum = parseFloat(String(rateStr || "").replace(/\s/g, "").replace(",", "."));
-  const rateDirty = isAdmin && Number.isFinite(rateNum) && rateNum > 0 && rateNum !== Number(settings?.usdRate || 0);
+  const rateDirty = canSales && Number.isFinite(rateNum) && rateNum > 0 && rateNum !== Number(settings?.usdRate || 0);
   useDirty("rate", { dirty: rateDirty, label: "Dollar kursi", save: saveRate, reset: () => setRateStr(settings?.usdRate ? String(settings.usdRate) : "") });
   useDirty("pin", { dirty: pin.length > 0, label: "PIN", save: changePin, reset: () => setPin("") });
   const tgDirtyToken = tgToken.trim() !== (settings?.telegramBotToken || "");
@@ -334,10 +339,10 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
       {notif?.prefs ? <NotificationsSection n={notif} /> : <Card><div style={{ fontSize: 13, color: THEME.muted }}>Bildirishnomalar yuklanmoqda…</div></Card>}
       <TgPrefsCard Card={Card} />
     </>,
-    savdo: isAdmin && <>
+    savdo: canSales && <>
       <LineProfilesSection settings={settings} onSaveSettings={onSaveSettings} />
       <PriceListSection categories={categories} />
-        {isAdmin && (
+        {canSales && (
           <Card data-testid="rate-card">
             <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6 }}>Dollar kursi (USD → so'm)</div>
             <div style={{ fontSize: 12.5, color: THEME.muted, marginBottom: 10, lineHeight: 1.45 }}>
@@ -485,6 +490,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
         )}
 
     </>,
+    huquqlar: isAdmin && <RolesSection employees={employees} />,
     jurnal: isAdmin && <SettingsJournal />,
   };
   return { S, modal: <>

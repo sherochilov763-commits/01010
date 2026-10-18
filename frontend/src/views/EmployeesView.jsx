@@ -1,11 +1,14 @@
 import { useContext, useEffect, useState } from "react";
-import { ClipboardList, KeyRound, Lock, Pencil, Plus, Send, Trash2, Users } from "lucide-react";
-import { fetchPinHelp, fetchStaffTelegram, giveTempPin } from "../storage.js";
+import { ClipboardList, Eye, KeyRound, Lock, Pencil, Plus, Send, Trash2, Users } from "lucide-react";
+import { fetchPinHelp, fetchRoles, fetchStaffTelegram, giveTempPin, startViewAs } from "../storage.js";
+import { BY_KEY, PERMS, legacyOver } from "../lib/permissions.js";
+import { EmpOverrides, permsFor } from "./settings/RolesSection.jsx";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
 import { fmt, uid } from "../lib/format.js";
 import { roleLabel } from "../constants.js";
 import { EMP_LINE_OPTIONS, WorkStatsContext, empLineLabel, lineColor } from "../lib/lines.js";
 import { THEME } from "../theme.js";
+import { usePerms } from "../lib/perms.jsx";
 
 /* ---------------- EMPLOYEES VIEW ---------------- */
 
@@ -40,6 +43,8 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
   const [tab, setTab] = useState("list");
   // Kirish holati: Telegram ulanganmi (PIN tiklash kodi shu yerga keladi) va kim PIN so'radi
   const isAdmin = currentUser?.role === "admin";
+  const { can } = usePerms();
+  const canManage = isAdmin || can("staff.manage");
   const [tg, setTg] = useState(null);
   const [help, setHelp] = useState({});
   const [temp, setTemp] = useState(null); // { emp, stage: "confirm" | "busy" | "done", pin, expiresAt, error }
@@ -80,7 +85,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
         <Button variant={tab === "list" ? "primary" : "ghost"} onClick={() => setTab("list")}><Users size={14} /> Xodimlar</Button>
         <Button variant={tab === "log" ? "primary" : "ghost"} onClick={() => setTab("log")}><ClipboardList size={14} /> O'zgarishlar tarixi</Button>
         {tab === "list" && <div style={{ flex: 1 }} />}
-        {tab === "list" && <Button onClick={() => setModal(true)}><Plus size={14} /> Xodim qo'shish</Button>}
+        {tab === "list" && canManage && <Button onClick={() => setModal(true)}><Plus size={14} /> Xodim qo'shish</Button>}
       </div>
 
       {tab === "list" ? (
@@ -139,14 +144,14 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
                   </td>
                   <td style={{ padding: "13px 16px", color: THEME.muted, fontSize: 12 }}>
                     {ROLE_DESCRIPTIONS[e.role] || ROLE_DESCRIPTIONS.operator}
-                    {["manager", "operator"].includes(e.role) && <PermChips e={e} />}
+                    <PermChips e={e} />
                   </td>
                   <td style={{ padding: "13px 16px" }}>
                     <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                     {isAdmin && e.role !== "admin" && (
                       <button onClick={() => setEditEmp(e)} className="uvix-iconbtn" style={getIconBtn()} title="Rol va huquqlar" aria-label={`${e.name}: rol va huquqlar`} data-emp-edit={e.id}><Pencil size={14} /></button>
                     )}
-                    {e.id !== currentUser.id && (
+                    {e.id !== currentUser.id && canManage && (isAdmin || e.role !== "admin") && (
                       <button onClick={() => setConfirmDel(e)} className="uvix-iconbtn" style={getIconBtn()}><Trash2 size={14} color={THEME.rose} /></button>
                     )}
                     </div>
@@ -198,7 +203,7 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
                 <option value="designer">Dizayner</option>
                 <option value="printer">Pechatchi</option>
                 <option value="installer">Montajchi</option>
-                <option value="admin">Administrator</option>
+                {isAdmin && <option value="admin">Administrator</option>}
               </select>
               <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]}</div>
             </Field>
@@ -264,32 +269,29 @@ export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
   );
 }
 
-// Huquqlar: kassa qoldig'i, foyda, tasdiqlash chegarasi (Katta menejer uchun)
-const permOf = (e) => ({ cash: e?.perm?.cash !== false, profit: e?.perm?.profit !== false, approveLimit: Number(e?.perm?.approveLimit) || 0 });
+// Huquqlar: rol andozasi (Sozlamalar → Rollar va huquqlar) + shu xodimga istisno (permOver)
+const overOf = (e) => ({ ...legacyOver(e), ...(e?.permOver || {}) });
 function PermChips({ e }) {
-  const p = permOf(e);
-  const chip = (on, text, k) => <span key={k} data-perm={k} data-on={on ? "1" : "0"} style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", borderRadius: 6, fontSize: 11, fontWeight: 600, marginRight: 4, marginTop: 5, color: on ? THEME.greenText : THEME.muted, background: on ? THEME.greenBg : THEME.chip, textDecoration: on ? "none" : "line-through" }}>{text}</span>;
-  return (
-    <div>
-      {chip(p.cash, "Kassa", "cash")}
-      {chip(p.profit, "Foyda", "profit")}
-      {e.role === "manager" && chip(p.approveLimit > 0, p.approveLimit > 0 ? `Tasdiq ≤ ${fmt(p.approveLimit)}` : "Tasdiq — yo'q", "limit")}
-    </div>
-  );
+  const n = e.role === "admin" ? 0 : Object.keys(overOf(e)).filter((k) => BY_KEY.has(k)).length;
+  if (!n) return null;
+  return <div><span data-perm="over" data-n={n} title="Shu xodimga roldan farqli huquqlar" style={{ display: "inline-flex", alignItems: "center", height: 20, padding: "0 7px", borderRadius: 6, fontSize: 11, fontWeight: 600, marginTop: 5, color: THEME.amberText, background: THEME.amberBg }}>+{n} istisno</span></div>;
 }
 function EmpRights({ emp, onClose, onSave }) {
   const [role, setRole] = useState(emp.role);
-  const [perm, setPerm] = useState(permOf(emp));
-  const sw = (k, label, sub) => (
-    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", border: `1px solid ${THEME.border}`, borderRadius: 12, cursor: "pointer" }}>
-      <input type="checkbox" checked={perm[k]} onChange={(e) => setPerm((p) => ({ ...p, [k]: e.target.checked }))} data-perm-input={k} style={{ marginTop: 3, width: 16, height: 16 }} />
-      <span><b style={{ fontSize: 13.5 }}>{label}</b><small style={{ display: "block", fontSize: 12, color: THEME.muted }}>{sub}</small></span>
-    </label>
-  );
-  const staff = ["manager", "operator"].includes(role);
+  const [over, setOver] = useState(() => overOf(emp));
+  const [rolesCfg, setRolesCfg] = useState({});
+  const [err, setErr] = useState("");
+  useEffect(() => { fetchRoles().then((r) => setRolesCfg(r.roles || {})).catch(() => {}); }, []);
+  // Rol almashsa — ishchi roliga tegishli bo'lmagan istisnolar tushib qoladi
+  const shown = Object.fromEntries(Object.entries(over).filter(([k]) => permsFor(role).some((p) => p.k === k)));
+  const base = { ...Object.fromEntries(PERMS.map((p) => [p.k, p.def[role]])), ...(rolesCfg[role] || {}) };
+  const clean = Object.fromEntries(Object.entries(shown).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(base[k])));
+  async function viewAs() {
+    try { await startViewAs({ employeeId: emp.id }); window.location.assign(window.location.pathname); } catch (e) { setErr(e.message); }
+  }
   return (
-    <Modal title={`${emp.name} — rol va huquqlar`} onClose={onClose} width={460}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <Modal title={`${emp.name} — rol va huquqlar`} onClose={onClose} width={520}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <Field label="Rol">
           <select value={role} onChange={(e) => setRole(e.target.value)} style={getInputStyle()} data-testid="emp-role">
             <option value="operator">Operator (sotuv menejeri)</option>
@@ -298,19 +300,14 @@ function EmpRights({ emp, onClose, onSave }) {
             <option value="printer">Pechatchi</option>
             <option value="installer">Montajchi</option>
           </select>
-          <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]}</div>
+          <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>{ROLE_DESCRIPTIONS[role]} · huquqlar rol andozasidan olinadi (Sozlamalar → Rollar va huquqlar)</div>
         </Field>
-        {staff && sw("cash", "Kassa qoldig'ini ko'radi", "Dashboard'da karta, naqd, bank qoldig'i va «Jami pul»")}
-        {staff && sw("profit", "Foydani ko'radi", "Qo'shilgan qiymat, marja, kraska hisob-kitobi")}
-        {role === "manager" && (
-          <Field label="Tasdiqlash chegarasi (so'm)">
-            <input value={perm.approveLimit ? fmt(perm.approveLimit) : ""} onChange={(e) => setPerm((p) => ({ ...p, approveLimit: Number(e.target.value.replace(/\D/g, "")) || 0 }))} placeholder="0 — faqat rahbar tasdiqlaydi" inputMode="numeric" style={getInputStyle()} data-testid="emp-limit" />
-            <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 6 }}>O'z yo'nalishidagi xodimlarning to'lovni o'zgartirish/o'chirish, summani kamaytirish va buyurtmani o'chirish so'rovlarini shu summagacha o'zi tasdiqlaydi. Kattasi — faqat rahbar.</div>
-          </Field>
-        )}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <EmpOverrides role={role} base={base} value={shown} onChange={setOver} />
+        {err && <div role="alert" style={{ fontSize: 12.5, color: THEME.rose }}>{err}</div>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {emp.id && !emp.deletedAt && <Button variant="ghost" onClick={viewAs} data-testid="emp-viewas" style={{ marginRight: "auto" }}><Eye size={14} style={{ verticalAlign: -2, marginRight: 4 }} />{emp.name.split(" ")[0]} bo'lib ko'rish</Button>}
           <Button variant="ghost" onClick={onClose}>Bekor qilish</Button>
-          <Button onClick={() => onSave({ ...emp, role, ...(staff ? { perm: { ...perm, approveLimit: role === "manager" ? perm.approveLimit : 0 } } : { perm: undefined }) })} data-testid="emp-rights-save">Saqlash</Button>
+          <Button onClick={() => onSave({ ...emp, role, perm: null, permOver: clean })} data-testid="emp-rights-save">Saqlash</Button>
         </div>
       </div>
     </Modal>

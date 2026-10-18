@@ -9,7 +9,7 @@ PORT="${E2E_PORT:-4990}"
 mkdir -p "$OUT"
 export E2E_BASE="http://localhost:$PORT" E2E_OUT="$OUT"
 [ -f "$ROOT/frontend/dist/index.html" ] || { echo "frontend/dist yo'q — avval: npm run build"; exit 1; }
-SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_bigexp test_kassa test_lineprof test_themes}"
+SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_perms test_bigexp test_kassa test_lineprof test_themes}"
 fail=0
 # GitHub Actions'da yiqilgan tekshiruvlar izoh (annotation) sifatida chiqadi — logni ochmasdan ko'rinadi
 gh_err() { [ -n "${GITHUB_ACTIONS:-}" ] && printf '::error title=%s::%s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ' | cut -c1-900)"; return 0; }

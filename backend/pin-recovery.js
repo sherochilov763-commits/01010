@@ -117,6 +117,8 @@ function registerPinRecovery(app, { getStmt, upsertStmt, deleteStmt, readEmploye
 
   // Admin: vaqtinchalik PIN (6 xonali, 24 soat). Xodim kirgach o'zinikini qo'yishi shart.
   app.post("/api/employees/:id/temp-pin", requireAuth, requireAdmin, (req, res) => {
+    // Rahbarning PIN'ini faqat rahbar tiklaydi
+    if (req.user.role !== "admin" && readEmployees().find((e) => e.id === req.params.id)?.role === "admin") return res.status(403).json({ error: "forbidden", message: "Rahbarning PIN'ini faqat rahbar tiklaydi" });
     const list = readEmployees();
     const emp = list.find((e) => e.id === req.params.id);
     if (!emp) return res.status(404).json({ error: "not_found" });

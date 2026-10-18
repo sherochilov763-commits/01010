@@ -5,6 +5,9 @@ import { ORDER_SCAN_EVT, QrApproveHost, QrScanButton, openScanner, takePendingOr
 import { TodayView } from "./views/dashboard/TodayView.jsx";
 import { JobsView } from "./views/jobs/JobsView.jsx";
 import { GeoTracker } from "./views/jobs/GeoTracker.jsx";
+import { PermsContext, usePermsState } from "./lib/perms.jsx";
+import { ViewAsBanner } from "./components/ViewAsBanner.jsx";
+import { exitViewAs, viewAsActive } from "./storage.js";
 import { LineContext, WorkStatsContext, applyLineProfiles, scopeByLine, useLineState } from "./lib/lines.js";
 import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
@@ -110,6 +113,8 @@ function AppInner() {
   const [companyAppearance, setCompanyAppearance] = useState(DEFAULT_APPEARANCE);
   const [myAppearance, setMyAppearance] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  // Rollar va huquqlar: menyu, tugmalar (server ham tekshiradi)
+  const permsCtx = usePermsState(currentUser, currentUser ? employees.find((e) => e.id === currentUser.id) : null);
   // Ekran qulfi: harakatsizlikda (standart 15 daqiqa) — PIN yoki Face ID bilan ochiladi
   const idle = useIdleLock(!!currentUser);
   const shellRef = useRef(null);
@@ -121,7 +126,8 @@ function AppInner() {
     return () => window.removeEventListener("uvix:lock-now", on);
   }, [idle.lock]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const lost = () => { clearLockState(); idle.unlock(); setCurrentUser(null); };
+    // «Rol bo'lib ko'rish» muddati tugasa — rahbar o'z seansiga qaytadi
+    const lost = () => { if (viewAsActive() && exitViewAs()) { window.location.reload(); return; } clearLockState(); idle.unlock(); setCurrentUser(null); };
     window.addEventListener("uvix:auth-lost", lost);
     return () => window.removeEventListener("uvix:auth-lost", lost);
   }, [idle.unlock]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -164,7 +170,7 @@ function AppInner() {
   const editPaymentRef = useRef(null);
   const approvalsCtx = useMemo(() => ({
     ...approvalsState,
-    editPayment: currentUser?.role === "admin" ? (...a) => editPaymentRef.current?.(...a) : null,
+    editPayment: currentUser?.role === "admin" || permsCtx.can("payments.edit", "direct") ? (...a) => editPaymentRef.current?.(...a) : null,
   }), [approvalsState, currentUser?.role]);
   // Shaxsiy fon va shisha rejimi (faqat kompyuterda — telefonda tezlik uchun o'chiq)
   const bgState = useBackground(!!currentUser && !isWorkerRole(currentUser.role));
@@ -368,7 +374,7 @@ function AppInner() {
     await storageSet("uvix:settings", true, next);
   }
   // Menyu: joylashuv, tartib, yashirilganlar, telefon paneli (xodimning o'zi yoki admin standarti)
-  const navCfg = useNavPrefs({ currentUser, settings, onSaveSettings: persistSettings, isAdmin: currentUser?.role === "admin" });
+  const navCfg = useNavPrefs({ currentUser, settings, onSaveSettings: persistSettings, isAdmin: currentUser?.role === "admin", can: permsCtx.can });
 
   async function persistTx(next) {
     setTransactions(next);
@@ -743,7 +749,8 @@ function AppInner() {
     const t = setInterval(load, 60000);
     return () => { alive = false; clearInterval(t); };
   }, [wsAdmin]);
-  const lineState = useLineState(currentUser && !isWorkerRole(currentUser.role) ? { ...currentUser, line: meEmp ? meEmp.line : currentUser.line } : null);
+  // «Buyurtmalarni ko'rish: Hammasi» huquqi — ikkala yo'nalish (rahbardek)
+  const lineState = useLineState(currentUser && !isWorkerRole(currentUser.role) ? { ...currentUser, line: permsCtx.scope("orders.view") === "all" ? "common" : meEmp ? meEmp.line : currentUser.line } : null);
   const [fullReport, setFullReport] = useState(() => { try { return localStorage.getItem("uvix_today_report") === "1"; } catch { return false; } });
   const toggleReport = () => setFullReport((v) => { try { localStorage.setItem("uvix_today_report", v ? "0" : "1"); } catch { /* */ } return !v; });
   const legacyIdx = useMemo(() => legacyLeadIndex(leads), [leads]);
@@ -806,7 +813,8 @@ function AppInner() {
   if (isWorkerRole(currentUser.role)) {
     const workerLogout = () => { authLogout(); resetAttendance(); clearLockState(); idle.unlock(); setCurrentUser(null); };
     return (
-      <>
+      <PermsContext.Provider value={permsCtx}>
+      <ViewAsBanner />
       <div ref={shellRef}>
       <TelegramOnboard user={currentUser} onLogout={workerLogout}>
       <AttendanceGate user={currentUser} onLogout={workerLogout}>
@@ -815,7 +823,7 @@ function AppInner() {
       </TelegramOnboard>
       </div>
       {idle.locked && <><style>{LOCK_CSS}</style><LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={workerLogout} /></>}
-      </>
+      </PermsContext.Provider>
     );
   }
 
@@ -827,22 +835,26 @@ function AppInner() {
   const activeTransactions = transactions.filter((t) => !t.deletedAt);
   const activeOrders = orders.filter((o) => !o.deletedAt);
   // Katta menejer — o'z yo'nalishining hammasini ko'radi (server yo'nalish bo'yicha ajratib beradi)
-  const seesAll = isAdmin || currentUser.role === "manager";
-  const myTx = seesAll ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
+  // Rollar va huquqlar: «O'ziniki» — faqat o'zi kiritganlar; «Yo'nalishi»/«Hammasi» — server ajratib beradi
+  const C = permsCtx.can;
+  const seesAll = isAdmin || C("orders.view", "line");
+  const myTx = isAdmin || C("expense.edit", "line") ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
   const myOrders = seesAll ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
   // Yo'nalish bo'yicha: buyurtmalar, rasxodlar ro'yxati (to'liq) va hisob-kitob uchun (umumiy rasxod — ulushi bilan)
   const scope = scopeByLine(lineState.line, myOrders, myTx, activeOrders);
   const lOrders = scope.orders;
-  const reportScope = isAdmin || currentUser.role === "manager" ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
+  const reportScope = isAdmin || C("report.view") ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
 
   return (
+    <PermsContext.Provider value={permsCtx}>
+    <ViewAsBanner />
     <TelegramOnboard user={currentUser} onLogout={logout}>
     <AttendanceGate user={currentUser} onLogout={logout}>
     <ApprovalsProvider value={approvalsCtx}>
     <LineContext.Provider value={lineState}>
     <ExpenseRulesContext.Provider value={expenseRules}>
     <WorkStatsContext.Provider value={workStats}>
-    {!isAdmin && <GeoTracker user={currentUser} />}
+    {!isAdmin && !permsCtx.viewAs && <GeoTracker user={currentUser} />}
     {idle.locked && <LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={logout} />}
     <div ref={shellRef} style={{ fontFamily: THEME.font, color: THEME.text, minHeight: "100vh" }}>
       <style>{`
@@ -1015,7 +1027,7 @@ function AppInner() {
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} /><CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} /></>} />
+          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} />{!permsCtx.viewAs && <CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} />}</>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
             <ErrorBoundary inline onHome={() => goView("dashboard")}>
@@ -1030,7 +1042,7 @@ function AppInner() {
                 onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
                 onScan={() => openScanner("order")} />
             )}
-            {(isAdmin || currentUser.role === "manager") && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
+            {(isAdmin || C("approve.limit")) && (view === "dashboard" || view === "orders") && <ApprovalsCard approvals={approvalsCtx} onDecide={approvalsCtx.decide} showToast={showToast} />}
             {view === "dashboard" && phoneUi && (
               <button type="button" onClick={toggleReport} data-testid="today-report" aria-expanded={fullReport}
                 style={{ width: "100%", height: 48, borderRadius: 14, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, fontFamily: "inherit", fontSize: 14.5, fontWeight: 600, cursor: "pointer", marginBottom: fullReport ? 18 : 0 }}>
@@ -1155,8 +1167,8 @@ function AppInner() {
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
             )}
             {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
-            {view === "kassa" && (isAdmin || currentUser.role === "manager") && (
-              <KassaView orders={activeOrders} transactions={activeTransactions} isAdmin={isAdmin} canCash={meEmp?.perm?.cash !== false} currentUser={currentUser} showToast={showToast} />
+            {view === "kassa" && (isAdmin || C("kassa.view")) && (
+              <KassaView orders={activeOrders} transactions={activeTransactions} isAdmin={isAdmin} canCash={C("kassa.view")} currentUser={currentUser} showToast={showToast} />
             )}
             {view === "categories" && (
               <CategoriesView
@@ -1169,10 +1181,10 @@ function AppInner() {
                 onDeleteCategory={deleteCategory}
                 onDeleteSubcategory={deleteSubcategory}
                 settings={settings}
-                onSaveSettings={isAdmin ? persistSettings : null}
+                onSaveSettings={isAdmin || C("categories.manage") || C("expense.big") ? persistSettings : null}
               />
             )}
-            {view === "employees" && isAdmin && (
+            {view === "employees" && (isAdmin || C("staff.view")) && (
               <EmployeesView
                 employees={employees}
                 onSave={persistEmployees}
@@ -1285,5 +1297,6 @@ function AppInner() {
     </ApprovalsProvider>
     </AttendanceGate>
     </TelegramOnboard>
+    </PermsContext.Provider>
   );
 }

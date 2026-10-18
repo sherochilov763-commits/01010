@@ -162,13 +162,21 @@ function report(data, from, to, mode = "prev") {
   };
 }
 
-module.exports = function registerAnalytics(app, { getStmt, upsertStmt, requireAuth, requireAdmin, makePdf = null, sendMonthlyPdf = null, nowFn = () => new Date() }) {
+module.exports = function registerAnalytics(app, { getStmt, upsertStmt, requireAuth, requireAdmin, requireExport = (q, r, n) => n(), makePdf = null, sendMonthlyPdf = null, nowFn = () => new Date() }) {
   const readJson = (key, fb) => { try { const r = getStmt.get(key); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
-  const data = () => ({
-    orders: (readJson("uvix:orders", []) || []).filter((o) => o && !o.deletedAt),
-    transactions: (readJson("uvix:transactions", []) || []).filter((t) => t && !t.deletedAt),
-    leads: (readJson("uvix:leads", []) || []).filter((l) => l && !l.deletedAt),
-  });
+  // «Hisobot: o'z yo'nalishi» — faqat shu yo'nalish (umumiy rasxodlar ulushi bilan)
+  const data = (req) => {
+    const all = (readJson("uvix:orders", []) || []);
+    let orders = all, transactions = readJson("uvix:transactions", []) || [], leads = readJson("uvix:leads", []) || [];
+    const ln = req?.perms?.["report.view"] === "line" && req.user?.line && req.user.line !== "common" ? req.user.line : null;
+    if (ln) {
+      const L = require("./lines");
+      orders = L.filterForClient("uvix:orders", orders, ln, all);
+      transactions = L.filterForClient("uvix:transactions", transactions, ln, all);
+      leads = L.filterForClient("uvix:leads", leads, ln, all);
+    }
+    return { orders: orders.filter((o) => o && !o.deletedAt), transactions: transactions.filter((t) => t && !t.deletedAt), leads: leads.filter((l) => l && !l.deletedAt) };
+  };
   const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
   function rangeOf(q) {
     const today = local(nowFn()).date;
@@ -182,12 +190,12 @@ module.exports = function registerAnalytics(app, { getStmt, upsertStmt, requireA
 
   app.get("/api/analytics", requireAuth, requireAdmin, (req, res) => {
     const { from, to, mode } = rangeOf(req.query || {});
-    res.json(report(data(), from, to, mode));
+    res.json(report(data(req), from, to, mode));
   });
-  app.get("/api/analytics/pdf", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/analytics/pdf", requireAuth, requireAdmin, requireExport, async (req, res) => {
     if (!makePdf) return res.status(501).json({ error: "no_pdf", message: "PDF faqat serverda yaratiladi (demo rejimda mavjud emas)" });
     const { from, to, mode } = rangeOf(req.query || {});
-    const r = report(data(), from, to, mode);
+    const r = report(data(req), from, to, mode);
     try {
       const buf = await makePdf(r, { company: company(), createdAt: local(nowFn()).date });
       res.setHeader("Content-Type", "application/pdf");
@@ -195,10 +203,10 @@ module.exports = function registerAnalytics(app, { getStmt, upsertStmt, requireA
       res.end(buf);
     } catch (e) { res.status(500).json({ error: "pdf_failed", message: e.message }); }
   });
-  app.post("/api/analytics/send-pdf", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/analytics/send-pdf", requireAuth, requireAdmin, requireExport, async (req, res) => {
     if (!makePdf || !sendMonthlyPdf) return res.status(501).json({ error: "no_pdf", message: "Demo rejimda mavjud emas" });
     const { from, to, mode } = rangeOf(req.body || {});
-    const r = report(data(), from, to, mode);
+    const r = report(data(req), from, to, mode);
     const buf = await makePdf(r, { company: company(), createdAt: local(nowFn()).date });
     const ok = await sendMonthlyPdf(buf, `UVIX_hisobot_${from}_${to}.pdf`, `📈 Hisobot — ${r.label}`);
     res.json({ ok, message: ok ? "Telegram'ga yuborildi" : "Yuborilmadi — Telegram bot sozlanmagan" });

@@ -33,7 +33,7 @@ const chatLineOf = (chatId) => (String(chatId || "").startsWith(ONYX) ? "UVONYX"
 const tgFor = (chatId) => (String(chatId || "").startsWith(ONYX) ? { bot: tgOnyx, id: String(chatId).slice(ONYX.length) } : { bot: telegramUserbot, id: chatId });
 const tgByLine = (line) => (line === "UVONYX" ? tgOnyx : telegramUserbot);
 // Xodim faqat o'z yo'nalishi chatlari bilan ishlaydi (rahbar va «Umumiy» — hammasi)
-const chatAllowed = (req, chatId) => !req.lineScope || chatLineOf(chatId) === req.lineScope;
+const chatAllowed = (req, chatId) => { if (req.can && !req.can("chats.view")) return false; const sc = req.scopeFor ? req.scopeFor("chats") : req.lineScope; return !sc || chatLineOf(chatId) === sc; };
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -247,13 +247,34 @@ function requireAuth(req, res, next) {
   if (sessionsApi && !sessionsApi.check(payload, req)) return res.status(401).json({ error: "session_revoked" });
   req.auth = payload;
   req.user = { sub: employee.id, id: employee.id, name: employee.name, role: employee.role, line: employee.line };
-  req.lineScope = linesApi.scopeOf(req.user, employee);
+  // Rollar va huquqlar: andoza → rahbar sozlamasi → xodimga istisno
+  req.perms = permsApi.resolve(employee, readRolesCfg());
+  req.user.perms = req.perms;
+  req.can = (k, need) => permsApi.can(req.perms, k, need);
+  const baseLine = linesApi.scopeOf(req.user, employee);
+  // «Hammasi» — ikkala yo'nalish (buyurtma, rasxod, o'tkazmalar); lidlar va mijozlar — o'z huquqi bo'yicha
+  const lineFor = (k) => (baseLine && req.perms[k] === "all" ? null : baseLine);
+  req.scopeFor = (key) => (key === "chats" ? lineFor("chats.view") : key === "uvix:leads" ? lineFor("crm.view") : key === "uvix:customers" ? lineFor("customers.view") : key === "uvix:transfers" ? lineFor("kassa.view") : lineFor("orders.view"));
+  req.lineScope = lineFor("orders.view");
+  // «Rol bo'lib ko'rish»: faqat ko'rish — hech narsa yozilmaydi
+  if (payload.ro) {
+    req.viewAs = { by: payload.va || null };
+    const p = (req.originalUrl || "").split("?")[0];
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !VIEW_AS_WRITE_OK.has(p)) return res.status(403).json({ error: "view_only", message: "Ko'rish rejimi — o'zgartirish yozilmaydi" });
+  }
   next();
 }
+const VIEW_AS_WRITE_OK = new Set(["/api/auth/logout", "/api/client-errors", "/api/errors/report"]);
+// Huquq bo'yicha ruxsat (rahbar — hamma narsa)
+function requirePerm(key, need) {
+  return (req, res, next) => (req.can && req.can(key, need) ? next() : res.status(403).json({ error: "forbidden", message: "Bu amal uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi" }));
+}
+function readRolesCfg() { try { return JSON.parse(getStmt.get("uvix:roles")?.value || "{}") || {}; } catch { return {}; } }
 // Dizayner va Pechatchi — faqat o'z vazifalarini ko'radigan "ishchi" rollar (pul ma'lumotlarisiz)
 const WORKER_ROLES = new Set(["designer", "printer", "installer"]);
 const isWorker = (user) => WORKER_ROLES.has(user?.role);
 const linesApi = require("./lines");
+const permsApi = require("./permissions");
 let jobsApi = null; // «Vazifalar» (pastda ro'yxatdan o'tadi) — bajarilgan ish statistikasi uchun
 // Ishchi rollar o'qishi/yozishi mumkin bo'lgan KV kalitlari (qolgani — 403)
 const WORKER_READ_KEYS = new Set(["uvix:employees", "uvix:appearance", "uvix:settings"]);
@@ -267,6 +288,37 @@ function requireAdmin(req, res, next) {
   next();
 }
 app.use("/api/kv", requireAuth);
+
+// ==================== Rollar va huquqlar ====================
+app.get("/api/me/perms", requireAuth, (req, res) => res.json({ perms: req.perms, viewAs: req.viewAs ? { ...req.viewAs, name: req.user.name, role: req.user.role } : null }));
+app.get("/api/roles", requireAuth, requireAdmin, (req, res) => {
+  const emps = readEmployees();
+  const counts = Object.fromEntries(permsApi.ROLES.map((r) => [r, emps.filter((e) => e.role === r && !e.deletedAt).length]));
+  res.json({ roles: readRolesCfg(), counts });
+});
+app.put("/api/roles", requireAuth, requireAdmin, (req, res) => {
+  const role = String(req.body?.role || "");
+  if (!permsApi.ROLES.includes(role) || role === "admin") return res.status(400).json({ error: "bad_role", message: "Rahbar rolini o'zgartirib bo'lmaydi" });
+  const all = readRolesCfg();
+  const prev = all[role] || {};
+  // Faqat andozadan farqlar saqlanadi
+  const clean = permsApi.cleanMap(req.body?.perms);
+  const diff = Object.fromEntries(Object.entries(clean).filter(([k, v]) => permsApi.BY_KEY.get(k).def[role] !== v && !(permsApi.isWorkerRole(role) && !permsApi.BY_KEY.get(k).workers)));
+  if (Object.keys(diff).length) all[role] = diff; else delete all[role];
+  upsertStmt.run("uvix:roles", JSON.stringify(all));
+  try { settingsLog.rolesChanged(req.user.name, role, prev, diff); } catch { /* ixtiyoriy */ }
+  res.json({ roles: all });
+});
+// «Rol bo'lib ko'rish» — rahbar xodim (yoki rol) ko'zi bilan ko'radi; 1 soat, faqat ko'rish (yozish taqiqlangan)
+app.post("/api/auth/view-as", requireAuth, requireAdmin, (req, res) => {
+  if (req.viewAs) return res.status(400).json({ error: "already" });
+  const emps = readEmployees();
+  const t = req.body?.employeeId ? emps.find((e) => e.id === req.body.employeeId) : emps.find((e) => e.role === req.body?.role && !e.deletedAt);
+  if (!t) return res.status(404).json({ error: "not_found", message: "Bu rolda xodim yo'q — avval xodim qo'shing" });
+  if (t.role === "admin") return res.status(400).json({ error: "bad_target", message: "Rahbar sifatida ko'rish shart emas" });
+  const token = jwt.sign({ sub: t.id, role: t.role, name: t.name, ro: 1, va: req.user.id }, JWT_SECRET, { expiresIn: "1h" });
+  res.json({ token, employee: { id: t.id, name: t.name, role: t.role, line: t.line || null } });
+});
 // Seanslar: /api/auth/me (F5 dan keyin tiklash), /api/auth/unlock (qulf ekrani), /api/me/sessions (qurilmalar)
 sessionsApi = require("./sessions")(app, { getStmt, upsertStmt, readEmployees, requireAuth, pinMatches, checkRateLimit, clearRateLimit });
 
@@ -323,7 +375,7 @@ const attPhotoStore = {
   },
 };
 const staffBot = require("./telegram-bot")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin });
-require("./pin-recovery").registerPinRecovery(app, { getStmt, upsertStmt, deleteStmt, readEmployees, writeEmployees, requireAuth, requireAdmin, staffBot, settingsLog });
+require("./pin-recovery").registerPinRecovery(app, { getStmt, upsertStmt, deleteStmt, readEmployees, writeEmployees, requireAuth, requireAdmin: requirePerm("staff.manage"), staffBot, settingsLog });
 // Sozlamalar → «Tizim holati»: nima sozlangan, nima e'tibor talab qiladi (faqat admin)
 app.get("/api/system-status", requireAuth, requireAdmin, async (req, res) => {
   const st = (() => { try { return JSON.parse(getStmt.get("uvix:settings")?.value || "{}"); } catch { return {}; } })();
@@ -365,14 +417,14 @@ const errorReports = require("./error-reports")(app, {
 });
 // Pul ma'lumotlari himoyasi: operator qoidalari, tasdiqlash so'rovlari, server jurnali (A1)
 const moneyGuard = require("./money-guard")(app, {
-  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff,
+  rolesCfg: readRolesCfg, getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff,
   sendToEmployee: (id, text) => staffBot.sendToEmployee(id, text),
   emit: (cat, item) => notifications.emit(cat, item),
 });
 
 // ==================== Chatlar: mas'ul, izohlar, tayyor javoblar, javobsiz ogohlantirish ====================
 const chatTools = require("./chat-tools")(app, {
-  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff,
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin: requirePerm("chats.templates"), requireStaff,
   notify: ({ chatId, name, mins, to }) => notifications.emit("chats", { title: `Javobsiz: ${name}`, body: `${mins} daqiqadan beri mijozga javob berilmadi`, view: "chats", to: to || null }),
 });
 setInterval(() => { try { chatTools.slaTick(); } catch (e) { console.error("Javobsiz chat tekshiruvi:", e.message); } }, 60 * 1000);
@@ -420,7 +472,7 @@ async function notifyDoc(cat, buffer, filename, caption) {
 const notifyAdmins = (text) => notify("system", text);
 // Hisobot va tahlil (foyda/zarar, pul oqimi, menejerlar) + oylik PDF (har oyning 1-kuni Telegram'ga)
 const analyticsApi = require("./analytics")(app, {
-  getStmt, upsertStmt, requireAuth, requireAdmin,
+  getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("report.view"), requireExport: requirePerm("report.export"),
   makePdf: require("./analytics-pdf"),
   sendMonthlyPdf: (buf, name, caption) => notifyDoc("monthlyReport", buf, name, caption),
 });
@@ -434,11 +486,11 @@ app.get("/api/telegram-routes", requireAuth, requireAdmin, (req, res) => {
     missing: emps.filter((e) => !staffBot.isLinked(e.id)).map((e) => e.name),
     onboard: { offer: st.tgOnboardOffer !== false, required: !!st.tgOnboardRequired } });
 });
-const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins: (t) => notify("paint", t) });
-const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, notifyAdmins: (t) => notify("debts", t) });
+const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("paint.edit"), notifyAdmins: (t) => notify("paint", t) });
+const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("custmsg.config"), notifyAdmins: (t) => notify("debts", t) });
 // Mijozga xabarlar (hisob-faktura, to'lov kvitansiyasi, qarz eslatmasi) — sizning Telegram akkauntingiz orqali
 const customerMsg = require("./customer-msg")(app, {
-  getStmt, upsertStmt, requireAuth, requireAdmin,
+  getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("custmsg.config"),
   sender: {
     isConnected: () => telegramUserbot.isConnected() || tgOnyx.isConnected(),
     sendText: (peer, text) => { const t = tgFor(peer); return t.bot.sendMessage(t.id, text); },
@@ -450,7 +502,7 @@ const customerMsg = require("./customer-msg")(app, {
   },
 });
 let geoApi = null; // vazifa joylari va ish vaqtidagi kuzatuv (pastda ro'yxatdan o'tadi)
-const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, sendTelegram: (text, _chatId, kind) => notify(kind === "daily" ? "attendanceDaily" : kind === "absent" ? "attendanceAbsent" : "attendanceReports", text), photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee, bio: passkeyApi, onConfigChanged: (who, prev, next) => { try { settingsLog.attendanceChanged(who, prev, next); } catch { /* ixtiyoriy */ } }, onChecked: (id, type) => { geoApi?.onCheck(id, type).catch?.(() => {}); } });
+const attendanceApi = require("./attendance")(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireView: requirePerm("att.view"), requireManage: requirePerm("att.manage"), sendTelegram: (text, _chatId, kind) => notify(kind === "daily" ? "attendanceDaily" : kind === "absent" ? "attendanceAbsent" : "attendanceReports", text), photoStore: attPhotoStore, notifyEmployee: staffBot.sendToEmployee, bio: passkeyApi, onConfigChanged: (who, prev, next) => { try { settingsLog.attendanceChanged(who, prev, next); } catch { /* ixtiyoriy */ } }, onChecked: (id, type) => { geoApi?.onCheck(id, type).catch?.(() => {}); } });
 // Xodim o'zi uchun Telegram turlarini tanlaydi (faqat o'ziga keladiganlari)
 const TG_CAT_LABELS = { orders: "Yangi buyurtmalar", payments: "To'lovlar", expenses: "Rasxodlar", debts: "Qarzlar", paint: "Bo'yoq ombori", dailyReport: "Kunlik hisobot (Excel)", backup: "Baza zaxirasi", monthlyReport: "Oylik hisobot (PDF)", attendanceDaily: "Kunlik davomat", attendanceAbsent: "«Hali kelmadi»", attendanceReports: "Haftalik/oylik davomat", system: "Tizim ogohlantirishlari", tasks: "Menga berilgan vazifalar" };
 app.get("/api/me/tg-prefs", requireAuth, (req, res) => {
@@ -502,7 +554,7 @@ staffBot.onLocation((empId, loc) => geoApi.onTelegramLocation(empId, loc));
 // ==================== Smeta → buyurtmalar, holatlar, umumiy to'lov ====================
 const fx = require("./fx").createFx({ getStmt, upsertStmt });
 require("./quotes")(app, {
-  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrderReady, getFx: fx.current,
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin: requirePerm("sys.sales"), requireStaff, onOrderReady, getFx: fx.current,
   onSalesChanged: (who, prev, next) => { try { settingsLog.salesChanged(who, prev, next); } catch { /* ixtiyoriy */ } },
   onOrdersWritten: (oldValue, newValue) => {
     notifyOrdersDiff(oldValue, newValue);
@@ -515,10 +567,13 @@ require("./quotes")(app, {
 const SECRET_SETTING_FIELDS = ["telegramBotToken", "telegramChatId", "gmailUser", "gmailAppPassword", "telegramUserApiHash", "telegramUserSession", "telegramUserApiId", "telegramUserPhone"];
 // Oddiy xodim yozishi mumkin bo'lgan kalitlar (qolganlari — faqat admin)
 // "uvix:appearance" — kompaniya standarti, faqat admin yozadi (har bir xodimning o'zi — /api/me/appearance)
+// Huquq bilan yoziladigan kalitlar va sozlamalar maydonlari
+const PERM_WRITE_KEYS = { "uvix:transfers": "kassa.transfer" };
+const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdRateAuto"], "expense.big": ["bigExpenseLimit"], "categories.manage": ["categoryLines"] };
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -605,17 +660,19 @@ app.get("/api/kv/:key", (req, res) => {
       return res.json({ key, rev, value: JSON.stringify(sanitizeSettingsForClient(JSON.parse(row.value), isAdmin, req.user)) });
     } catch { /* buzilgan JSON — pastda xom holda qaytaramiz */ }
   }
-  if (req.lineScope && linesApi.SCOPED_KEYS.has(key)) {
+  if (hiddenByPerm(req, key)) return res.json({ key, rev, value: "[]" });
+  const gsc = req.scopeFor(key);
+  if (gsc && linesApi.SCOPED_KEYS.has(key)) {
     try {
       const allOrders = key === "uvix:orders" ? JSON.parse(row.value) : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), req.lineScope, allOrders, jobsApi?.workStats())) });
+      return res.json({ key, rev, value: JSON.stringify(linesApi.filterForClient(key, JSON.parse(row.value), gsc, allOrders, jobsApi?.workStats())) });
     } catch { return res.status(500).json({ error: "read_failed" }); }
   }
   res.json({ key: row.key, rev, value: row.value });
 });
 // Mijozning mas'ul menejerini faqat rahbar yoki katta menejer o'zgartiradi
 function keepCustomerManager(user, items, oldList) {
-  if (!Array.isArray(items) || user?.role === "admin" || user?.role === "manager") return items;
+  if (!Array.isArray(items) || user?.role === "admin" || (user?.perms && permsApi.can(user.perms, "customers.assign"))) return items;
   const old = new Map((Array.isArray(oldList) ? oldList : []).filter(Boolean).map((x) => [String(x.id), x]));
   return items.map((it) => {
     if (!it || typeof it !== "object") return it;
@@ -625,12 +682,35 @@ function keepCustomerManager(user, items, oldList) {
   });
 }
 // Yo'nalish bo'yicha javob: xodimga faqat o'z yo'nalishi ko'rinadi
+// Rasxod: kiritish va tahrirlash/o'chirish huquqi (o'ziniki / yo'nalishi / hammasi; yo'nalish — lineScope bilan)
+function guardTx(req, next, old) {
+  if (req.user.role === "admin" || !Array.isArray(next)) return next;
+  const add = req.can("expense.add"), ed = req.perms["expense.edit"];
+  const oldMap = new Map((Array.isArray(old) ? old : []).filter(Boolean).map((x) => [String(x.id), x]));
+  const okEdit = (o) => ed !== "none" && (ed !== "own" || o.createdBy === req.user.name);
+  const seen = new Set();
+  const out = [];
+  for (const it of next) {
+    if (!it || typeof it !== "object") continue;
+    const id = String(it.id); seen.add(id);
+    const o = oldMap.get(id);
+    if (!o) { if (add) out.push(it); continue; }
+    out.push(JSON.stringify(o) === JSON.stringify(it) || okEdit(o) ? it : o);
+  }
+  for (const [id, o] of oldMap) if (!seen.has(id) && !okEdit(o)) out.push(o); // o'chirish huquqi yo'q — qoladi
+  return out;
+}
+// Ko'rish huquqi umuman yo'q bo'lgan ro'yxatlar — bo'sh qaytadi
+const VIEW_PERM_OF = { "uvix:orders": "orders.view", "uvix:leads": "crm.view", "uvix:customers": "customers.view", "uvix:transfers": "kassa.view" };
+function hiddenByPerm(req, key) { const k = VIEW_PERM_OF[key]; return !!(k && req.can && !req.can(k)); }
 function scopedValue(req, key, value) {
-  if (!req.lineScope || !linesApi.SCOPED_KEYS.has(key)) return value;
+  if (hiddenByPerm(req, key)) return "[]";
+  const sc = req.scopeFor ? req.scopeFor(key) : req.lineScope;
+  if (!sc || !linesApi.SCOPED_KEYS.has(key)) return value;
   try {
     const list = JSON.parse(value);
     const allOrders = key === "uvix:orders" ? list : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-    return JSON.stringify(linesApi.filterForClient(key, list, req.lineScope, allOrders, jobsApi?.workStats()));
+    return JSON.stringify(linesApi.filterForClient(key, list, sc, allOrders, jobsApi?.workStats()));
   } catch { return value; }
 }
 
@@ -792,6 +872,21 @@ function mergeEmployees(incoming, user) {
   const existing = readEmployees();
   const byId = new Map(existing.map((e) => [e.id, e]));
   const isAdmin = user.role === "admin";
+  // «Xodim qo'shish, rol berish, PIN tiklash» huquqi bor (rahbar emas) — rahbarlarga tegolmaydi, rahbar qila olmaydi, huquqlarni o'zgartira olmaydi
+  if (!isAdmin && user.perms && permsApi.can(user.perms, "staff.manage")) {
+    const safe = [];
+    const seenIds = new Set();
+    for (const e of incoming) {
+      if (!e || typeof e.id !== "string" || seenIds.has(e.id)) continue;
+      seenIds.add(e.id);
+      const old = byId.get(e.id);
+      if (old?.role === "admin") { safe.push(old); continue; }
+      const { perm: _p, permOver: _po, ...rest } = e;
+      safe.push({ ...rest, role: e.role === "admin" ? old?.role || "operator" : e.role, ...(old?.perm ? { perm: old.perm } : {}), ...(old?.permOver ? { permOver: old.permOver } : {}) });
+    }
+    for (const old of existing) if (old.role === "admin" && !seenIds.has(old.id)) safe.push(old);
+    return mergeEmployees(safe, { ...user, role: "admin", _staffManager: true });
+  }
   const validPin = (p) => typeof p === "string" && /^\d{4,6}$/.test(p);
 
   if (!isAdmin) {
@@ -829,6 +924,10 @@ function mergeEmployees(incoming, user) {
     const pr = rest.perm !== undefined ? rest.perm : old?.perm;
     if (pr && typeof pr === "object" && role !== "admin") next.perm = { cash: pr.cash !== false, profit: pr.profit !== false, approveLimit: Math.max(0, Math.min(1e12, Math.round(Number(pr.approveLimit) || 0))) };
     else delete next.perm;
+    // Xodimga istisno (Rollar va huquqlar): faqat rahbar o'zgartiradi
+    const po = user._staffManager ? old?.permOver : rest.permOver !== undefined ? rest.permOver : old?.permOver;
+    const poc = role !== "admin" ? permsApi.cleanMap(po) : {};
+    if (Object.keys(poc).length) next.permOver = poc; else delete next.permOver;
     if (old && pin !== old.pin) { delete next.mustChangePin; delete next.tempPinExp; } // admin PIN'ni qo'lda o'zgartirdi
     result.push(next);
   }
@@ -923,6 +1022,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
   const key = req.params.key;
   if (!MERGE_KEYS.has(key)) return res.status(400).json({ error: "merge_not_supported" });
   if (isWorker(req.user)) return res.status(403).json({ error: "forbidden" });
+  if (key === "uvix:leads" && req.user.role !== "admin" && !req.can("crm.edit")) { const r0 = getStmt.get(key); return res.json({ key, rev: revOf(key), value: scopedValue(req, key, r0 ? r0.value : "[]") }); }
   const { upserts = [], deletes = [] } = req.body || {};
   if (!Array.isArray(upserts) || !Array.isArray(deletes) || upserts.length > 20000 || deletes.length > 20000) {
     return res.status(400).json({ error: "invalid_patch" });
@@ -948,16 +1048,17 @@ app.post("/api/kv/:key/merge", (req, res) => {
     const oldList = list;
     let scopedUpserts = upserts;
     let scopedDeletes = deletes;
-    if (req.lineScope && linesApi.SCOPED_KEYS.has(key)) {
+    const msc = req.scopeFor(key);
+    if (msc && linesApi.SCOPED_KEYS.has(key)) {
       // Boshqa yo'nalish (yoki umumiy rasxod) yozuvlarini xodim o'zgartira/o'chira olmaydi
       const lm = linesApi.lineMap(key === "uvix:orders" ? oldList : JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
       const byId = new Map(oldList.filter(Boolean).map((x) => [String(x.id), x]));
       const allOrd = key === "uvix:orders" ? oldList : JSON.parse(getStmt.get("uvix:orders")?.value || "[]");
-      scopedDeletes = deletes.filter((id) => { const o = byId.get(String(id)); return !o || linesApi.editable(key, o, req.lineScope, lm, allOrd); });
-      scopedUpserts = upserts.map((u) => { const it = linesApi.prepareUpsert(key, u.item, byId.get(String(u.item.id)), req.lineScope, lm, allOrd); return it ? { ...u, item: it } : null; }).filter(Boolean);
+      scopedDeletes = deletes.filter((id) => { const o = byId.get(String(id)); return !o || linesApi.editable(key, o, msc, lm, allOrd); });
+      scopedUpserts = upserts.map((u) => { const it = linesApi.prepareUpsert(key, u.item, byId.get(String(u.item.id)), msc, lm, allOrd); return it ? { ...u, item: it } : null; }).filter(Boolean);
     }
     // Operator buyurtmani o'chira olmaydi (faqat admin tasdig'i bilan) — o'chirish so'rovi e'tiborsiz qoladi
-    const blocked = key === "uvix:orders" && !isAdminUser ? oldList.filter((x) => scopedDeletes.map(String).includes(String(x?.id))) : [];
+    const blocked = key === "uvix:orders" && !isAdminUser && !req.can("orders.delete", "direct") ? oldList.filter((x) => scopedDeletes.map(String).includes(String(x?.id))) : [];
     const del = new Set(scopedDeletes.map(String).filter((id) => !blocked.some((x) => String(x.id) === id)));
     list = list.filter((x) => !del.has(String(x?.id)));
     const pos = new Map(list.map((x, i) => [String(x?.id), i]));
@@ -971,6 +1072,7 @@ app.post("/api/kv/:key/merge", (req, res) => {
     }
     let next = [...toStart, ...list, ...toEnd];
     if (key === "uvix:leads") next = mergeLeadTaskState(next, oldValue ? JSON.parse(oldValue) : []);
+    if (key === "uvix:transactions") next = guardTx(req, next, oldList);
     if (key === "uvix:orders") {
       const g = moneyGuard.guardOrders(next, oldList, req.user);
       violations = [...blocked.map((o) => ({ kind: "order_delete", order: o })), ...g.violations];
@@ -1006,7 +1108,7 @@ app.put("/api/kv/:key", (req, res) => {
   if (isInternalKey(key)) return res.status(403).json({ error: "forbidden" });
   const isAdmin = req.user.role === "admin";
   if (isWorker(req.user) && !WORKER_WRITE_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
-  if (!isAdmin && !USER_WRITABLE_KEYS.has(key)) {
+  if (!isAdmin && !USER_WRITABLE_KEYS.has(key) && !(PERM_WRITE_KEYS[key] && req.can(PERM_WRITE_KEYS[key]))) {
     return res.status(403).json({ error: "forbidden", message: "Faqat administrator uchun" });
   }
   if (key === "uvix:appearance") {
@@ -1018,6 +1120,9 @@ app.put("/api/kv/:key", (req, res) => {
   }
   const oldRow = getStmt.get(key);
   const oldValue = oldRow ? oldRow.value : null;
+  // Huquq yo'q — yozilmaydi, joriy holat qaytadi (brauzer xato ko'rsatmasdan server qiymatini oladi)
+  const noWrite = !isAdmin && oldRow && ((key === "uvix:categories" && !req.can("categories.manage")) || (key === "uvix:leads" && !req.can("crm.edit")));
+  if (noWrite) return res.json({ key, rev: revOf(key), value: scopedValue(req, key, oldValue) });
 
   if (key === "uvix:employees") {
     let list;
@@ -1025,6 +1130,7 @@ app.put("/api/kv/:key", (req, res) => {
     if (!Array.isArray(list)) return res.status(400).json({ error: "must_be_array" });
     const merged = mergeEmployees(list, req.user);
     if (merged.error) return res.status(400).json({ error: "invalid_employees", message: merged.error });
+    try { const prevById = new Map(readEmployees().map((e) => [e.id, e])); for (const e of merged.list) { const o = prevById.get(e.id); if (JSON.stringify(o?.permOver || {}) !== JSON.stringify(e.permOver || {})) settingsLog.empPermsChanged(req.user.name, e.name, e.role, o?.permOver || {}, e.permOver || {}); } } catch { /* ixtiyoriy */ }
     writeEmployees(merged.list);
     passkeyApi.removeForMissingEmployees(new Set(merged.list.map((e) => e.id)));
     return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeEmployeesForClient(merged.list, req.user)) });
@@ -1042,6 +1148,21 @@ app.put("/api/kv/:key", (req, res) => {
       const rate = Number(next.usdRate);
       current = Number.isFinite(rate) && rate > 0 ? { usdRate: rate } : {};
       upsertStmt.run(key, JSON.stringify(current));
+    } else {
+      // Rollar va huquqlar: ruxsat berilgan maydonlarnigina yozadi (maxfiy maydonlar — hech qachon)
+      const fields = Object.entries(SETTINGS_FIELDS_BY_PERM).filter(([k]) => req.can(k)).flatMap(([, f]) => f);
+      if (fields.length) {
+        let next = {};
+        try { next = JSON.parse(value) || {}; } catch { return res.status(400).json({ error: "invalid_json" }); }
+        const merged = { ...current };
+        let changed = false;
+        for (const f of fields) if (next[f] !== undefined && JSON.stringify(next[f]) !== JSON.stringify(current[f])) { merged[f] = next[f]; changed = true; }
+        if (changed) {
+          try { settingsLog.settingsChanged(req.user.name, current, merged); } catch { /* ixtiyoriy */ }
+          upsertStmt.run(key, JSON.stringify(merged));
+          current = merged;
+        }
+      }
     }
     return res.json({ key, rev: revOf(key), value: JSON.stringify(sanitizeSettingsForClient(current, false, req.user)) });
   }
@@ -1050,7 +1171,7 @@ app.put("/api/kv/:key", (req, res) => {
     // Dizayner/pechatchi vazifa holatini o'zgartirgan bo'lsa, menejerning eskirgan nusxasi uni bosib ketmasin
     try {
       const oldLeads = oldValue ? JSON.parse(oldValue) : [];
-      const incomingLeads = linesApi.mergeScopedPut(key, JSON.parse(value), oldLeads, req.lineScope, JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
+      const incomingLeads = linesApi.mergeScopedPut(key, JSON.parse(value), oldLeads, req.scopeFor(key), JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
       const merged = mergeLeadTaskState(incomingLeads, oldLeads);
       upsertStmt.run(key, JSON.stringify(merged));
       return res.json({ key, rev: revOf(key), value: scopedValue(req, key, JSON.stringify(merged)) });
@@ -1068,7 +1189,7 @@ app.put("/api/kv/:key", (req, res) => {
     // Dizayner/pechatchi holati va server kiritgan to'lovlar eskirgan nusxa bilan yo'qolmasin
     try {
       const oldList = oldValue ? JSON.parse(oldValue) : [];
-      const incoming = linesApi.mergeScopedPut(key, JSON.parse(value), oldList, req.lineScope, oldList);
+      const incoming = linesApi.mergeScopedPut(key, JSON.parse(value), oldList, req.scopeFor(key), oldList);
       const g = moneyGuard.guardOrders(incoming, oldList, req.user);
       const merged = JSON.stringify(mergeOrderState(g.list, oldList));
       upsertStmt.run(key, merged);
@@ -1085,10 +1206,13 @@ app.put("/api/kv/:key", (req, res) => {
   if (key === "uvix:customers") {
     try { value = JSON.stringify(keepCustomerManager(req.user, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [])); } catch { return res.status(400).json({ error: "invalid_json" }); }
   }
-  if ((key === "uvix:transactions" || key === "uvix:customers") && req.lineScope) {
+  if ((key === "uvix:transactions" || key === "uvix:customers") && req.scopeFor(key)) {
     try {
-      value = JSON.stringify(linesApi.mergeScopedPut(key, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [], req.lineScope, JSON.parse(getStmt.get("uvix:orders")?.value || "[]")));
+      value = JSON.stringify(linesApi.mergeScopedPut(key, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [], req.scopeFor(key), JSON.parse(getStmt.get("uvix:orders")?.value || "[]")));
     } catch { return res.status(400).json({ error: "invalid_json" }); }
+  }
+  if (key === "uvix:transactions" && !isAdmin) {
+    try { value = JSON.stringify(guardTx(req, JSON.parse(value), oldValue ? JSON.parse(oldValue) : [])); } catch { return res.status(400).json({ error: "invalid_json" }); }
   }
   upsertStmt.run(req.params.key, value);
   res.json({ key: req.params.key, rev: revOf(req.params.key), value: scopedValue(req, req.params.key, value) });
@@ -1729,7 +1853,7 @@ function storeOutgoing(chatId, msg) {
 const validChatId = (v) => typeof v === "string" || typeof v === "number" ? String(v).length > 0 && String(v).length < 64 : false;
 const replyOpt = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
 
-app.post("/api/telegram-user/send", requireAuth, requireStaff, async (req, res) => {
+app.post("/api/telegram-user/send", requireAuth, requireStaff, requirePerm("chats.reply"), async (req, res) => {
   const { chatId, text, replyToTgId } = req.body || {};
   if (!validChatId(chatId) || !text || typeof text !== "string") return res.status(400).json({ error: "missing_fields" });
   if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
@@ -1753,7 +1877,7 @@ const chatUpload = multer({
   }),
   limits: { fileSize: 50 * 1024 * 1024, files: 1 }, // video/hujjat 50 MB gacha (rasm va ovoz — 15 MB, pastda tekshiriladi)
 });
-app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) => {
+app.post("/api/telegram-user/send-media", requireAuth, requireStaff, requirePerm("chats.reply"), (req, res) => {
   chatUpload.single("file")(req, res, async (err) => {
     if (err) return res.status(400).json({ error: "upload_failed", message: err.message });
     const f = req.file;
@@ -1813,7 +1937,7 @@ app.post("/api/telegram-user/send-media", requireAuth, requireStaff, (req, res) 
   });
 });
 
-app.post("/api/telegram-user/send-location", requireAuth, requireStaff, async (req, res) => {
+app.post("/api/telegram-user/send-location", requireAuth, requireStaff, requirePerm("chats.reply"), async (req, res) => {
   const { chatId, lat, lng, replyToTgId } = req.body || {};
   const la = Number(lat), lo = Number(lng);
   if (!validChatId(chatId) || !Number.isFinite(la) || !Number.isFinite(lo) || Math.abs(la) > 90 || Math.abs(lo) > 180) {
@@ -1831,7 +1955,7 @@ app.post("/api/telegram-user/send-location", requireAuth, requireStaff, async (r
 
 // Reaksiya: emoji — qo'yish, null — olib tashlash
 const ALLOWED_REACTIONS = new Set(["👍", "❤", "🔥", "😁", "😢", "🙏", "👌"]);
-app.post("/api/telegram-user/react", requireAuth, requireStaff, async (req, res) => {
+app.post("/api/telegram-user/react", requireAuth, requireStaff, requirePerm("chats.reply"), async (req, res) => {
   const { chatId, messageId, emoji } = req.body || {};
   if (!validChatId(chatId) || !messageId || (emoji && !ALLOWED_REACTIONS.has(emoji))) return res.status(400).json({ error: "bad_request" });
   if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });

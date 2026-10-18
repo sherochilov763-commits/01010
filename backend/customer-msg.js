@@ -225,7 +225,7 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
   app.get("/api/customer-msg/config", requireAuth, (req, res) => {
     if (!staff(req, res)) return;
     const c = config();
-    res.json({ config: req.user.role === "admin" ? c : publicCfg(c), connected: !!sender?.isConnected?.() });
+    res.json({ config: req.user.role === "admin" || req.can?.("custmsg.config") ? c : publicCfg(c), connected: !!sender?.isConnected?.() });
   });
   app.put("/api/customer-msg/config", requireAuth, requireAdmin, (req, res) => {
     const cur = config(), b = req.body || {};

@@ -69,8 +69,10 @@ module.exports = function registerGeo(app, { getStmt, upsertStmt, deleteStmt = n
   const write = (k, v) => upsertStmt.run(k, JSON.stringify(v));
   const cfg = () => ({ ...DEFAULT_CFG, ...read(KEY_CFG, {}) });
   const emps = () => readEmployees().filter((e) => !e.deletedAt);
-  const canWatch = (u) => u.role === "admin" || u.role === "manager";
-  const watchable = (u) => emps().filter((e) => e.role !== "admin" && (u.role === "admin" || (u.role === "manager" && (!u.line || u.line === "common" || e.line === u.line || e.line === "common"))));
+  // Rollar va huquqlar: «Xodimlar joyini ko'rish» (hammasi / o'z yo'nalishi); bo'lmasa — rahbar va katta menejer
+  const geoView = (u) => u.perms?.["geo.view"] || (u.role === "admin" ? "all" : u.role === "manager" ? "line" : "none");
+  const canWatch = (u) => geoView(u) !== "none";
+  const watchable = (u) => emps().filter((e) => e.role !== "admin" && e.id !== u.id && (geoView(u) === "all" || (geoView(u) === "line" && (!u.line || u.line === "common" || e.line === u.line || e.line === "common"))));
 
   // Joyni qabul qilish: kuzatuv yoqilgan, rozilik bor, ish vaqtida (Keldim → Ketdim)
   function ingest(empId, { lat, lng, acc = null, src = "app", at = null }) {
@@ -114,9 +116,9 @@ module.exports = function registerGeo(app, { getStmt, upsertStmt, deleteStmt = n
   });
   // Joriy joy (eng yaqin ish maslahati uchun) — kuzatuv o'chiq bo'lsa ham saqlanmaydi, faqat javob
   // Sex (ishxona) — davomat sozlamasidagi kenglik/uzunlik; xaritada doim belgilanadi
-  app.get("/api/geo/config", requireAuth, (req, res) => res.json({ config: cfg(), canEdit: req.user.role === "admin", workshop: workshop() }));
+  app.get("/api/geo/config", requireAuth, (req, res) => res.json({ config: cfg(), canEdit: req.user.role === "admin" || !!req.user.perms?.["geo.config"], workshop: workshop() }));
   app.put("/api/geo/config", requireAuth, (req, res) => {
-    if (req.user.role !== "admin") return res.status(403).json({ error: "forbidden", message: "Kuzatuvni rahbar yoqadi" });
+    if (req.user.role !== "admin" && !req.user.perms?.["geo.config"]) return res.status(403).json({ error: "forbidden", message: "Kuzatuvni rahbar yoqadi" });
     const b = req.body || {};
     const next = { ...cfg(), ...(b.enabled !== undefined ? { enabled: !!b.enabled } : {}), ...(b.retentionDays ? { retentionDays: Math.max(7, Math.min(90, Math.round(Number(b.retentionDays)) || 30)) } : {}) };
     write(KEY_CFG, next);
