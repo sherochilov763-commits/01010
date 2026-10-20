@@ -13,6 +13,7 @@ import { exportRows } from "../../lib/excel.js";
 import { PaymentsModal } from "../orders/PaymentsModal.jsx";
 import { TG_BLUE } from "../../components/LeadSource.jsx";
 import { TelegramLinkCard } from "../../components/TelegramLinkCard.jsx";
+import { CustMsgQueuePanel, useCustMsgQueue } from "../../components/CustMsgQueue.jsx";
 import { fetchCustMsgConfig, fetchCustMsgLog, fetchDebtConfig, fetchRemindPreview, saveCustMsgConfig, saveDebtConfig, sendDebtDigest } from "../../storage.js";
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
 import { takeOpenTab } from "../../lib/deeplink.js";
@@ -53,10 +54,12 @@ export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, t
   const { can } = usePerms();
   const canAssign = isAdmin || can("customers.assign");
   const canMsg = isAdmin || can("custmsg.config");
+  const canSendMsg = isAdmin || can("invoice");
+  const queue = useCustMsgQueue(canSendMsg);
   const all = useMemo(() => buildCustomers(orders, leads, profiles, today).filter((c) => canAssign || !c.managerId || c.managerId === currentUser?.id), [orders, leads, profiles, today, canAssign, currentUser?.id]);
   const empName = (id) => (employees || []).find((e) => e.id === id)?.name || "";
   const debtors = useMemo(() => all.filter((c) => c.debt > 0).sort((a, b) => b.debt - a.debt), [all]);
-  const [tab, setTab] = useState(() => takeOpenTab("customers", ["list","debt", ...(canMsg ? ["msg"] : [])]) || "list");
+  const [tab, setTab] = useState(() => takeOpenTab("customers", ["list","debt", ...(canSendMsg ? ["queue"] : []), ...(canMsg ? ["msg"] : [])]) || "list");
   const [openId, setOpenId] = useState(null);
   const [edit, setEdit] = useState(null); // customer | {} (yangi)
   const [payFor, setPayFor] = useState(null);
@@ -75,12 +78,13 @@ export function CustomersView({ currentUser, isAdmin, orders, leads, profiles, t
         <Kpi label="Jami qarz" value={moneyCompact(totalDebt)} icon={Wallet} color={THEME.rose} onClick={() => setTab("debt")} />
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <Tabs tabs={[["list", "Mijozlar"], ["debt", `Qarzdorlar${debtors.length ? ` (${debtors.length})` : ""}`], ...(canMsg ? [["msg", "Xabarlar"]] : [])]} tab={tab} setTab={setTab} />
+        <Tabs tabs={[["list", "Mijozlar"], ["debt", `Qarzdorlar${debtors.length ? ` (${debtors.length})` : ""}`], ...(canSendMsg ? [["queue", `Navbat${queue.pending.length ? ` (${queue.pending.length})` : ""}`]] : []), ...(canMsg ? [["msg", "Xabarlar"]] : [])]} tab={tab} setTab={setTab} />
         <div style={{ flex: 1 }} />
         <Button onClick={() => setEdit({})} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Plus size={15} /> Mijoz</Button>
       </div>
       {tab === "list" && <ListTab all={all} me={currentUser?.id} empName={empName} onOpen={(c) => setOpenId(c.id)} onOpenChat={onOpenChat} />}
       {tab === "debt" && <DebtTab debtors={debtors} totalDebt={totalDebt} isAdmin={canMsg} onOpen={(c) => setOpenId(c.id)} onPay={setPayFor} onInvoice={(order, customer) => setInvoiceFor({ order, customer })} onOpenChat={onOpenChat} />}
+      {tab === "queue" && canSendMsg && <CustMsgQueuePanel q={queue} />}
       {tab === "msg" && canMsg && <MessagesTab />}
       {invoiceFor && <InvoiceModal order={invoiceFor.order} customer={invoiceFor.customer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}
       {open && <CustomerCard c={open} managerName={empName(open.managerId)} onClose={() => setOpenId(null)} onEdit={() => setEdit(open)} onPay={setPayFor} onInvoice={(order) => setInvoiceFor({ order, customer: open })} onOpenChat={onOpenChat} onOpenOrders={onOpenOrders} />}
@@ -432,6 +436,16 @@ function EditCustomer({ c, all, managers, onClose, onSave }) {
   );
 }
 
+// «Avtomatik yuborish» — sukut bo'yicha o'chiq (xabar navbatga tushadi)
+function AutoToggle({ cfg, setCfg, k }) {
+  const on = !!cfg.auto?.[k];
+  return (
+    <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, cursor: "pointer", marginLeft: 28, marginTop: -6, color: on ? THEME.amber : THEME.muted }}>
+      <input type="checkbox" checked={on} onChange={(e) => setCfg((c) => ({ ...c, auto: { ...(c.auto || {}), [k]: e.target.checked } }))} data-testid={`cm-auto-${k}`} style={{ accentColor: THEME.amber }} />
+      {on ? <b>Avtomatik yuboriladi (tasdiqsiz)</b> : "Avtomatik yuborish — o'chiq: navbatga tushadi"}
+    </label>
+  );
+}
 // ---------------- Xabarlar (admin): rekvizitlar, avtomatik xabarlar, jurnal ----------------
 const LOG_TYPE = { invoice: "Hisob-faktura", receipt: "To'lov qabul qilindi", debt: "Qarz eslatmasi", ready: "Buyurtma tayyor" };
 function MessagesTab() {
@@ -475,20 +489,31 @@ function MessagesTab() {
         <div style={{ fontSize: 12, color: THEME.muted }}>Hisob-faktura faqat qo'lda yuboriladi: Buyurtmalar ro'yxatidagi yoki mijoz kartasidagi <FileText size={12} style={{ verticalAlign: -2 }} /> tugmasi orqali.</div>
       </Card>
 
+      <Card style={{ padding: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: cfg.paused ? `1.5px solid ${THEME.amber}` : undefined }}>
+        <div style={{ flex: "1 1 260px" }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{cfg.paused ? "Mijozga xabarlar to'xtatilgan" : "Mijozga xabarlar yoqilgan"}</div>
+          <div style={{ fontSize: 12.5, color: THEME.muted, marginTop: 2 }}>To'xtatilsa — hech narsa ketmaydi: navbatdagi xabarlar ham, hisob-faktura ham.</div>
+        </div>
+        <Button variant={cfg.paused ? "primary" : "ghost"} data-testid="cm-pause" onClick={async () => { try { const d = await saveCustMsgConfig({ ...cfg, paused: !cfg.paused }); setCfg(d.config); window.dispatchEvent(new Event("uvix:custmsg-changed")); } catch (e) { setMsg({ ok: false, text: e.message }); } }}>{cfg.paused ? "Qayta yoqish" : "To'xtatish"}</Button>
+      </Card>
       <Card style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>Mijozga avtomatik xabarlar</div>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>Mijozga xabarlar (navbat orqali)</div>
+        <div style={{ fontSize: 12.5, color: THEME.muted, lineHeight: 1.5, marginTop: -6 }}>Belgilangan xabarlar tayyorlanadi va <b>«Navbat»</b>ga tushadi — xodim matnni ko'rib yuboradi. «Avtomatik» faqat siz yoqsangiz ishlaydi; shubhali xabar baribir navbatda qoladi.</div>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, cursor: "pointer", lineHeight: 1.45 }}>
           <input type="checkbox" checked={cfg.receipt} onChange={set("receipt")} style={check} data-testid="cm-receipt" />
           <span><b>To'lov qabul qilindi</b> — buyurtmaga to'lov kiritilganda mijozga kvitansiya: summa, to'lov turi va qolgan qarz (yoki «to'liq to'landi»). Umumiy to'lov bir nechta buyurtmaga bo'linsa — bitta kvitansiya.</span>
         </label>
+        {cfg.receipt && <AutoToggle cfg={cfg} setCfg={setCfg} k="receipt" />}
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, cursor: "pointer", lineHeight: 1.45 }}>
           <input type="checkbox" checked={!!cfg.readyNotify} onChange={set("readyNotify")} style={check} data-testid="cm-ready" />
           <span><b>Buyurtma tayyor</b> — pechat tugaganda (yoki xodim «Tayyor» deb belgilaganda) mijozga «olib ketishingiz mumkin» xabari va qolgan to'lov. Bir smetadagi bir nechta buyurtma — hammasi tayyor bo'lganda bitta xabar.</span>
         </label>
+        {cfg.readyNotify && <AutoToggle cfg={cfg} setCfg={setCfg} k="ready" />}
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, cursor: "pointer", lineHeight: 1.45 }}>
           <input type="checkbox" checked={cfg.debtRemind} onChange={set("debtRemind")} style={check} data-testid="cm-remind" />
           <span><b>Qarz eslatmasi</b> — qarz {cfg.debtDays || 7} kundan oshsa, mijozga yumshoq eslatma: qaysi buyurtmalar, qancha qolgan va karta raqami. Har mijozga ko'pi bilan {cfg.remindEvery || 7} kunda bir marta.</span>
         </label>
+        {cfg.debtRemind && <AutoToggle cfg={cfg} setCfg={setCfg} k="debt" />}
         {cfg.debtRemind && (
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", paddingLeft: 28 }}>
             <Field label="Necha kundan keyin"><input value={cfg.debtDays} onChange={set("debtDays")} inputMode="numeric" style={{ ...getInputStyle(), width: 110 }} /></Field>
@@ -541,7 +566,8 @@ function MessagesTab() {
             <span style={{ color: THEME.muted, width: 110, flexShrink: 0 }}>{new Date(l.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
             <span style={{ fontWeight: 600, width: 150, flexShrink: 0 }}>{LOG_TYPE[l.type] || l.type}</span>
             <span style={{ flex: "1 1 160px", minWidth: 0 }}>{l.customer}{l.orderNumber ? <span style={{ color: THEME.muted }}> · {l.orderNumber}</span> : null} <span style={{ color: TG_BLUE }}>{l.to}</span></span>
-            {l.ok ? <span style={{ color: THEME.green, fontWeight: 700 }}>✓ yuborildi</span> : <span style={{ color: THEME.rose }} title={l.error}>✗ {l.error}</span>}
+            {l.ok ? <span style={{ color: THEME.green, fontWeight: 700 }}>✓ yuborildi{l.by ? ` · ${l.by}` : ""}</span> : <span style={{ color: THEME.rose }} title={l.error}>✗ {l.error}</span>}
+            {l.text && <details style={{ flexBasis: "100%", fontSize: 12, color: THEME.muted }}><summary style={{ cursor: "pointer" }}>Matn</summary><div style={{ whiteSpace: "pre-wrap", marginTop: 4, color: THEME.text }}>{l.text}</div></details>}
           </div>
         ))}
       </Card>

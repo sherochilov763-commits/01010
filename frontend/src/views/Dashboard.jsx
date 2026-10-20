@@ -14,6 +14,13 @@ import { MoneyCard, SplitCompare } from "./dashboard/MoneyCard.jsx";
 import { useTransfers } from "../lib/transfers.js";
 import { computeKassa } from "../lib/kassa.js";
 import { BigExpenses } from "./dashboard/BigExpenses.jsx";
+import { AttentionCard, CustomersCard, DebtAgingCard, ExpenseDonut, FixedCostsCard, FixedCostsModal, ForecastCard, FunnelCard, KpiRow, LineShareCard, ManagersModal, ManagersPanel, PayTypesCard, ProductionCard, RecentPayments, RevenueChart, TopMaterialsCard } from "./dashboard/Widgets2.jsx";
+import { customerStats, dailySeries, debtAging, expenseBreakdown, fixedCosts, forecast, kpis, managerStats, paymentsIn, payTypes, periodOf, production, topMaterials } from "../lib/dash.js";
+import { attentionItems } from "./dashboard/TodayView.jsx";
+import { CustMsgQueueModal, useCustMsgQueue } from "../components/CustMsgQueue.jsx";
+import { monthIncome, shareOf } from "../lib/lines.js";
+import { queueDebtReminder } from "../storage.js";
+import { setOpenTab } from "../lib/deeplink.js";
 
 // Grafiklar alohida bo'lakda — dashboard raqamlari grafik kutubxonasini kutmasdan chiqadi
 const MoneyBarChart = lazy(() => import("./dashboard/Charts.jsx").then((m) => ({ default: m.MoneyBarChart })));
@@ -26,7 +33,12 @@ function Chart({ kind, ...props }) {
   return <Suspense fallback={<ChartSkeleton />}><C {...props} /></Suspense>;
 }
 
-export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses, kassaOrders, kassaTx }) {
+const dmy = (s) => String(s).split("-").reverse().slice(0, 2).join(".");
+const fmtR = (r) => (r.from === r.to ? dmy(r.from) : `${dmy(r.from)}–${dmy(r.to)}`);
+const shiftDay = (s, n) => { const d = new Date(`${s}T12:00:00`); d.setDate(d.getDate() + n); return localDateStr(d); };
+const spanDaysSafe = (r) => Math.round((new Date(`${r.to}T12:00:00`) - new Date(`${r.from}T12:00:00`)) / 864e5) + 1;
+
+export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses, kassaOrders, kassaTx, employees, leads, stageOf, categories, onOpenOrder }) {
   // Huquqlar (rahbar beradi): kassa qoldig'i va foyda ko'rinishi
   const { can } = usePerms();
   const canCash = isAdmin || (can("kassa.view") && perm?.cash !== false);
@@ -42,7 +54,9 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   const cashNow = line === "all" ? kassaNow.totals.all : kassaNow.totals[line] || 0;
   const subFilter = "all";
   const [editMode, setEditMode] = useState(false);
-  const [periodMode, setPeriodMode] = useState("month"); // "all" | "month" | "range" — standart: joriy oy
+  // Davr: Bugun · Hafta · Oy boshidan · Oraliq (eski «Oy»/«Barchasi» — eski kartalar uchun ham shu davr)
+  const [periodMode, setPeriodMode] = useState(() => { try { const v = localStorage.getItem("uvix:dashPeriod"); return ["today", "week", "mtd", "range"].includes(v) ? v : "mtd"; } catch { return "mtd"; } });
+  const pickPeriod = (v) => { setPeriodMode(v); try { localStorage.setItem("uvix:dashPeriod", v); } catch { /* */ } };
   const [periodMonth, setPeriodMonth] = useState(() => todayStr().slice(0, 7));
   const [periodFrom, setPeriodFrom] = useState(() => todayStr());
   const [periodTo, setPeriodTo] = useState(() => todayStr());
@@ -65,7 +79,11 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   );
 
   // Davr filtri — "Oy" yoki "Erkin oraliq" tanlansa, butun Dashboard shu davrga moslashadi
+  const [todayKey, setTodayKey] = useState(() => todayStr());
+  useEffect(() => { const t = setInterval(() => setTodayKey(todayStr()), 60000); return () => clearInterval(t); }, []);
+  const P = useMemo(() => periodOf(periodMode, todayKey, { from: periodFrom, to: periodTo }), [periodMode, todayKey, periodFrom, periodTo]);
   const effectivePeriod = useMemo(() => {
+    if (["today", "week", "mtd"].includes(periodMode) || (periodMode === "range" && periodFrom && periodTo)) return { from: P.from, to: P.to };
     if (periodMode === "month" && periodMonth) {
       const [y, m] = periodMonth.split("-").map(Number);
       const from = `${periodMonth}-01`;
@@ -187,11 +205,54 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
 
   const PIE_COLORS = CHART_COLORS();
 
+  // ---------- Yangi Dashboard hisoblari ----------
+  const prevLabel = periodMode === "today" ? "kechaga nisbatan" : periodMode === "week" ? "o'tgan haftaga" : periodMode === "mtd" ? "o'tgan oyning shu kunlariga" : "oldingi davrga";
+  const K = useMemo(() => kpis(orders, P), [orders, P]);
+  const revCur = useMemo(() => dailySeries(paymentsIn(orders, P), spanDaysSafe(P) < 5 ? { from: shiftDay(P.to, -13), to: P.to } : P, (p) => p.date, (p) => p.amount), [orders, P]);
+  const revPrev = useMemo(() => { const r = spanDaysSafe(P) < 5 ? { from: shiftDay(P.to, -27), to: shiftDay(P.to, -14) } : P.prev; return dailySeries(paymentsIn(orders, r), r, (p) => p.date, (p) => p.amount); }, [orders, P]);
+  const MS = useMemo(() => managerStats(orders, todayKey, periodMode === "range" ? P : null), [orders, todayKey, periodMode, P]);
+  const hl = { today: "d", week: "w", mtd: "m", range: "x" }[periodMode] || "m";
+  const plans = settings?.salesPlans || {};
+  const [mgrOpen, setMgrOpen] = useState(false);
+  const EXP = useMemo(() => expenseBreakdown(expenses, P), [expenses, P]);
+  const PTY = useMemo(() => payTypes(orders, P), [orders, P]);
+  const lineShare = useMemo(() => (line === "all" ? 1 : shareOf(line, todayKey.slice(0, 7), monthIncome(kassaOrders || ordersIn))), [line, todayKey, kassaOrders, ordersIn]);
+  const FC = useMemo(() => fixedCosts(settings?.fixedCosts || [], orders, expenses, todayKey, lineShare), [settings?.fixedCosts, orders, expenses, todayKey, lineShare]);
+  const [fixedOpen, setFixedOpen] = useState(false);
+  const AG = useMemo(() => debtAging(orders, todayKey), [orders, todayKey]);
+  const PR = useMemo(() => production(orders, P, stageOf, todayKey), [orders, P, stageOf, todayKey]);
+  const CS = useMemo(() => customerStats(orders, P), [orders, P]);
+  const canSendMsg = isAdmin || can("invoice");
+  const msgQ = useCustMsgQueue(canSendMsg);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const empById = useMemo(() => new Map((employees || []).map((e) => [e.id, e])), [employees]);
+  const attn = useMemo(() => {
+    const items = attentionItems(orders, { empById, stageOf: stageOf || ((o) => o.prodStage) });
+    if (msgQ.pending.length) items.unshift({ key: "custmsg", tone: "rose", title: `${msgQ.pending.length} ta xabar mijozga yuborilishini kutmoqda`, sub: msgQ.pending.slice(0, 2).map((x) => x.customer).join(", ") + (msgQ.pending.some((x) => x.flags?.length) ? " · tekshirish kerak" : ""), action: "Ko'rish" });
+    return items;
+  }, [orders, empById, stageOf, msgQ.pending]);
+  const onAttn = (it) => {
+    if (it.key === "custmsg") return setQueueOpen(true);
+    if (it.key === "debt") return go("orders", { onlyDebt: true });
+    if (it.key === "ready") return it.orders?.length === 1 && onOpenOrder ? onOpenOrder(it.orders[0]) : go("orders", { stage: "ready" });
+    if (it.key === "design") return go("orders", { stage: "design" });
+    return go("orders", { stage: "new" });
+  };
+  const remind = async (name) => {
+    try { await queueDebtReminder(name); window.dispatchEvent(new Event("uvix:custmsg-changed")); setQueueOpen(true); }
+    catch (e) { alert(e.message); }
+  };
+  const exportManagers = async () => {
+    const { exportRows } = await import("../lib/excel.js");
+    const rows = MS.rows.map((r) => ({ Menejer: r.name, "Bugun (so'm)": r.d, "Hafta (so'm)": r.w, "Oy boshidan (so'm)": r.m, "O'tgan oy shu kunlar (so'm)": r.prevM, "Oylik reja (so'm)": plans[r.name] || "", "Bajarilishi %": plans[r.name] ? Math.round((r.m / plans[r.name]) * 100) : "" }));
+    return exportRows(rows, "Menejerlar", `UVIX_menejerlar_${todayKey}.xlsx`, { kind: "xlsx", title: "Menejerlar — tushum", meta: ["Buyurtma mas'uli bo'yicha · to'lov sanasi bo'yicha", `Sana: ${todayKey}`] });
+  };
+
   // Ko'rinish: administrator belgilagan umumiy yoki xodimning o'zi moslashtirgan
   const cfg = useDashboardConfig({ settings, onSaveSettings, isAdmin });
   const view = editMode ? cfg.editing : cfg.shown;
   // Huquq yo'q bo'lsa — kassa/foyda kartalari ko'rsatilmaydi
-  const HIDDEN_BY_PERM = new Set([...(canCash ? [] : ["m_totalMoney", "paymentMethods"]), ...(canProfit ? [] : ["m_addedValue", "m_kraska"])]);
+  const HIDDEN_BY_PERM = new Set([...(canCash ? [] : ["m_totalMoney", "paymentMethods"]), ...(canProfit ? [] : ["m_addedValue", "m_kraska", "fixedCosts"])]);
   const layout = view.layout.filter((w) => editMode || !HIDDEN_BY_PERM.has(w.id));
   const cardStyles = view.cardStyles || {};
   const { dragId, onDragStart } = useDragReorder(cfg);
@@ -200,6 +261,21 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   useEffect(() => { if (!editMode) { setOpenMenu(null); setGalleryOpen(false); } }, [editMode]);
 
   const WIDGETS = {
+    kpis: () => <KpiRow k={K} prevLabel={prevLabel} canCash={canCash} cashNow={cashNow} kassaNow={kassaNow} line={line} onGo={go} />,
+    revenue: () => <RevenueChart cur={revCur} prev={revPrev} prevLabel={periodMode === "mtd" ? "o'tgan oy" : periodMode === "week" ? "o'tgan hafta" : "oldingi davr"} />,
+    managers: () => <ManagersPanel ms={MS} hl={hl === "x" ? "m" : hl} plans={plans} onExpand={() => setMgrOpen(true)} />,
+    attention: () => <AttentionCard items={attn} onAction={onAttn} />,
+    recentPay: () => <RecentPayments orders={orders} onOpen={(o) => (onOpenOrder ? onOpenOrder(o) : go("orders", { search: o.orderNumber }))} />,
+    expenseDonut: () => <ExpenseDonut data={EXP} onOpen={() => go("expense", {})} />,
+    payTypes: () => <PayTypesCard data={PTY} onOpen={canCash ? () => go("kassa", {}) : null} />,
+    fixedCosts: () => <FixedCostsCard fc={FC} canEdit={isAdmin} onEdit={() => setFixedOpen(true)} />,
+    debtAging: () => <DebtAgingCard ag={AG} canRemind={canSendMsg} onRemind={remind} onOpen={() => { setOpenTab("customers", "debt"); go("customers", {}); }} />,
+    production: () => <ProductionCard pr={PR} onOpen={(f) => go("orders", f.stage ? { stage: f.stage } : {})} />,
+    customersStats: () => <CustomersCard cs={CS} onOpen={() => go("customers", {})} />,
+    lineShare: () => (line === "all" ? <LineShareCard orders={kassaOrders || ordersIn} period={P} paymentsIn={paymentsIn} /> : null),
+    funnel: () => <FunnelCard leads={leads} period={P} />,
+    topMaterials: () => <TopMaterialsCard list={topMaterials(orders, P)} />,
+    forecast: () => <ForecastCard f={forecast(orders, todayKey)} />,
     hero: () => (
       <Card className="uvix-dash-card uvix-hero" style={{ padding: 24 }}>
         <div className="uvix-hero-grid" style={{ display: "grid", gridTemplateColumns: canCash || canProfit ? "minmax(0,1.2fr) minmax(0,1fr)" : "1fr", gap: 32, alignItems: "center" }}>
@@ -473,11 +549,13 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="uvix-dash-toolbar" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div role="group" aria-label="Davr" style={{ display: "flex", gap: 2, background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 9, padding: 3 }}>
-          {[{ v: "all", l: "Barchasi" }, { v: "month", l: "Oy" }, { v: "range", l: "Oraliq" }].map((opt) => (
+          {[{ v: "today", l: "Bugun" }, { v: "week", l: "Hafta" }, { v: "mtd", l: "Oy boshidan" }, { v: "range", l: "Oraliq" }].map((opt) => (
             <button
               key={opt.v}
               type="button"
-              onClick={() => setPeriodMode(opt.v)}
+              data-period={opt.v}
+              aria-pressed={periodMode === opt.v}
+              onClick={() => pickPeriod(opt.v)}
               style={{
                 padding: "0 12px", height: 28, borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600,
                 background: periodMode === opt.v ? THEME.chip : "transparent",
@@ -512,11 +590,9 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
             <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} style={{ ...getInputStyle(), width: "auto", minHeight: 36, padding: "6px 10px", fontSize: 13 }} />
           </div>
         )}
-        {effectivePeriod && (
-          <span style={{ fontSize: 12.5, color: THEME.dim, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
-            {effectivePeriod.from} — {effectivePeriod.to}
-          </span>
-        )}
+        <span data-testid="dash-range" style={{ fontSize: 12.5, color: THEME.dim, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}>
+          {fmtR(P)} · solishtirma: {fmtR(P.prev)}
+        </span>
         <div style={{ flex: 1 }} />
         {!editMode && (
           <Button variant="ghost" onClick={() => setEditMode(true)}>
@@ -537,11 +613,11 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         const groupIds = new Set(DASHBOARD_WIDGET_CATALOG.filter((c) => c.group === g.id).map((c) => c.id));
         const items = layout.filter((w) => w.visible && groupIds.has(w.id));
         if (items.length === 0) return null;
-        const groupIcons = { hero: null, today: TrendingUp, kpis: Package, customers: Users, charts: FileBarChart2 };
+        const groupIcons = { hero: null, main: null, money: Wallet, ops: Users, extra: FileBarChart2, today: TrendingUp, kpis: Package, customers: Users, charts: FileBarChart2 };
         const Icon = groupIcons[g.id];
         return (
           <div key={g.id} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {Icon && <SectionTitle icon={Icon} text={g.label} />}
+            {Icon && g.label && <SectionTitle icon={Icon} text={g.label} />}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: editMode ? "28px 14px" : 14, paddingTop: editMode ? 14 : 0 }} className="uvix-dash-grid">
               {items.map((w) => {
                 const renderFn = WIDGETS[w.id];
@@ -566,6 +642,9 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         );
       })}
       {editMode && <div className="uvix-edit-spacer" aria-hidden="true" />}
+      {mgrOpen && <ManagersModal ms={MS} hl={hl} plans={plans} canEdit={isAdmin} rangeLabel={periodMode === "range" ? "Tanlangan davr" : null} onExport={exportManagers} onClose={() => setMgrOpen(false)} onSavePlans={(next) => onSaveSettings?.({ ...settings, salesPlans: next })} />}
+      {fixedOpen && <FixedCostsModal items={settings?.fixedCosts || []} categories={categories} onClose={() => setFixedOpen(false)} onSave={(list) => { onSaveSettings?.({ ...settings, fixedCosts: list }); setFixedOpen(false); }} />}
+      {queueOpen && <CustMsgQueueModal onClose={() => { setQueueOpen(false); msgQ.reload(); }} />}
     </div>
   );
 }

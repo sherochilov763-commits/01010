@@ -53,7 +53,7 @@ async def main():
         # ---------- Aziza (Katta menejer) ekrani ----------
         m = await (await b.new_context(viewport={"width": 1280, "height": 900}, timezone_id="Asia/Tashkent")).new_page(); m.on("pageerror", lambda e: errs.append("M:" + str(e)))
         await dlogin(m, "Aziza", "1234"); await m.wait_for_timeout(1500)
-        ok("kassa huquqi yo'q: qoldiqlar ko'rinmaydi", await m.locator("[data-testid=hero-balances]").count() == 0)
+        ok("kassa huquqi yo'q: qoldiqlar ko'rinmaydi", await m.locator("[data-kpi=cash]").count() == 0)
         ok("Hisobot bo'limi ochiq (o'z yo'nalishi)", await m.locator(".uvix-nav-item", has_text="Hisobot").count() == 1)
         card = m.locator("[data-testid=approvals-card]")
         ok("tasdiqlash kartasi: faqat chegaradagi so'rov", await card.count() == 1 and await card.locator(f"[data-approval='{small['id']}']").count() == 1 and await card.locator(f"[data-approval='{big['id']}']").count() == 0)

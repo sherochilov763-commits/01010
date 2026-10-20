@@ -7,7 +7,14 @@
 // Qabul qiluvchi: mijozning CRM lididagi Telegram chati (eng ishonchli), bo'lmasa — mijozlar bazasidagi
 // yoki liddagi @username. Telegrami topilmagan mijozga hech narsa yuborilmaydi.
 //
-// Saqlash (ichki kalitlar): uvix:custMsgConfig, uvix:custMsgLog (oxirgi 300 ta), uvix:custRemind ({ [mijoz]: sana })
+// XAVFSIZLIK (2026-10): sukut bo'yicha hech narsa avtomatik yuborilmaydi — kvitansiya, «tayyor» va qarz eslatmasi
+// «Navbat»ga tushadi (uvix:custMsgQueue); xodim matnni ko'rib «Yuborish» yoki «Bekor»ni bosadi. Yuborishdan oldin matn
+// joriy ma'lumotdan qayta tuziladi: to'lov o'chirilgan bo'lsa — xabar bekor, summa o'zgargan bo'lsa — yangi summa.
+// Shubhali holatlar (ortiqcha to'lov, kelishuv 0, juda katta summa, yaqinda to'lagan mijozga qarz eslatmasi) belgilanadi.
+// cfg.paused — «Mijozga xabarlarni to'xtatish»: hech qanday xabar (hisob-faktura ham) ketmaydi.
+// cfg.auto = { receipt, ready, debt } — rahbar keyin qaytadan avtomat yoqishi mumkin (shubhali xabar baribir navbatda qoladi).
+//
+// Saqlash (ichki kalitlar): uvix:custMsgConfig, uvix:custMsgLog (oxirgi 300 ta), uvix:custRemind ({ [mijoz]: sana }), uvix:custMsgQueue
 // fs yo'q: yuborish tashqaridan beriladi — sender = { isConnected(), sendText(peer, text), sendImage(peer, base64, caption) }
 
 const TZ = "Asia/Tashkent";
@@ -17,7 +24,10 @@ const DEFAULT_CONFIG = {
   receipt: true, // to'lov qabul qilindi
   readyNotify: false, // buyurtma tayyor bo'lganda «olib ketishingiz mumkin»
   debtRemind: false, debtDays: 7, remindEvery: 7, remindAt: "11:00", days: [1, 2, 3, 4, 5, 6], maxPerDay: 20,
+  auto: { receipt: false, ready: false, debt: false }, // false — navbatga (qo'lda tasdiqlash)
+  paused: false, // true — mijozga hech narsa yuborilmaydi
 };
+const BIG_SUM = 50000000; // bundan katta bitta to'lov — shubhali (xato kiritilgan bo'lishi mumkin)
 
 const fmtParts = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 function local(d = new Date()) {
@@ -38,7 +48,7 @@ const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); t.unref?
 
 module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requireAuth, requireAdmin, sender, nowFn = () => new Date(), pauseMs = 3000 }) {
   const readJson = (key, fb) => { try { const r = getStmt.get(key); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
-  const config = () => ({ ...DEFAULT_CONFIG, ...readJson("uvix:custMsgConfig", {}) });
+  const config = () => { const c = { ...DEFAULT_CONFIG, ...readJson("uvix:custMsgConfig", {}) }; c.auto = { ...DEFAULT_CONFIG.auto, ...(c.auto || {}) }; return c; };
   const isWorker = (u) => u?.role === "designer" || u?.role === "printer";
 
   function log(entry) {
@@ -72,21 +82,108 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     for (const k of PROFILE_FIELDS) if (typeof prof[k] === "string" && prof[k].trim()) out[k] = prof[k].trim();
     return out;
   }
+  // Mijozga ko'rinadigan nom — yo'nalish nomi (ONYX mijoziga «UVIX» deb yozilmaydi)
+  const brandOf = (order) => { const l = order?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT"; const nm = (readJson("uvix:settings", {}) || {}).lineProfiles?.[l]?.brandName; return (typeof nm === "string" && nm.trim()) || l; };
   const cardLine = (cfg) => (cfg.cardNumber ? `Karta: ${cfg.cardNumber}${cfg.cardHolder ? ` (${cfg.cardHolder})` : ""}` : "");
 
   async function deliver(type, rcp, fn, extra) {
+    if (config().paused) { log({ type, customer: rcp?.name, to: rcp?.label, ok: false, error: "Mijozga xabarlar to'xtatilgan", ...extra }); return { ok: false, error: "Mijozga xabarlar to'xtatilgan (Mijozlar → Xabarlar)" }; }
     if (!sender?.isConnected?.()) { log({ type, customer: rcp?.name, to: rcp?.label, ok: false, error: "Telegram akkaunt ulanmagan", ...extra }); return { ok: false, error: "Telegram akkaunt ulanmagan (Sozlamalar → Telegram akkaunt)" }; }
     try { await fn(); log({ type, customer: rcp.name, to: rcp.label, ok: true, ...extra }); return { ok: true }; }
     catch (e) { const error = String(e?.message || e).slice(0, 200); log({ type, customer: rcp.name, to: rcp.label, ok: false, error, ...extra }); return { ok: false, error }; }
   }
 
+  // ==================== NAVBAT ====================
+  const QKEY = "uvix:custMsgQueue";
+  const qid = () => `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+  const readQ = () => { const q = readJson(QKEY, []); return Array.isArray(q) ? q : []; };
+  const writeQ = (q) => {
+    // kutilayotganlar hammasi qoladi; bajarilgan/bekor qilinganlardan — oxirgi 100 tasi
+    const pend = q.filter((x) => x.status === "pending"), done = q.filter((x) => x.status !== "pending").slice(0, 100);
+    upsertStmt.run(QKEY, JSON.stringify([...pend, ...done]));
+  };
+  const lineOfOrder = (o) => (o?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+  const ordersNow = () => (readJson("uvix:orders", []) || []).filter((o) => o && !o.deletedAt);
+
+  // ---- Matnlar (har safar joriy ma'lumotdan) ----
+  function receiptOf(item, orders) {
+    const byId = new Map(orders.map((o) => [o.id, o]));
+    const list = item.orderIds.map((id) => byId.get(id)).filter(Boolean);
+    const pays = [];
+    for (const o of list) for (const p of o.payments || []) if (!p.deletedAt && item.payIds.includes(p.id)) pays.push({ ...p, order: o });
+    if (!list.length || !pays.length) return { cancel: "To'lov o'chirildi yoki buyurtma topilmadi" };
+    const sum = pays.reduce((s, p) => s + (p.amount || 0), 0);
+    const types = [...new Set(pays.map((p) => PAY_LABEL[p.paymentType] || p.paymentType).filter(Boolean))].join(", ");
+    const debt = list.reduce((s, o) => s + debtOf(o), 0);
+    const many = list.length > 1;
+    const text = [
+      many ? `✅ To'lov qabul qilindi: ${money(sum)}${types ? ` (${types})` : ""}` : `✅ To'lov qabul qilindi`,
+      many ? `Buyurtmalar: ${list.map((o) => o.orderNumber).join(", ")}` : `Buyurtma ${list[0].orderNumber || ""}: ${money(sum)}${types ? ` (${types})` : ""}`,
+      debt > 0 ? `Qoldiq: ${money(debt)}` : many ? `Buyurtmalar to'liq to'landi.` : `Buyurtma to'liq to'landi.`,
+      `Rahmat!`,
+    ].join("\n");
+    const flags = [];
+    for (const o of list) {
+      if (!(o.agreementUzs > 0)) flags.push(`${o.orderNumber}: kelishuv summasi 0`);
+      else if (paidOf(o) > o.agreementUzs) flags.push(`${o.orderNumber}: ortiqcha to'langan ${money(paidOf(o) - o.agreementUzs)}`);
+    }
+    if (pays.some((p) => p.amount >= BIG_SUM)) flags.push(`Juda katta summa (${money(Math.max(...pays.map((p) => p.amount)))}) — xato kiritilmaganini tekshiring`);
+    return { text, amount: sum, flags, orderNumbers: list.map((o) => o.orderNumber).join(", "), customer: list[0].customer, line: lineOfOrder(list[0]) };
+  }
+  function readyOf(item, orders) {
+    const cfg = config();
+    const byId = new Map(orders.map((o) => [o.id, o]));
+    const list = item.orderIds.map((id) => byId.get(id)).filter((o) => o && (o.prodStage === "ready" || o.prodStage === "install"));
+    if (!list.length) return { cancel: "Buyurtma endi «Tayyor» holatida emas" };
+    const debt = list.reduce((s, o) => s + debtOf(o), 0);
+    const what = list.length > 1 ? list.map((o) => `• ${o.title || o.materialType || "Buyurtma"} (${o.orderNumber})`).join("\n") : `${list[0].title || list[0].materialType || "Buyurtma"} (${list[0].orderNumber})`;
+    const lc = withLine(cfg, list[0]);
+    const text = [
+      list.length > 1 ? `✅ Buyurtmalaringiz tayyor!` : `✅ Buyurtmangiz tayyor!`, what, `Olib ketishingiz mumkin.`,
+      debt > 0 ? `To'lanishi kerak: ${money(debt)}` : "",
+      lc.managerPhone ? `Savollar bo'yicha: ${lc.managerPhone}${lc.managerName ? ` (${lc.managerName})` : ""}` : "",
+    ].filter(Boolean).join("\n");
+    const flags = list.filter((o) => !(o.agreementUzs > 0)).map((o) => `${o.orderNumber}: kelishuv summasi 0`);
+    return { text, amount: debt, flags, orderNumbers: list.map((o) => o.orderNumber).join(", "), customer: list[0].customer, line: lineOfOrder(list[0]) };
+  }
+  function debtOfGroup(item, orders, today) {
+    const g = groupFor(item.groupKey, orders, today);
+    if (!g || !g.orders.length) return { cancel: "Mijozda qarz qolmadi" };
+    const cfg = config();
+    const flags = [];
+    if (g.lastPaid && daysBetween(g.lastPaid, today) <= 3) flags.push(`Yaqinda to'lagan (${dayLabel(g.lastPaid)})`);
+    if (g.overpaid > 0) flags.push(`Boshqa buyurtmada ortiqcha to'lov bor: ${money(g.overpaid)}`);
+    return { text: remindText(g, cfg), amount: g.debt, flags, orderNumbers: g.orders.map((o) => o.orderNumber).join(", "), customer: g.name, line: lineOfOrder(g.orders[0]) };
+  }
+  function build(item, orders = ordersNow(), today = local(nowFn()).date) {
+    return item.type === "receipt" ? receiptOf(item, orders) : item.type === "ready" ? readyOf(item, orders) : debtOfGroup(item, orders, today);
+  }
+  // Navbatga qo'shish (yoki avtomatik yoqilgan bo'lsa — shubhasiz xabarni darhol yuborish)
+  async function enqueue(base, rcp) {
+    const cfg = config();
+    const built = build(base);
+    if (built.cancel) return { skipped: built.cancel };
+    if (cfg.auto?.[base.type] && !base.manual && !cfg.paused && !built.flags.length) {
+      return deliver(base.type, rcp, () => sender.sendText(rcp.peer, built.text), { orderNumber: built.orderNumbers, amount: built.amount, text: built.text, by: "avtomatik" });
+    }
+    const q = readQ();
+    // bir xil narsa uchun ikkinchi xabar emas — mavjudi yangilanadi
+    const same = q.find((x) => x.status === "pending" && x.type === base.type && (base.groupKey ? x.groupKey === base.groupKey : base.type === "ready" ? x.orderIds.join() === base.orderIds.join() : false));
+    const item = { ...(same || { id: qid(), createdAt: nowFn().toISOString(), status: "pending" }), ...base, to: rcp.label, via: rcp.via, peer: rcp.peer, customer: built.customer, line: built.line, text: built.text, amount: built.amount, flags: built.flags, orderNumbers: built.orderNumbers, updatedAt: nowFn().toISOString() };
+    if (base.payIds && same) item.payIds = [...new Set([...(same.payIds || []), ...base.payIds])];
+    writeQ([item, ...q.filter((x) => x.id !== item.id)]);
+    return { queued: item.id };
+  }
+
   // ---- To'lov qabul qilindi (buyurtmalar o'zgarganda server chaqiradi) ----
   async function onOrdersChanged(oldValue, newValue) {
     const cfg = config();
-    if (!cfg.receipt) return;
     let oldOrders = [], newOrders = [];
     try { oldOrders = oldValue ? JSON.parse(oldValue) : []; newOrders = JSON.parse(newValue); } catch { return; }
     if (!Array.isArray(newOrders)) return;
+    // Navbatdagi kvitansiyalar: to'lov o'chirilsa — bekor, summa o'zgarsa — matn yangilanadi
+    refreshQueue(newOrders.filter((o) => o && !o.deletedAt));
+    if (!cfg.receipt) return;
     const oldById = new Map((Array.isArray(oldOrders) ? oldOrders : []).map((o) => [o.id, o]));
     const nowMs = nowFn().getTime();
     // Bitta umumiy to'lov (batchId) bir nechta buyurtmaga bo'lingan bo'lsa — mijozga bitta kvitansiya
@@ -103,32 +200,28 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
       if (!own.length) continue;
       const rcp = recipientFor(o.customer, o.id);
       if (!rcp) continue;
-      const sum = own.reduce((s, p) => s + p.amount, 0);
-      const types = [...new Set(own.map((p) => PAY_LABEL[p.paymentType] || p.paymentType).filter(Boolean))].join(", ");
-      const debt = debtOf(o);
-      const text = [
-        `✅ To'lov qabul qilindi`,
-        `Buyurtma ${o.orderNumber || ""}: ${money(sum)}${types ? ` (${types})` : ""}`,
-        debt > 0 ? `Qoldiq: ${money(debt)}` : `Buyurtma to'liq to'landi.`,
-        `Rahmat!`,
-      ].join("\n");
-      await deliver("receipt", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: o.orderNumber, amount: sum });
+      await enqueue({ type: "receipt", orderIds: [o.id], payIds: own.map((p) => p.id) }, rcp);
     }
     for (const b of batches.values()) {
       const list = [...b.orders.values()];
       const rcp = recipientFor(list[0].customer, list[0].id);
       if (!rcp) continue;
-      const sum = b.pays.reduce((s, p) => s + p.amount, 0);
-      const types = [...new Set(b.pays.map((p) => PAY_LABEL[p.paymentType] || p.paymentType).filter(Boolean))].join(", ");
-      const debt = list.reduce((s, o) => s + debtOf(o), 0);
-      const text = [
-        `✅ To'lov qabul qilindi: ${money(sum)}${types ? ` (${types})` : ""}`,
-        list.length > 1 ? `Buyurtmalar: ${list.map((o) => o.orderNumber).join(", ")}` : `Buyurtma ${list[0].orderNumber || ""}`,
-        debt > 0 ? `Qoldiq: ${money(debt)}` : (list.length > 1 ? `Buyurtmalar to'liq to'landi.` : `Buyurtma to'liq to'landi.`),
-        `Rahmat!`,
-      ].join("\n");
-      await deliver("receipt", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: list.map((o) => o.orderNumber).join(", "), amount: sum });
+      await enqueue({ type: "receipt", orderIds: list.map((o) => o.id), payIds: b.pays.map((p) => p.id) }, rcp);
     }
+  }
+  function refreshQueue(orders) {
+    const q = readQ();
+    if (!q.some((x) => x.status === "pending")) return;
+    const today = local(nowFn()).date;
+    let changed = false;
+    const next = q.map((x) => {
+      if (x.status !== "pending") return x;
+      const b = build(x, orders, today);
+      if (b.cancel) { changed = true; return { ...x, status: "cancelled", reason: b.cancel, doneAt: nowFn().toISOString(), by: "tizim" }; }
+      if (b.text !== x.text || JSON.stringify(b.flags) !== JSON.stringify(x.flags)) { changed = true; return { ...x, text: b.text, amount: b.amount, flags: b.flags, orderNumbers: b.orderNumbers, updatedAt: nowFn().toISOString() }; }
+      return x;
+    });
+    if (changed) writeQ(next);
   }
 
   // ---- «Buyurtmangiz tayyor» ----
@@ -138,32 +231,32 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     if (!cfg.readyNotify || !order) return { ok: false, skipped: true };
     let list = [order];
     if (order.groupId) {
-      const all = (readJson("uvix:orders", []) || []).filter((o) => o && !o.deletedAt && o.groupId === order.groupId);
+      const all = ordersNow().filter((o) => o.groupId === order.groupId);
       if (all.some((o) => o.prodStage !== "ready" && o.prodStage !== "delivered")) return { ok: false, waiting: true };
       list = all.filter((o) => o.prodStage === "ready");
       if (!list.length) return { ok: false, skipped: true };
     }
     const rcp = recipientFor(order.customer, order.id);
     if (!rcp) return { ok: false, error: "no_recipient" };
-    const debt = list.reduce((s, o) => s + debtOf(o), 0);
-    const what = list.length > 1
-      ? list.map((o) => `• ${o.title || o.materialType || "Buyurtma"} (${o.orderNumber})`).join("\n")
-      : `${list[0].title || list[0].materialType || "Buyurtma"} (${list[0].orderNumber})`;
-    const lc = withLine(cfg, list[0]);
-    const text = [
-      list.length > 1 ? `✅ Buyurtmalaringiz tayyor!` : `✅ Buyurtmangiz tayyor!`,
-      what,
-      `Olib ketishingiz mumkin.`,
-      debt > 0 ? `To'lanishi kerak: ${money(debt)}` : "",
-      (lc.managerPhone ? `Savollar bo'yicha: ${lc.managerPhone}${lc.managerName ? ` (${lc.managerName})` : ""}` : ""),
-    ].filter(Boolean).join("\n");
-    return deliver("ready", rcp, () => sender.sendText(rcp.peer, text), { orderNumber: list.map((o) => o.orderNumber).join(", ") });
+    return enqueue({ type: "ready", orderIds: list.map((o) => o.id) }, rcp);
   }
 
   // ---- Qarz eslatmasi mijozga ----
+  const groupKeyOf = (name, owner) => { const k = custKey(name); const p = owner.get(k); return p ? `p:${p.id}` : k; };
+  const ownerMap = () => { const owner = new Map(); (readJson("uvix:customers", []) || []).filter((p) => p && !p.deletedAt).forEach((p) => [p.key, ...(p.aliases || [])].forEach((k) => owner.set(k, p))); return owner; };
+  // Bitta mijozning qarzlari (kelishuvi 0 bo'lgan buyurtma qarz hisoblanmaydi), oxirgi to'lov va ortiqcha to'lov
+  function groupFor(groupKey, orders, today) {
+    const owner = ownerMap();
+    const mine = orders.filter((o) => groupKeyOf(o.customer, owner) === groupKey);
+    if (!mine.length) return null;
+    const debtors = mine.filter((o) => o.agreementUzs > 0 && debtOf(o) > 0);
+    const lastPaid = mine.flatMap((o) => (o.payments || []).filter((p) => !p.deletedAt).map((p) => String(p.date || "").slice(0, 10))).filter(Boolean).sort().pop() || null;
+    const overpaid = mine.reduce((s, o) => s + Math.max(0, paidOf(o) - (o.agreementUzs || 0)), 0);
+    return { key: groupKey, name: mine[0].customer, orders: debtors, debt: debtors.reduce((s, o) => s + debtOf(o), 0), lastPaid, overpaid, oldest: debtors.length ? Math.max(...debtors.map((o) => daysBetween(o.date, today))) : 0 };
+  }
   function remindCandidates(today) {
     const cfg = config();
-    const orders = (readJson("uvix:orders", []) || []).filter((o) => o && !o.deletedAt && debtOf(o) > 0);
+    const orders = (readJson("uvix:orders", []) || []).filter((o) => o && !o.deletedAt && o.agreementUzs > 0 && debtOf(o) > 0);
     const profiles = (readJson("uvix:customers", []) || []).filter((p) => p && !p.deletedAt);
     const owner = new Map();
     profiles.forEach((p) => [p.key, ...(p.aliases || [])].forEach((k) => owner.set(k, p)));
@@ -183,7 +276,7 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     const list = g.orders.sort((a, b) => String(a.date).localeCompare(String(b.date))).map((o) => `• ${o.orderNumber || "—"} (${dayLabel(o.date)}): ${money(debtOf(o))}`).join("\n");
     return [
       `Assalomu alaykum!`,
-      `UVIX'dan eslatma: buyurtmalaringiz bo'yicha ${money(g.debt)} to'lov qolgan.`,
+      `${brandOf(g.orders[0])}'dan eslatma: buyurtmalaringiz bo'yicha ${money(g.debt)} to'lov qolgan.`,
       list,
       "",
       cardLine(withLine(cfg, g.orders[0])) || null,
@@ -205,12 +298,12 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
         if (count >= cfg.maxPerDay) break;
         const rcp = recipientFor(g.orders[0].customer, null);
         if (!rcp) continue;
-        const r = await deliver("debt", rcp, () => sender.sendText(rcp.peer, remindText({ ...g, rcpName: rcp.name }, cfg)), { amount: g.debt });
-        const sentMap = readJson("uvix:custRemind", {}); sentMap[g.key] = now.date; upsertStmt.run("uvix:custRemind", JSON.stringify(sentMap));
+        const r = await enqueue({ type: "debt", groupKey: g.key, orderIds: g.orders.map((o) => o.id) }, rcp);
+        if (r.ok) { const sentMap = readJson("uvix:custRemind", {}); sentMap[g.key] = now.date; upsertStmt.run("uvix:custRemind", JSON.stringify(sentMap)); }
         count++;
         upsertStmt.run("uvix:custRemindDay", JSON.stringify({ date: now.date, count }));
-        if (!r.ok && /ulanmagan/.test(r.error || "")) break;
-        await sleep(pauseMs); // Telegram cheklovlariga tushmaslik uchun xabarlar orasida pauza
+        if (r.ok === false && /ulanmagan/.test(r.error || "")) break;
+        if (r.ok) await sleep(pauseMs); // Telegram cheklovlariga tushmaslik uchun xabarlar orasida pauza
       }
       upsertStmt.run("uvix:custRemindDay", JSON.stringify({ date: now.date, count, done: true }));
     } finally { reminding = false; }
@@ -242,6 +335,8 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
       remindAt: /^\d{2}:\d{2}$/.test(b.remindAt || "") ? b.remindAt : cur.remindAt,
       days: Array.isArray(b.days) ? [...new Set(b.days.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : cur.days,
       maxPerDay: int(b.maxPerDay, 1, 100, cur.maxPerDay),
+      auto: { receipt: !!(b.auto?.receipt ?? cur.auto.receipt), ready: !!(b.auto?.ready ?? cur.auto.ready), debt: !!(b.auto?.debt ?? cur.auto.debt) },
+      paused: b.paused == null ? cur.paused : !!b.paused,
     };
     upsertStmt.run("uvix:custMsgConfig", JSON.stringify(next));
     res.json({ config: next, connected: !!sender?.isConnected?.() });
@@ -267,6 +362,50 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     if (!r.ok) return res.status(502).json({ error: "send_failed", message: r.error });
     res.json({ ok: true, to: rcp.label });
   });
+  // ---- Navbat API ----
+  const inScope = (req, x) => !req.lineScope || x.line === req.lineScope;
+  const canSend = (req, res) => { if (!staff(req, res)) return false; if (req.user.role === "admin" || !req.can || req.can("invoice")) return true; res.status(403).json({ error: "forbidden", message: "Mijozga xabar yuborish huquqi yo'q" }); return false; };
+  app.get("/api/customer-msg/queue", requireAuth, (req, res) => {
+    if (!staff(req, res)) return;
+    refreshQueue(ordersNow());
+    const q = readQ().filter((x) => inScope(req, x));
+    const cfg = config();
+    res.json({ pending: q.filter((x) => x.status === "pending").map(({ peer, ...x }) => x), recent: q.filter((x) => x.status !== "pending").slice(0, 30).map(({ peer, ...x }) => x), paused: !!cfg.paused, connected: !!sender?.isConnected?.() });
+  });
+  app.post("/api/customer-msg/queue/:id/send", requireAuth, async (req, res) => {
+    if (!canSend(req, res)) return;
+    const q = readQ(); const x = q.find((i) => i.id === req.params.id && i.status === "pending" && inScope(req, i));
+    if (!x) return res.status(404).json({ error: "not_found", message: "Xabar topilmadi yoki allaqachon yuborilgan" });
+    const b = build(x);
+    if (b.cancel) { writeQ(q.map((i) => (i.id === x.id ? { ...i, status: "cancelled", reason: b.cancel, doneAt: nowFn().toISOString(), by: "tizim" } : i))); return res.status(409).json({ error: "stale", message: `Yuborilmadi: ${b.cancel}` }); }
+    // Xodim ko'rgan matn bilan hozirgi matn farq qilsa — avval yangisini ko'rsatamiz
+    if (req.body?.text && req.body.text !== b.text) { writeQ(q.map((i) => (i.id === x.id ? { ...i, text: b.text, amount: b.amount, flags: b.flags } : i))); return res.status(409).json({ error: "changed", message: "Ma'lumot o'zgardi — yangilangan matnni tekshirib, qayta bosing", text: b.text }); }
+    const r = await deliver(x.type, { peer: x.peer, label: x.to, name: b.customer }, () => sender.sendText(x.peer, b.text), { orderNumber: b.orderNumbers, amount: b.amount, text: b.text, by: req.user.name });
+    if (!r.ok) return res.status(502).json({ error: "send_failed", message: r.error });
+    if (x.type === "debt" && x.groupKey) { const sentMap = readJson("uvix:custRemind", {}); sentMap[x.groupKey] = local(nowFn()).date; upsertStmt.run("uvix:custRemind", JSON.stringify(sentMap)); }
+    writeQ(readQ().map((i) => (i.id === x.id ? { ...i, status: "sent", text: b.text, doneAt: nowFn().toISOString(), by: req.user.name } : i)));
+    res.json({ ok: true, to: x.to });
+  });
+  app.post("/api/customer-msg/queue/:id/cancel", requireAuth, (req, res) => {
+    if (!canSend(req, res)) return;
+    const q = readQ(); const x = q.find((i) => i.id === req.params.id && i.status === "pending" && inScope(req, i));
+    if (!x) return res.status(404).json({ error: "not_found", message: "Xabar topilmadi" });
+    writeQ(q.map((i) => (i.id === x.id ? { ...i, status: "cancelled", reason: String(req.body?.reason || "Xodim bekor qildi").slice(0, 120), doneAt: nowFn().toISOString(), by: req.user.name } : i)));
+    res.json({ ok: true });
+  });
+  // Qo'lda qarz eslatmasi (Dashboard → «Eslatma»): navbatga qo'shiladi, xodim matnni ko'rib yuboradi
+  app.post("/api/customer-msg/queue/remind", requireAuth, async (req, res) => {
+    if (!canSend(req, res)) return;
+    const orders = ordersNow().filter((o) => !req.lineScope || lineOfOrder(o) === req.lineScope);
+    const o = orders.find((x) => custKey(x.customer) === custKey(req.body?.customer));
+    if (!o) return res.status(404).json({ error: "not_found", message: "Mijoz topilmadi" });
+    const key = groupKeyOf(o.customer, ownerMap());
+    const rcp = recipientFor(o.customer, null);
+    if (!rcp) return res.status(400).json({ error: "no_recipient", message: "Mijozning Telegrami topilmadi — mijoz kartasida @username kiriting yoki CRM'da chatini bog'lang" });
+    const r = await enqueue({ type: "debt", groupKey: key, orderIds: orders.filter((x) => groupKeyOf(x.customer, ownerMap()) === key).map((x) => x.id), manual: true }, rcp);
+    if (r.skipped) return res.status(409).json({ error: "nothing", message: r.skipped });
+    res.json(r);
+  });
   app.get("/api/customer-msg/log", requireAuth, requireAdmin, (req, res) => res.json({ log: readJson("uvix:custMsgLog", []).slice(0, 100) }));
   app.get("/api/customer-msg/preview-remind", requireAuth, requireAdmin, (req, res) => {
     const cfg = config(); const today = local(nowFn()).date;
@@ -276,6 +415,6 @@ module.exports = function registerCustomerMsg(app, { getStmt, upsertStmt, requir
     res.json({ list: list.slice(0, 50), sample: g ? remindText(g, cfg) : null });
   });
 
-  return { onOrdersChanged, tick, recipientFor, sendReady };
+  return { onOrdersChanged, tick, recipientFor, sendReady, refreshQueue };
 };
 module.exports.DEFAULT_CONFIG = DEFAULT_CONFIG;

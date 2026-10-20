@@ -25,7 +25,7 @@ async def main():
         nt = api("/api/notifications", token=adm)["items"]
         ok("adminga xabar (ilovada ham)", sum(1 for n in nt if n["cat"] == "system" and "xato" in (n["title"] + n["body"]).lower()) == 1, [n["title"] for n in nt[:5]])
         await a.locator("[data-testid=error-home]").click(); await a.wait_for_timeout(800)
-        ok("«Bosh sahifaga» → Dashboard ishlaydi", await a.locator("[data-testid=error-screen]").count() == 0 and await a.locator("text=Buyurtmalar summasi").count() >= 1)
+        ok("«Bosh sahifaga» → Dashboard ishlaydi", await a.locator("[data-testid=error-screen]").count() == 0 and await a.locator("[data-testid=dash-kpis]").count() >= 1)
         # takror — bitta yozuv, bitta xabar
         await a.reload(); await a.wait_for_timeout(2000); await nav(a, "CRM"); await a.wait_for_timeout(1200)
         er = api("/api/system/errors", token=adm)["errors"]

@@ -1019,10 +1019,15 @@ function AppInner() {
           .uvix-dash-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .uvix-dash-grid > div { grid-column: span 2 !important; }
         }
+        /* Yangi Dashboard: planshetda bloklar 2 tadan, asosiy raqamlar 2×2 */
+        @media (max-width: 1180px) and (min-width: 681px) {
+          .uvix-dash-grid > div[data-size="md"]:not(:has(.uvix-metric)), .uvix-dash-grid > div[data-size="ml"], .uvix-dash-grid > div[data-size="xl"] { grid-column: span 6 !important; }
+        }
+        @media (max-width: 900px) { .uvix-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } }
         /* telefonda kichik/o'rta ko'rsatkichlar 2 tadan yonma-yon (raqam ixchamroq) */
         @media (max-width: 680px) {
           .uvix-dash-grid { gap: 10px !important; }
-          .uvix-dash-grid > div[data-size="sm"], .uvix-dash-grid > div[data-size="md"] { grid-column: span 1 !important; }
+          .uvix-dash-grid > div[data-size="sm"]:has(.uvix-metric), .uvix-dash-grid > div[data-size="md"]:has(.uvix-metric) { grid-column: span 1 !important; }
           .uvix-dash-grid > div[data-size="sm"] .uvix-metric, .uvix-dash-grid > div[data-size="md"] .uvix-metric { padding: 12px !important; gap: 8px !important; }
           .uvix-dash-grid > div[data-size="sm"] .uvix-metric > div:nth-child(2) span, .uvix-dash-grid > div[data-size="md"] .uvix-metric > div:nth-child(2) span { font-size: 16px !important; letter-spacing: -0.2px !important; }
           .uvix-hero-bal { grid-template-columns: 1fr !important; gap: 8px !important; }
@@ -1060,7 +1065,7 @@ function AppInner() {
             <CrashProbe view={view} />
             <Suspense fallback={<ViewFallback />}>
             {view === "dashboard" && phoneUi && (
-              <TodayView user={currentUser} orders={lOrders} employees={employees} stageOf={stageOfOrder}
+              <TodayView user={currentUser} orders={lOrders} employees={employees} stageOf={stageOfOrder} canSendMsg={isAdmin || permsCtx?.can?.("invoice")}
                 chatsEnabled={visibleNav.some((n) => n.key === "chats")} canExpense={visibleNav.some((n) => n.key === "expense")}
                 onOpenChat={(id) => { if (id) setOpenChatId(id); goView("chats"); }}
                 onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id, n: Date.now() })}
@@ -1075,7 +1080,7 @@ function AppInner() {
                 {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
               </button>
             )}
-            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} kassaOrders={activeOrders} kassaTx={activeTransactions} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} kassaOrders={activeOrders} kassaTx={activeTransactions} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} employees={employees} leads={leads} stageOf={stageOfOrder} categories={categories} onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id })} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}

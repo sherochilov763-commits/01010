@@ -3,7 +3,8 @@
 // (javobsiz chatlar, tayyor buyurtmalar, uzoq qarzlar, dizaynda qolib ketgan ishlar) — har birida bir bosishli amal.
 // Faqat telefonda ko'rinadi; to'liq hisobot (Dashboard) pastdagi «Batafsil hisobot» bilan ochiladi.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Banknote, ChevronRight, CircleCheck, ClipboardList, MessageCircle, Package, Palette, ScanLine, TrendingDown, Wallet } from "lucide-react";
+import { CustMsgQueueModal, useCustMsgQueue } from "../../components/CustMsgQueue.jsx";
+import { Banknote, Send, ChevronRight, CircleCheck, ClipboardList, MessageCircle, Package, Palette, ScanLine, TrendingDown, Wallet } from "lucide-react";
 import { orderDebt } from "../../lib/finance.js";
 import { fmt, localDateStr, money, moneyCompact } from "../../lib/format.js";
 import { fetchTelegramChats } from "../../storage.js";
@@ -98,7 +99,10 @@ function Spark({ values, color }) {
   );
 }
 
-export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canExpense, onOpenChat, onOpenOrder, onNavigate, onQuickAdd, onScan }) {
+export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canExpense, canSendMsg, onOpenChat, onOpenOrder, onNavigate, onQuickAdd, onScan }) {
+  // Mijozga xabarlar navbati (kvitansiya/tayyor/qarz eslatmasi — avtomatik ketmaydi)
+  const msgQ = useCustMsgQueue(!!canSendMsg);
+  const [queueOpen, setQueueOpen] = useState(false);
   const now = new Date();
   const [chats, setChats] = useState(null); // null — yuklanmoqda, false — o'chiq/xato
   useEffect(() => {
@@ -122,8 +126,10 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
       title: waiting.length === 1 ? "1 ta chat javobsiz" : `${waiting.length} ta chat javobsiz`,
       sub: waiting.slice(0, 2).map((c) => `${first(c.name)} · ${waitText(Date.now() - Date.parse(c.lastDate))}`).join(", "), action: "Javob", primary: true }] : []),
     ...items,
+    ...(msgQ.pending.length ? [{ key: "custmsg", tone: "blue", count: msgQ.pending.length, title: `${msgQ.pending.length} ta xabar mijozga yuborilishini kutmoqda`, sub: msgQ.pending.slice(0, 2).map((x) => x.customer).join(", "), action: "Ko'rish" }] : []),
   ];
   const run = (it) => {
+    if (it.key === "custmsg") return setQueueOpen(true);
     if (it.key === "chats") return onOpenChat(waiting.length === 1 ? waiting[0].chatId : null);
     if (it.key === "ready") return it.orders.length === 1 ? onOpenOrder(it.orders[0]) : onNavigate("orders", { stage: "ready" });
     if (it.key === "debt") return onNavigate("orders", { onlyDebt: true });
@@ -137,7 +143,7 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
     amber: { c: THEME.amber || "#B45309", bg: THEME.amberBg || "#FDF3E3", icon: Wallet },
     violet: { c: THEME.isDark ? "#B79CF5" : "#6D28D9", bg: THEME.isDark ? "rgba(139,92,246,.16)" : "#F1EBFC", icon: Palette },
   };
-  const iconFor = { chats: MessageCircle, ready: CircleCheck, debt: Wallet, design: Palette, queue: ClipboardList };
+  const iconFor = { custmsg: Send, chats: MessageCircle, ready: CircleCheck, debt: Wallet, design: Palette, queue: ClipboardList };
 
   // Raqamli kartalar — gorizontal surish, nuqtalar bilan
   const scroller = useRef(null);
@@ -158,6 +164,7 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
   return (
     <section data-testid="today" aria-label="Bugun" className="uvix-today" style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 22 }}>
       <style>{TODAY_CSS}</style>
+      {queueOpen && <CustMsgQueueModal onClose={() => { setQueueOpen(false); msgQ.reload(); }} />}
       <header>
         <div style={{ fontSize: 14, color: THEME.muted }}>{UZ_WEEKDAYS[now.getDay()]}, {now.getDate()}-{UZ_MONTHS[now.getMonth()]}</div>
         <h1 data-testid="today-greet" style={{ margin: "2px 0 0", fontSize: 27, fontWeight: 700, letterSpacing: -0.6, lineHeight: 1.15 }}>{greet}, {first(user?.name)}</h1>

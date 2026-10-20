@@ -51,20 +51,21 @@ function StageBar({ counts }) {
 // Mijoz bo'yicha: 7 bosqich bitta chiziqda (Amazon/Uzum buyurtma kuzatuvi kabi); buyurtma turgan bosqichda — rangli doira va soni
 const SHORT = { new: "Navbat", design: "Dizayn", material: "Material", printing: "Pechat", ready: "Tayyor", install: "O'rnat", delivered: "Berildi" };
 function MetroLine({ counts, orders, stageOf, onPick, compact }) {
-  const W = compact ? 168 : 250;
+  // Ustun kengligiga moslashadi (keng ekranda cho'ziladi, 360px dan oshmaydi)
+  const pos = (i, d = 0) => `calc(10px + ${i} * (100% - 20px) / 6 - ${d}px)`;
   const tip = (k) => (orders || []).filter((o) => stageOf(o) === k).map((o) => `${o.orderNumber} · ${o.title || o.materialType || ""}`).join("\n");
   return (
-    <span data-metro style={{ position: "relative", display: "block", width: W + 20, height: 40 }}>
+    <span data-metro style={{ position: "relative", display: "block", width: "100%", maxWidth: 360, minWidth: compact ? 100 : 180, height: compact ? 28 : 40 }}>
       <span style={{ position: "absolute", left: 10, right: 10, top: 12, height: 3, background: THEME.border, borderRadius: 2 }} />
       {PROD_STAGES.map((k, i) => {
-        const x = 10 + (i * W) / 6; const n = counts[k] || 0; const c = k === "delivered" ? THEME.muted : prodColors(k).color;
+        const n = counts[k] || 0; const c = k === "delivered" ? THEME.muted : prodColors(k).color;
         return n ? (
           <span key={k} title={`${PROD_LABEL[k]} (${n})\n${tip(k)}`} data-metro-stage={k}>
             <button type="button" onClick={(e) => { e.stopPropagation(); onPick?.(k); }} aria-label={`${PROD_LABEL[k]}: ${n}`}
-              style={{ position: "absolute", left: x - 11, top: 3, width: 22, height: 22, borderRadius: "50%", border: 0, background: c, color: "#fff", fontSize: 11, fontWeight: 800, display: "grid", placeItems: "center", boxShadow: `0 0 0 3px ${THEME.card}`, cursor: "pointer", padding: 0, fontFamily: "inherit" }}>{n}</button>
-            {!compact && <span style={{ position: "absolute", left: x - 21, width: 42, top: 27, textAlign: "center", fontSize: 10, fontWeight: 700, color: c, whiteSpace: "nowrap", overflow: "hidden" }}>{SHORT[k] || PROD_LABEL[k]}</span>}
+              style={{ position: "absolute", left: pos(i, 11), top: 3, width: 22, height: 22, borderRadius: "50%", border: 0, background: c, color: "#fff", fontSize: 11, fontWeight: 800, display: "grid", placeItems: "center", boxShadow: `0 0 0 3px ${THEME.card}`, cursor: "pointer", padding: 0, fontFamily: "inherit" }}>{n}</button>
+            {!compact && <span style={{ position: "absolute", left: pos(i, 21), width: 42, top: 27, textAlign: "center", fontSize: 10, fontWeight: 700, color: c, whiteSpace: "nowrap", overflow: "hidden" }}>{SHORT[k] || PROD_LABEL[k]}</span>}
           </span>
-        ) : <span key={k} title={PROD_LABEL[k]} style={{ position: "absolute", left: x - 4, top: 9, width: 9, height: 9, borderRadius: "50%", background: THEME.card, border: `2px solid ${THEME.border2}` }} />;
+        ) : <span key={k} title={PROD_LABEL[k]} style={{ position: "absolute", left: pos(i, 4), top: 9, width: 9, height: 9, borderRadius: "50%", background: THEME.card, border: `2px solid ${THEME.border2}` }} />;
       })}
     </span>
   );
@@ -92,7 +93,7 @@ function MiniMetro({ stage }) {
 function PayBar({ pct, left, wide }) {
   const col = pct >= 100 ? THEME.green : pct >= 75 ? "#84CC16" : pct > 0 ? (THEME.amber || "#F59E0B") : THEME.rose;
   return (
-    <span data-pay={pct} style={{ display: "block", width: wide ? "100%" : 140, minWidth: 0 }}>
+    <span data-pay={pct} style={{ display: "block", width: "100%", maxWidth: wide ? "none" : 240, minWidth: 0 }}>
       <span style={{ display: "block", height: 6, borderRadius: 3, background: THEME.chip, overflow: "hidden" }}><i style={{ display: "block", height: "100%", width: `${Math.max(pct, pct > 0 ? 3 : 2)}%`, background: col, borderRadius: 3 }} /></span>
       <span style={{ display: "block", fontSize: 11.5, marginTop: 3, color: THEME.muted, whiteSpace: "nowrap" }}>
         {pct >= 100 && !(left > 0) ? <b style={{ color: THEME.green }}>To'liq to'langan</b> : <><b style={{ color: THEME.text }}>{pct}%</b>{left > 0 ? <span style={{ color: THEME.rose }}> · qoldi {left >= 1e6 ? `${(Math.round(left / 1e4) / 100).toLocaleString("ru-RU")} mln` : fmt(left)}</span> : null}</>}
@@ -120,6 +121,16 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const [expanded, setExpandedRaw] = useState(() => { try { return new Set(JSON.parse(sessionStorage.getItem("uvix:custOpen") || "[]")); } catch { return new Set(); } });
   const setExpanded = (v) => setExpandedRaw((prev) => { const n = typeof v === "function" ? v(prev) : v; try { sessionStorage.setItem("uvix:custOpen", JSON.stringify([...n])); } catch { /* shart emas */ } return n; });
   const [custSort, setCustSort] = useState("last");
+  // «Mijoz bo'yicha» jadvali konteyner kengligiga qarab: ≥1000 — to'liq, 720–1000 — ixcham, <720 — kartalar
+  const custBoxRef = useRef(null);
+  const [custW, setCustW] = useState(1200);
+  useEffect(() => {
+    const el = custBoxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([e]) => setCustW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, orders.length]);
   const [batchFor, setBatchFor] = useState(null); // { name, orders }
   const [invoiceFor, setInvoiceFor] = useState(null);
   const invoiceCustomer = useMemo(() => {
@@ -387,13 +398,16 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     </button>
   );
   function renderCustomers() {
-    // O'ng panel ochiq bo'lsa — ixchamroq ustunlar; juda tor ekranda jadval gorizontal suriladi (mijoz nomi doim ko'rinadi)
-    const GRID = selected ? "24px minmax(150px,1.4fr) 200px 128px 100px 92px 36px" : "28px minmax(180px,1.5fr) 290px 150px 118px 118px 46px";
+    // Ustunlar proporsional (Linear/Stripe uslubi): ortiqcha joy hammasiga bo'linadi, gorizontal surgich yo'q
+    const mode = isMobile || custW < 720 ? "cards" : custW < 1000 ? "compact" : "full";
+    const cards = mode === "cards", compact = mode === "compact";
+    const GRID = compact ? "20px minmax(140px,1.3fr) minmax(110px,1fr) minmax(100px,0.9fr) 96px 40px" : "28px minmax(180px,1.15fr) minmax(210px,1.35fr) minmax(140px,1fr) 110px 110px 92px";
     const payOf = (paid, total) => (total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : paid > 0 ? 100 : 0);
     const row = (o, last) => {
       const st = stageOf(o); const debt = orderDebt(o); const isSel = selected?.id === o.id; const paid = orderTotalPaid(o);
-      if (isMobile) return (
-        <div key={o.id} role="button" tabIndex={0} data-order-row={o.orderNumber} onClick={() => openSheet(o)} onKeyDown={(e) => e.key === "Enter" && openSheet(o)}
+      const openO = () => (isMobile ? openSheet(o) : setSelectedId(isSel ? null : o.id));
+      if (cards) return (
+        <div key={o.id} role="button" tabIndex={0} data-order-row={o.orderNumber} onClick={openO} onKeyDown={(e) => e.key === "Enter" && openO()}
           className="uvix-row" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", padding: "9px 14px 9px 30px", borderTop: `1px dashed ${THEME.border}`, cursor: "pointer" }}>
           <span style={{ minWidth: 0 }}>
             <b style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{o.orderNumber}</b><span style={{ color: THEME.muted }}> · {o.title || o.materialType || "—"}</span>
@@ -410,13 +424,13 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             <span aria-hidden style={{ position: "absolute", left: 14, top: -9, bottom: last ? "50%" : -9, width: 2, background: THEME.border2 }} />
             <span aria-hidden style={{ position: "absolute", left: 14, top: "50%", width: 14, height: 2, background: THEME.border2 }} />
             <b style={{ display: "block", fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.title || o.materialType || o.orderNumber}</b>
-            <span style={{ display: "block", fontSize: 12, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{o.orderNumber} · {shortDateUz(o.date)}{st ? ` · ${stageHint(o, empById) || ""}` : ""}</span>
+            <span style={{ display: "block", fontSize: 12, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{o.orderNumber} · {compact ? fmt(o.agreementUzs || 0) : shortDateUz(o.date)}{st && !compact ? ` · ${stageHint(o, empById) || ""}` : ""}</span>
           </span>
-          <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}><StageChip stage={st} /><MiniMetro stage={st} /></span>
+          <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}><StageChip stage={st} />{!compact && <MiniMetro stage={st} />}</span>
           <PayBar pct={payOf(paid, o.agreementUzs || 0)} left={debt} />
-          <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(o.agreementUzs || 0)}</span>
+          {!compact && <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(o.agreementUzs || 0)}</span>}
           <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: debt > 0 ? THEME.rose : THEME.dim }}>{debt > 0 ? fmt(debt) : "—"}</span>
-          <span style={{ textAlign: "right" }}><span className="uvix-iconbtn" style={{ ...getIconBtn(), display: "inline-grid", placeItems: "center", width: 30, height: 30 }} title="Tafsilot"><MoreHorizontal size={15} /></span></span>
+          <span style={{ textAlign: "right" }}><span className="uvix-iconbtn" style={{ ...getIconBtn(), display: "inline-grid", placeItems: "center", width: 28, height: 28 }} title="Tafsilot"><MoreHorizontal size={15} /></span></span>
         </div>
       );
     };
@@ -425,7 +439,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     else if (custSort === "sum") sorted.sort((a, b) => b.total - a.total);
     const allOpen = gp.pageItems.length > 0 && gp.pageItems.every((g) => expanded.has(g.id));
     return (
-      <div data-testid="customer-groups" style={{ minWidth: isMobile ? 0 : selected ? 800 : 980 }}>
+      <div data-testid="customer-groups" data-mode={mode} ref={custBoxRef} style={{ maxWidth: 1600, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", borderBottom: `1px solid ${THEME.border}`, flexWrap: "wrap" }}>
           <b style={{ fontSize: 14 }}>{groups.length} mijoz</b>
           <span style={{ fontSize: 13, color: THEME.muted }}>· {money(groups.reduce((s0, g) => s0 + g.total, 0))} · qarz <b style={{ color: THEME.rose }}>{fmt(groups.reduce((s0, g) => s0 + g.debt, 0))}</b></span>
@@ -435,9 +449,9 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             <option value="last">Oxirgi buyurtma</option><option value="debt">Qarz ↓</option><option value="sum">Summa ↓</option>
           </select>
         </div>
-        {!isMobile && (
+        {!cards && (
           <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 10, padding: "9px 16px", background: THEME.isDark ? THEME.hover : "#FAFAFA", borderBottom: `1px solid ${THEME.border}`, fontSize: 12, color: THEME.muted }}>
-            <span /><span>Mijoz</span><span>Ish bosqichi</span><span>To'lov</span><span style={{ textAlign: "right" }}>Summa</span><span style={{ textAlign: "right" }}>Qarz</span><span />
+            <span /><span>Mijoz</span><span>{compact ? "Bosqich" : "Ish bosqichi"}</span><span>To'lov</span>{!compact && <span style={{ textAlign: "right" }}>Summa</span>}<span style={{ textAlign: "right" }}>Qarz</span><span style={{ textAlign: "right" }}>{compact ? "" : "Amal"}</span>
           </div>
         )}
         {sorted.map((g) => {
@@ -449,20 +463,20 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           const payBtn = g.debt > 0 && (
             <button type="button" onClick={(e) => { e.stopPropagation(); setBatchFor({ name: g.name, orders: g.payable }); }} data-testid="batch-open" title="Umumiy to'lov" aria-label={`${g.name}: umumiy to'lov`}
               className="uvix-batch-btn"
-              style={open && !isMobile
+              style={!cards && !compact
                 ? { height: 30, display: "inline-flex", alignItems: "center", gap: 5, padding: "0 10px", borderRadius: 8, border: 0, background: THEME.greenSolid, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }
-                : { width: 30, height: 30, display: "inline-grid", placeItems: "center", borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.green, cursor: "pointer", padding: isMobile ? "0 10px" : 0, ...(isMobile ? { width: "auto", display: "inline-flex", gap: 6, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" } : {}) }}>
-              <Wallet size={14} />{(open && !isMobile) || isMobile ? " To'lov" : null}
+                : { width: 30, height: 30, display: "inline-grid", placeItems: "center", borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.green, cursor: "pointer", padding: cards ? "0 10px" : 0, ...(cards ? { width: "auto", display: "inline-flex", gap: 6, fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" } : {}) }}>
+              <Wallet size={14} />{cards || !compact ? " To'lov" : null}
             </button>
           );
           const visibleOrders = stageF ? g.orders.filter((o) => stageOf(o) === stageF) : g.orders;
           return (
             <Fragment key={g.id}>
               <div role="button" tabIndex={0} aria-expanded={open} data-customer={g.name} onClick={() => toggle(g.id)} onKeyDown={(e) => e.key === "Enter" && toggle(g.id)}
-                style={isMobile
+                style={cards
                   ? { padding: "12px 14px", borderTop: `1px solid ${THEME.border}`, cursor: "pointer", background: open ? THEME.hover : undefined }
                   : { display: "grid", gridTemplateColumns: GRID, gap: 10, alignItems: "center", padding: "10px 16px", borderTop: `1px solid ${THEME.border}`, cursor: "pointer", background: open ? THEME.hover : undefined }}>
-                {isMobile ? (
+                {cards ? (
                   <>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       {open ? <ChevronDown size={16} color={THEME.muted} /> : <ChevronRight size={16} color={THEME.muted} />}
@@ -483,12 +497,12 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
                       <Avatar name={g.name} size={32} />
                       <span style={{ minWidth: 0 }}>
                         <span style={{ display: "block", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
-                        <span style={{ display: "block", fontSize: 12, color: THEME.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub} · <b style={{ color: lines.length > 1 ? THEME.muted : lineColor(lines[0], THEME.isDark) }}>{lineTxt}</b></span>
+                        <span style={{ display: "block", fontSize: 12, color: THEME.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{compact ? <><b style={{ color: THEME.text, fontVariantNumeric: "tabular-nums" }}>{fmt(g.total)}</b> · {g.orders.length} ta · </> : `${sub} · `}<b style={{ color: lines.length > 1 ? THEME.muted : lineColor(lines[0], THEME.isDark) }}>{compact ? (lines.length > 1 ? "2 yo'n." : lines[0] === "UVONYX" ? "ONYX" : "UVIX") : lineTxt}</b></span>
                       </span>
                     </span>
-                    <MetroLine counts={g.stages} orders={g.orders} stageOf={stageOf} compact={!!selected} onPick={(st) => setStageF(stageF === st ? null : st)} />
+                    <MetroLine counts={g.stages} orders={g.orders} stageOf={stageOf} compact={compact} onPick={(st) => setStageF(stageF === st ? null : st)} />
                     <PayBar pct={payOf(paid, g.total)} left={g.debt} />
-                    <span style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(g.total)}</span>
+                    {!compact && <span style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(g.total)}</span>}
                     <span style={{ textAlign: "right", fontWeight: g.debt ? 600 : 400, color: g.debt ? THEME.rose : THEME.dim, fontVariantNumeric: "tabular-nums" }}>{g.debt ? fmt(g.debt) : "—"}</span>
                     <span style={{ textAlign: "right" }}>{payBtn}</span>
                   </>

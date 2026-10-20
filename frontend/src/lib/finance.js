@@ -45,7 +45,8 @@ export function generateOrderNumber(existingOrders, dateStr, line) {
 }
 export function getEffectiveDashboardLayout(settings) {
   const saved = settings?.dashboardLayout;
-  const base = Array.isArray(saved) && saved.length > 0 ? saved : DEFAULT_DASHBOARD_LAYOUT;
+  // 2026-10: yangi Dashboard — eski saqlangan ko'rinishda yangi bloklar yo'q bo'lsa, yangi standart ishlatiladi
+  const base = Array.isArray(saved) && saved.length > 0 && saved.some((w) => w.id === "kpis") ? saved : DEFAULT_DASHBOARD_LAYOUT;
   const known = new Set(base.map((w) => w.id));
   const extra = DASHBOARD_WIDGET_CATALOG.filter((w) => !known.has(w.id)).map((w) => ({ id: w.id, visible: false, size: w.defaultSize }));
   return [...base, ...extra].map((w) => ({ ...w, size: w.size || DASHBOARD_WIDGET_CATALOG.find((c) => c.id === w.id)?.defaultSize || "md" }));

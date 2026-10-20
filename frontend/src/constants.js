@@ -84,17 +84,37 @@ export const PAYMENT_TYPES = [
 
 export const DEFAULT_SETTINGS = { usdRate: 12700 };
 
-export const DASHBOARD_SIZE_SPANS = { sm: 3, md: 4, lg: 6, full: 12 };
+export const DASHBOARD_SIZE_SPANS = { sm: 3, md: 4, ml: 5, lg: 6, xl: 7, full: 12 };
 export const DASHBOARD_SIZE_LABELS = { sm: "Kichik", md: "O'rta", lg: "Katta", full: "To'liq" };
+// Yangi Dashboard (2026-10, eskiz 51–56): 11 ta asosiy blok; eski kartalar «Eski ko'rsatkichlar»da (sukut — yashirin)
 export const DASHBOARD_GROUPS = [
-  { id: "hero", label: "Asosiy" },
-  { id: "today", label: "Bugungi va oylik ko'rsatkichlar" },
-  { id: "kpis", label: "Buyurtmalar bo'yicha umumiy ko'rsatkichlar" },
-  { id: "customers", label: "Mijozlar va buyurtmalar" },
-  { id: "charts", label: "Grafiklar" },
+  { id: "main", label: "" },
+  { id: "money", label: "Pul va xarajat" },
+  { id: "ops", label: "Qarz · ishlab chiqarish · mijozlar" },
+  { id: "extra", label: "Qo'shimcha" },
+  { id: "hero", label: "Eski: asosiy karta" },
+  { id: "today", label: "Eski: bugungi va oylik ko'rsatkichlar" },
+  { id: "kpis", label: "Eski: buyurtmalar bo'yicha ko'rsatkichlar" },
+  { id: "customers", label: "Eski: mijozlar va buyurtmalar" },
+  { id: "charts", label: "Eski: grafiklar" },
 ];
 export const DASHBOARD_WIDGET_CATALOG = [
-  { id: "hero", group: "hero", label: "Umumiy buyurtmalar summasi (asosiy karta)", defaultSize: "full" },
+  { id: "kpis", group: "main", label: "Asosiy raqamlar: tushum, yangi buyurtmalar, qarz, kassa", defaultSize: "full" },
+  { id: "revenue", group: "main", label: "Tushum dinamikasi (o'tgan davr bilan)", defaultSize: "xl" },
+  { id: "managers", group: "main", label: "Menejerlar: bugun · hafta · oy", defaultSize: "ml" },
+  { id: "attention", group: "main", label: "Diqqat talab qiladi", defaultSize: "lg" },
+  { id: "recentPay", group: "main", label: "So'nggi to'lovlar", defaultSize: "lg" },
+  { id: "expenseDonut", group: "money", label: "Korxona rasxodi (dumaloq diagramma)", defaultSize: "md" },
+  { id: "payTypes", group: "money", label: "To'lov turlari: naqd · karta · bank", defaultSize: "md" },
+  { id: "fixedCosts", group: "money", label: "Oylik xarajatlar (doimiy xarajatlar qoplandimi)", defaultSize: "md" },
+  { id: "debtAging", group: "ops", label: "Qarzdorlik yoshi va eng katta qarzdorlar", defaultSize: "md" },
+  { id: "production", group: "ops", label: "Ishlab chiqarish", defaultSize: "md" },
+  { id: "customersStats", group: "ops", label: "Mijozlar va o'rtacha chek", defaultSize: "md" },
+  { id: "lineShare", group: "extra", label: "Yo'nalishlar ulushi (UVIX / ONYX)", defaultSize: "md" },
+  { id: "funnel", group: "extra", label: "CRM voronkasi", defaultSize: "md" },
+  { id: "topMaterials", group: "extra", label: "Material bo'yicha tushum", defaultSize: "md" },
+  { id: "forecast", group: "extra", label: "Oy oxiri prognozi", defaultSize: "md" },
+  { id: "hero", group: "hero", label: "Umumiy buyurtmalar summasi (eski asosiy karta)", defaultSize: "full" },
   { id: "debtAlert", group: "hero", label: "Qarzdorlik ogohlantirishi", defaultSize: "full" },
   { id: "m_todayPaid", colorable: true, group: "today", label: "Bugungi to'lov", defaultSize: "sm" },
   { id: "m_todayExpense", colorable: true, group: "today", label: "Bugungi rasxod", defaultSize: "sm" },
@@ -110,19 +130,17 @@ export const DASHBOARD_WIDGET_CATALOG = [
   { id: "m_totalMoney", colorable: true, group: "kpis", label: "Jami pul", defaultSize: "md" },
   { id: "m_topDebtors", group: "customers", label: "Eng katta qarzdor mijozlar", defaultSize: "lg" },
   { id: "m_recentOrders", group: "customers", label: "So'nggi buyurtmalar", defaultSize: "lg" },
-  { id: "topOrders", group: "customers", label: "Eng katta buyurtmalar (yangi shablon)", defaultSize: "lg" },
-  { id: "brakSummary", group: "customers", label: "Brak xarajatlari xulosasi (yangi shablon)", defaultSize: "sm" },
+  { id: "topOrders", group: "customers", label: "Eng katta buyurtmalar", defaultSize: "lg" },
+  { id: "brakSummary", group: "customers", label: "Brak xarajatlari xulosasi", defaultSize: "sm" },
   { id: "dailyChart", group: "charts", label: "Kunlik to'lov/rasxod grafigi", defaultSize: "lg" },
   { id: "categoryPie", group: "charts", label: "Rasxod kategoriyalari diagrammasi", defaultSize: "lg" },
   { id: "monthlyChart", group: "charts", label: "Oylik to'lov/rasxod grafigi", defaultSize: "lg" },
-  { id: "paymentMethods", group: "charts", label: "To'lov turlari taqqoslash", defaultSize: "lg" },
+  { id: "paymentMethods", group: "charts", label: "To'lov turlari taqqoslash (eski)", defaultSize: "lg" },
 ];
 export const DEFAULT_DASHBOARD_LAYOUT = [
-  "hero", "debtAlert",
-  "m_todayPaid", "m_todayExpense", "m_monthPaid", "m_monthExpense",
-  "m_totalArea", "m_orderValue", "m_addedValue", "m_totalPaid", "m_totalExpense", "m_materialExpense", "m_kraska", "m_totalMoney",
-  "m_topDebtors", "m_recentOrders",
-  "dailyChart", "categoryPie", "monthlyChart", "paymentMethods",
+  "kpis", "revenue", "managers", "attention", "recentPay",
+  "expenseDonut", "payTypes", "fixedCosts",
+  "debtAging", "production", "customersStats",
 ].map((id) => ({ id, visible: true, size: DASHBOARD_WIDGET_CATALOG.find((c) => c.id === id).defaultSize }));
 export const PAGE_SIZE = 25;
 

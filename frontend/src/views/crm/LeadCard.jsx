@@ -94,7 +94,7 @@ export function LeadCard({ lead, line, showLine, orders, jobs, employees, compac
         <span data-testid="lead-next-job" data-act={act.state} title={late ? "Vazifa muddati o'tib ketdi" : "Rejalashtirilgan keyingi ish"}
           style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, color: late ? THEME.rose : THEME.greenText, minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
           {late ? <AlertCircle size={13} style={{ flexShrink: 0 }} /> : <CalendarCheck size={13} style={{ flexShrink: 0 }} />}
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{late ? `Kechikdi${act.lateDays ? ` ${act.lateDays} kun` : ""} · ${JOB_SHORT[j.kind] || "vazifa"}` : `${day}${j.time ? ` ${j.time}` : ""} ${JOB_SHORT[j.kind] || "vazifa"}`}{who}{act.more > 0 ? ` (+${act.more})` : ""}</span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{late ? `Kechikdi${act.lateDays ? ` ${act.lateDays} kun` : ""} · ${day.toLowerCase()}${j.time ? ` ${j.time}` : ""} ${JOB_SHORT[j.kind] || "vazifa"}` : `${day}${j.time ? ` ${j.time}` : ""} ${JOB_SHORT[j.kind] || "vazifa"}`}{who}{act.more > 0 ? ` (+${act.more})` : ""}</span>
         </span>
       );
     }

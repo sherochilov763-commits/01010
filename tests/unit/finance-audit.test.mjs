@@ -14,7 +14,7 @@ const esbuild = req("esbuild");
 const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "uvix-fin-")), "f.mjs");
 const src = (p) => JSON.stringify(path.join(front, "src", p));
 await esbuild.build({
-  stdin: { contents: `export * from ${src("lib/finance.js")}; export { kassaReport, computeKassa } from ${src("lib/kassa.js")}; export { computePnlMonths, monthsBetween } from ${src("lib/pnl.js")}; export * from ${src("lib/leadPriority.js")}; export { leadLineOf } from ${src("lib/lines.js")};`, resolveDir: front, loader: "js" },
+  stdin: { contents: `export * from ${src("lib/finance.js")}; export { kassaReport, computeKassa } from ${src("lib/kassa.js")}; export { computePnlMonths, monthsBetween } from ${src("lib/pnl.js")}; export * from ${src("lib/leadPriority.js")}; export { leadLineOf } from ${src("lib/lines.js")}; export * as dash from ${src("lib/dash.js")};`, resolveDir: front, loader: "js" },
   bundle: true, platform: "node", format: "esm", outfile: out, jsx: "automatic", loader: { ".js": "jsx" }, logLevel: "error",
   define: { "import.meta.env": JSON.stringify({ VITE_API_BASE: "/api", BASE_URL: "/" }) },
 });
@@ -85,4 +85,47 @@ test("lid muhimligi: ustunda shoshilinch → kechikkan ish → summa", () => {
   assert.equal(F.leadLineOf({ telegramChatId: "on:123" }), "UVONYX");
   assert.equal(F.leadLineOf({ line: "UVONYX" }), "UVONYX");
   assert.equal(F.leadLineOf({}), "UVIXPRINT");
+});
+
+test("dashboard: davrlar va o'tgan davr", () => {
+  const p = F.dash.periodOf("mtd", "2026-10-20");
+  assert.deepEqual([p.from, p.to, p.prev.from, p.prev.to], ["2026-10-01", "2026-10-20", "2026-09-01", "2026-09-20"]);
+  const w = F.dash.periodOf("week", "2026-10-21"); // chorshanba
+  assert.deepEqual([w.from, w.prev.from, w.prev.to], ["2026-10-19", "2026-10-12", "2026-10-14"]);
+  const m31 = F.dash.periodOf("mtd", "2026-03-31");
+  assert.equal(m31.prev.to, "2026-02-28");
+});
+
+test("dashboard: menejer tushumi buyurtma mas'uli bo'yicha, o'chirilgan to'lovsiz", () => {
+  const orders = [
+    order("A", "2026-09-01", 1e6, [{ date: "2026-10-20", amount: 300 }, { date: "2026-10-19", amount: 200 }, { date: "2026-10-05", amount: 50 }, { date: "2026-10-20", amount: 999, deletedAt: "x" }], { manager: "Aziza" }),
+    order("B", "2026-10-02", 1e6, [{ date: "2026-10-20", amount: 100 }], { manager: "" }),
+  ];
+  const ms = F.dash.managerStats(orders, "2026-10-20");
+  const az = ms.rows.find((r) => r.name === "Aziza");
+  assert.deepEqual([az.d, az.w, az.m], [300, 500, 550]);
+  assert.equal(ms.rows.find((r) => r.name === "Belgilanmagan").d, 100);
+  assert.equal(ms.total.d, 400);
+});
+
+test("dashboard: oylik xarajatlar — qoplangan sana va to'lov holati", () => {
+  const orders = [order("A", "2026-10-01", 9e6, [{ date: "2026-10-02", amount: 2000 }, { date: "2026-10-05", amount: 5000 }])];
+  const txs = [{ date: "2026-10-03", amount: 1000, category: "Material", type: "chiqim" }, { date: "2026-10-05", amount: 3000, category: "Ijara", type: "chiqim" }];
+  const items = [{ name: "Ijara", amount: 3000, category: "Ijara" }, { name: "Ish haqi", amount: 2000, category: "Xodimlar" }];
+  const fc = F.dash.fixedCosts(items, orders, txs, "2026-10-10");
+  assert.equal(fc.need, 5000);
+  assert.equal(fc.found, 6000); // 7000 tushum − 1000 material
+  assert.equal(fc.coveredOn, "2026-10-05");
+  assert.equal(fc.extra, 1000);
+  assert.deepEqual(fc.rows.map((r) => r.status), ["paid", "wait"]);
+});
+
+test("dashboard: qarz yoshi va rasxod kategoriyalari", () => {
+  const orders = [order("A", "2026-10-15", 1000, []), order("B", "2026-09-01", 500, [{ date: "2026-09-02", amount: 100 }])];
+  const ag = F.dash.debtAging(orders, "2026-10-20");
+  assert.deepEqual(ag.buckets, [1000, 0, 400]);
+  const e = F.dash.expenseBreakdown([{ date: "2026-10-02", amount: 10, category: "A" }, { date: "2026-10-03", amount: 5, category: "B" }, { date: "2026-09-03", amount: 30, category: "A" }], F.dash.periodOf("mtd", "2026-10-20"));
+  assert.equal(e.total, 15);
+  assert.equal(e.prev, 30);
+  assert.equal(e.parts[0].name, "A");
 });

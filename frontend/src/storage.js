@@ -724,3 +724,8 @@ export function exitViewAs() {
   return !!back;
 }
 export const viewAsActive = () => { try { return !!localStorage.getItem(VIEW_BACK); } catch { return false; } };
+// Navbat: mijozga xabarlar faqat xodim tasdiqlagandan keyin ketadi
+export const fetchCustMsgQueue = () => cmReq("/queue");
+export const sendQueuedMsg = (id, text) => cmReq(`/queue/${encodeURIComponent(id)}/send`, { method: "POST", body: JSON.stringify({ text }) });
+export const cancelQueuedMsg = (id, reason) => cmReq(`/queue/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+export const queueDebtReminder = (customer) => cmReq("/queue/remind", { method: "POST", body: JSON.stringify({ customer }) });

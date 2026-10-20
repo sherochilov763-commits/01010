@@ -25,14 +25,17 @@ export async function ensureInvoiceFonts() {
   await Promise.all(["700 44px Unbounded", "600 26px Unbounded", "400 23px Onest", "500 23px Onest", "600 26px Onest"].map((f) => document.fonts.load(f).catch(() => {})));
 }
 
+// Ish nomi yo'nalishga qarab: UVONYX buyurtmasiga «UV bosma» yozilmaydi
+const workName = (order) => (order?.subcategory === "UVONYX" ? "Oniks / shisha" : "UV bosma");
 export function invoiceLines(order) {
+  const WN = workName(order);
   const lines = (order.materialLines || []).filter((l) => (l.area || 0) > 0 || l.materialType);
   if (lines.length <= 1) {
     const l = lines[0];
-    const title = l?.materialType ? `UV bosma — ${l.materialType}` : order.subcategory ? `UV bosma (${order.subcategory})` : "UV bosma";
+    const title = l?.materialType ? `${WN} — ${l.materialType}` : order.materialType ? `${WN} — ${order.materialType}` : WN;
     return [{ title, sub: order.jobTitle || "", qty: order.area ? area(order.area) : l?.area ? area(l.area) : "—", sum: order.agreementUzs || 0 }];
   }
-  return lines.map((l) => ({ title: `UV bosma — ${l.materialType || "material"}`, sub: "", qty: l.area ? area(l.area) : "—", sum: null }));
+  return lines.map((l) => ({ title: `${WN} — ${l.materialType || "material"}`, sub: "", qty: l.area ? area(l.area) : "—", sum: null }));
 }
 
 function fit(ctx, text, maxW) {
@@ -48,6 +51,7 @@ export function drawInvoice({ order, customer, cfg }) {
   const paid = orderTotalPaid(order);
   const total = order.agreementUzs || 0;
   const due = Math.max(0, total - paid);
+  const over = Math.max(0, paid - total); // ortiqcha to'langan — mijozga aniq ko'rsatiladi
   const pays = (order.payments || []).filter((p) => !p.deletedAt);
   const hasPay = !!(cfg.cardNumber || cfg.managerPhone);
   const rowH = (l) => (l.sub ? 104 : 80);
@@ -69,10 +73,12 @@ export function drawInvoice({ order, customer, cfg }) {
   if (cfg.logoImg && cfg.logoImg.width) {
     const h = 64, w = Math.min(360, (cfg.logoImg.width / cfg.logoImg.height) * h);
     ctx.drawImage(cfg.logoImg, PAD, y - 52, w, (w / cfg.logoImg.width) * cfg.logoImg.height);
-  } else t(PAD, y, "UVIX", F.brand);
+  } else t(PAD, y, order?.subcategory === "UVONYX" ? "UVONYX" : "UVIX", F.brand);
   t(W - PAD, y - 14, order.orderNumber || "", F.no, C.ink, "right");
   t(W - PAD, y + 20, dLabel(todayStr()), F.sub, C.muted, "right");
-  t(PAD, y + 38, cfg.companyLine || "UV bosma ustaxonasi", F.sub, C.muted);
+  const onyx = order?.subcategory === "UVONYX";
+  const cl = cfg.companyLine && !(onyx && /^UV bosma ustaxonasi$/i.test(cfg.companyLine.trim())) ? cfg.companyLine : onyx ? "Oniks va shisha ustaxonasi" : "UV bosma ustaxonasi";
+  t(PAD, y + 38, cl, F.sub, C.muted);
 
   y += 170;
   t(PAD, y, "Hisob-faktura", F.h1);
@@ -110,10 +116,10 @@ export function drawInvoice({ order, customer, cfg }) {
   }
   y += 34;
   const bh = 100, r = 22;
-  ctx.fillStyle = due > 0 ? C.ink : C.green;
+  ctx.fillStyle = due > 0 ? C.ink : over > 0 ? "#B45309" : C.green;
   ctx.beginPath(); ctx.roundRect ? ctx.roundRect(tx, y, W - PAD - tx, bh, r) : ctx.rect(tx, y, W - PAD - tx, bh); ctx.fill();
-  t(tx + 34, y + 60, due > 0 ? "To'lash kerak" : "To'liq to'langan", F.sub, "rgba(255,255,255,0.78)");
-  t(W - PAD - 34, y + 64, som(due > 0 ? due : total), F.total, "#FFFFFF", "right");
+  t(tx + 34, y + 60, due > 0 ? "To'lash kerak" : over > 0 ? "Ortiqcha to'langan" : "To'liq to'langan", F.sub, "rgba(255,255,255,0.78)");
+  t(W - PAD - 34, y + 64, som(due > 0 ? due : over > 0 ? over : total), F.total, "#FFFFFF", "right");
   y += bh;
 
   // to'lov rekvizitlari
