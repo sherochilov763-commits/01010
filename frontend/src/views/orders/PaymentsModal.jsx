@@ -1,4 +1,5 @@
 import { usePerms } from "../../lib/perms.jsx";
+import { PhotoGrid } from "../../components/PhotoViewer.jsx";
 import { useState } from "react";
 import { Clock, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, Field, Modal, MultiPaymentLines, getIconBtn, getInputStyle } from "../../components/ui.jsx";
@@ -82,13 +83,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
         {(order.photos || []).length > 0 && (
           <Card style={{ padding: 12 }}>
             <div style={{ fontSize: 10.5, color: THEME.muted, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>Fotolar ({order.photos.length})</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(72px, 1fr))", gap: 8 }}>
-              {order.photos.map((p) => (
-                <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" style={{ aspectRatio: "1", borderRadius: 10, overflow: "hidden", border: `1px solid ${THEME.border}`, display: "block" }}>
-                  <img src={p.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                </a>
-              ))}
-            </div>
+            <PhotoGrid photos={order.photos} title={`${order.title || order.materialType || ""} · ${order.orderNumber}`} size={72} />
           </Card>
         )}
 

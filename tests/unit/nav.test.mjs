@@ -22,7 +22,7 @@ const J = JSON.stringify;
 
 test("operator va admin standartlari", () => {
   assert.equal(J(normalizeNav(null, "operator").mobileBar), J(["dashboard", "chats", "orders", "crm"]));
-  assert.equal(J(normalizeNav({}, "admin").mobileBar), J(["dashboard", "orders", "operations", "crm"]));
+  assert.equal(J(normalizeNav({}, "admin").mobileBar), J(["dashboard", "orders", "crm", "operations"]));
   assert.equal(J(normalizeNav({}, "x").mobileBar), J(["dashboard", "orders", "expense", "crm"]));
 });
 test("eski standart saqlangan — rol standarti; qo'lda (barSet) — o'zgarmaydi", () => {

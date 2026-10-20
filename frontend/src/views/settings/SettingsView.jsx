@@ -11,6 +11,7 @@ import { roleLabel } from "../../constants.js";
 import { THEME } from "../../theme.js";
 import { SecuritySection } from "./SecuritySection.jsx";
 import { ErrorsSection } from "./ErrorsSection.jsx";
+import { StorageSection } from "./StorageSection.jsx";
 import { AppearancePreviewCard, AppearanceSection, CompanyAppearanceCard } from "./AppearanceSection.jsx";
 import { TrashSection } from "./TrashSection.jsx";
 import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
@@ -446,6 +447,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
     </>,
     bolimlar: isAdmin && <ModulesSection onOpenView={onOpenView} />,
     malumotlar: isAdmin && <>
+        <StorageSection />
         <ErrorsSection />
         {isAdmin && (
           <Card data-testid="backup-time-card">

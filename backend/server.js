@@ -407,6 +407,7 @@ let webpushLib = null;
 try { webpushLib = require("web-push"); } catch { console.warn("web-push o'rnatilmagan — push bildirishnomalar o'chiq"); }
 const notifications = require("./notifications")(app, { getStmt, upsertStmt, readEmployees, requireAuth, webpush: webpushLib });
 // Ilova va server xatolari: yig'iladi, adminga Telegram (bir xil xato — bitta xabar), «So'nggi xatolar» (A3)
+require("./storage-stats")(app, { requireAuth, requireAdmin, dbPath: db.DB_PATH, uploadsDir: UPLOADS_DIR, attDir: ATT_PHOTO_DIR, getStmt });
 const errorReports = require("./error-reports")(app, {
   getStmt, upsertStmt, requireAuth, requireAdmin,
   userOf: (req) => {

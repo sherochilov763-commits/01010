@@ -32,15 +32,17 @@ def admin_token():
     aid = [e for e in api("/api/auth/employees")["employees"] if e["role"] == "admin"][0]["id"]
     return api("/api/auth/login", {"employeeId": aid, "pin": "0000"})["token"]
 
+LIST_DEFAULT = "localStorage.setItem('uvix_orders_view_def','list')"  # eski testlar «Ro'yxat» bilan boshlanadi
+
 async def dlogin(pg, name, pin):
-    await pg.goto(B); await pg.wait_for_selector("[data-testid=desktop-login]"); await pg.wait_for_timeout(400)
+    await pg.goto(B); await pg.evaluate(LIST_DEFAULT); await pg.wait_for_selector("[data-testid=desktop-login]"); await pg.wait_for_timeout(400)
     await pg.locator("[data-testid=dl-person]").click(); await pg.wait_for_timeout(200)
     await pg.locator(".dl-options button", has_text=name).first.click(); await pg.wait_for_timeout(200)
     await pg.keyboard.type(pin); await pg.keyboard.press("Enter")
     await pg.wait_for_selector("[data-testid=desktop-login]", state="detached", timeout=10000); await pg.wait_for_timeout(1500)
 
 async def mob_login(pg, name, pin):
-    await pg.goto(B); await pg.wait_for_selector(".ul-person, .ul-pad", timeout=15000)
+    await pg.goto(B); await pg.evaluate(LIST_DEFAULT); await pg.wait_for_selector(".ul-person, .ul-pad", timeout=15000)
     if await pg.locator(".ul-person").count(): await pg.locator(".ul-person", has_text=name).click()
     for d in pin: await pg.locator(f".ul-key[aria-label='{d}']").click()
     await pg.locator(".ul-primary", has_text="Kirish").click()

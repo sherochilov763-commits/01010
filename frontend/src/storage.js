@@ -118,7 +118,7 @@ export async function qrPoll(id, key) {
   return data;
 }
 
-export async function uploadPhotos(orderId, files) {
+async function postPhotos(files) {
   const form = new FormData();
   for (const f of files) form.append("photos", f);
   const res = await fetch(`${API_BASE}/photos/upload`, {
@@ -130,10 +130,27 @@ export async function uploadPhotos(orderId, files) {
   if (!res.ok) {
     throw new Error(data.message || data.error || `upload failed: ${res.status}`);
   }
-  // Backend nisbiy manzil (masalan /api/photos/xxx.png) qaytaradi — bu to'g'ridan-to'g'ri
-  // <img src> orqali ishlaydi (ko'rish endpointi auth talab qilmaydi), shuning uchun
-  // hech qanday qo'shimcha o'zgartirish shart emas.
-  return data.photos;
+  // Backend nisbiy manzil (masalan /api/photos/xxx.jpg) qaytaradi — <img src> orqali to'g'ridan-to'g'ri ishlaydi
+  return data.photos || [];
+}
+
+// Rasm yuklashdan oldin brauzerda siqiladi (2400 px) va ro'yxat uchun kichik nusxa (360 px) ham yuklanadi:
+// har rasm — { url, filename, thumbUrl, thumbFilename, size }
+export async function uploadPhotos(orderId, files) {
+  const { prepareImage } = await import("./lib/imageCompress.js");
+  const prepared = [];
+  for (const f of files) prepared.push(await prepareImage(f));
+  const main = await postPhotos(prepared.map((p) => p.main));
+  const withThumb = prepared.map((p, i) => (p.thumb ? i : -1)).filter((i) => i >= 0);
+  let thumbs = [];
+  if (withThumb.length) {
+    try { thumbs = await postPhotos(withThumb.map((i) => prepared[i].thumb)); } catch { thumbs = []; } // kichik nusxa bo'lmasa — asosiy rasm ishlatiladi
+  }
+  return main.map((ph, i) => {
+    const ti = withThumb.indexOf(i);
+    const th = ti >= 0 ? thumbs[ti] : null;
+    return { ...ph, size: prepared[i].main.size, ...(th ? { thumbUrl: th.url, thumbFilename: th.filename } : {}) };
+  });
 }
 
 export async function deletePhoto(filename) {
@@ -667,6 +684,7 @@ export async function revokeSession(id) {
 // ---- So'nggi xatolar (admin) ----
 export const fetchSystemErrors = () => apiReq("/system/errors");
 export const clearSystemErrors = () => apiReq("/system/errors", "DELETE");
+export const fetchStorageStats = (fresh) => apiReq(`/system/storage${fresh ? "?fresh=1" : ""}`);
 
 // ---------- Vazifalar (o'lchov, montaj, yetkazish) ----------
 async function jobsCall(path, method = "GET", body) {

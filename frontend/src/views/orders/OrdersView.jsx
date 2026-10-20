@@ -21,9 +21,12 @@ import { QuoteModal } from "../quotes/QuoteModal.jsx";
 import { BatchPayModal } from "./BatchPayModal.jsx";
 import { PROD_LABEL, PROD_STAGES, legacyLeadIndex, orderStage, prodColors, stageHint } from "../../lib/production.js";
 import { assignOrderTask, setOrderStage } from "../../storage.js";
+import { ORDER_VISUAL_CSS, OrderPeek, OrderThumb, PinButton, PlaceTag, RecentOrders, orderTitle, useFlip, useOrderMarks, useOrderPeek } from "../../components/OrderVisual.jsx";
 
-const VIEW_KEY = "uvix_orders_view";
-const readView = () => { try { return localStorage.getItem(VIEW_KEY) === "customers" ? "customers" : "list"; } catch { return "list"; } };
+// Buyurtmalar har safar «Mijoz bo'yicha» ochiladi (rahbar talabi); «Ro'yxat» — faqat shu safar uchun.
+// (Avtotestlar eski tartibni «uvix_orders_view_def» = "list" bilan oladi.)
+const DEF_KEY = "uvix_orders_view_def";
+const readView = () => { try { return localStorage.getItem(DEF_KEY) === "list" ? "list" : "customers"; } catch { return "customers"; } };
 function StageChip({ stage, hint }) {
   if (!stage) return <span style={{ color: THEME.dim }}>—</span>;
   const c = prodColors(stage);
@@ -115,7 +118,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const [modal, setModal] = useState(null); // {edit} — faqat tahrirlash (yangi buyurtma smeta orqali)
   const [quote, setQuote] = useState(null); // {lead?} — «Yangi buyurtma» (smeta → to'lov → buyurtmalar)
   const [viewMode, setViewModeState] = useState(readView);
-  const setViewMode = (v) => { setViewModeState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* */ } };
+  const setViewMode = (v) => setViewModeState(v);
   const [stageF, setStageF] = useState(null);
   // Ochilgan mijozlar — sahifa davomida eslab qolinadi (boshqa bo'limga o'tib qaytganda ham)
   const [expanded, setExpandedRaw] = useState(() => { try { return new Set(JSON.parse(sessionStorage.getItem("uvix:custOpen") || "[]")); } catch { return new Set(); } });
@@ -180,6 +183,8 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   const line = globalLine.line;
   const setLine = (v) => { if (globalLine.canSwitch) globalLine.setLine(v); };
   const [selectedId, setSelectedId] = useState(null); // o'ng paneldagi buyurtma (kompyuterda)
+  const marks = useOrderMarks(currentUser?.id);
+  const pv = useOrderPeek();
   const [sheetId, setSheetId] = useState(null); // telefonda pastki varaqdagi buyurtma
   const [swiped, setSwiped] = useState(null); // telefonda surib ochilgan qator: { id, side }
   const blockTap = useRef(false);
@@ -200,10 +205,17 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     .filter((o) => !onlyPaid || orderDebt(o) <= 0)
     .filter((o) => {
       if (!search.trim()) return true;
-      const q = search.toLowerCase();
-      return (o.customer || "").toLowerCase().includes(q) || (o.orderNumber || "").toLowerCase().includes(q) || (o.title || "").toLowerCase().includes(q) || (o.groupId || "").toLowerCase() === q;
+      // Aqlli qidiruv: har so'z nom, mijoz, telefon, joy, material, kod, summa yoki xodimda bo'lishi kerak
+      const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+      if (words.length === 1 && (o.groupId || "").toLowerCase() === words[0]) return true;
+      const c = custByKey.get(custKey(o.customer));
+      const hay = [o.customer, o.orderNumber, o.title, o.place, o.materialType, o.manager, o.note, c?.phone, String(o.agreementUzs || ""), o.groupId].join(" ").toLowerCase();
+      const digits = hay.replace(/[\s+()-]/g, "");
+      return words.every((w) => hay.includes(w) || (/^[\d\s+()-]+$/.test(w) && digits.includes(w.replace(/[\s+()-]/g, ""))));
     })
-    .sort((a, b) => (globalLine.split && lineOfOrder(a) !== lineOfOrder(b) ? (lineOfOrder(a) === "UVIXPRINT" ? -1 : 1) : a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.orderNumber).localeCompare(String(a.orderNumber))));
+    .sort((a, b) => (globalLine.split && lineOfOrder(a) !== lineOfOrder(b) ? (lineOfOrder(a) === "UVIXPRINT" ? -1 : 1) : a.date < b.date ? 1 : a.date > b.date ? -1 : String(b.orderNumber).localeCompare(String(a.orderNumber))))
+    // 📌 qadalganlar ro'yxat boshida (yo'nalishlar yonma-yon bo'lsa — har yo'nalish ichida)
+    .sort((a, b) => (globalLine.split && lineOfOrder(a) !== lineOfOrder(b) ? 0 : (marks.pinSet.has(b.id) ? 1 : 0) - (marks.pinSet.has(a.id) ? 1 : 0)));
   // «Mijoz bo'yicha»: filtrdan o'tgan buyurtmalar mijoz kesimida (nomi birlashtirilganlar — bitta mijoz)
   const groups = useMemo(() => {
     const m = new Map();
@@ -237,6 +249,10 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
     return { phone: c?.phone || "", phoneHref: c?.phone ? telLink(c.phone) : null, onTelegram: tg };
   };
   const openSheet = (o) => { setSwiped(null); setSheetId(o.id); };
+  useEffect(() => { if (selectedId) marks.touch(selectedId); }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (sheetId) marks.touch(sheetId); }, [sheetId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const flipKey = `${customerMode}|${(customerMode ? [] : pageItems).map((o) => o.id).join(",")}`;
+  const flipRef = useFlip(flipKey);
   const listSum = useMemo(() => list.reduce((sum, o) => sum + (o.agreementUzs || 0), 0), [list]);
   const selectedPhone = useMemo(() => {
     if (!selected) return "";
@@ -384,7 +400,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   };
   const viewToggle = (
     <div role="group" aria-label="Ko'rinish" style={{ display: "inline-flex", background: THEME.chip, borderRadius: 9, padding: 3, gap: 2, flexShrink: 0 }}>
-      {[["list", "Ro'yxat"], ["customers", "Mijoz bo'yicha"]].map(([v, l]) => (
+      {[["customers", "Mijoz bo'yicha"], ["list", "Ro'yxat"]].map(([v, l]) => (
         <button key={v} type="button" onClick={() => setViewMode(v)} aria-pressed={viewMode === v} data-view={v}
           style={{ height: 30, padding: "0 12px", border: 0, borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap", background: viewMode === v ? THEME.card : "transparent", color: viewMode === v ? THEME.text : THEME.muted, boxShadow: viewMode === v ? THEME.shadowSm : "none" }}>{l}</button>
       ))}
@@ -410,7 +426,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
         <div key={o.id} role="button" tabIndex={0} data-order-row={o.orderNumber} onClick={openO} onKeyDown={(e) => e.key === "Enter" && openO()}
           className="uvix-row" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", padding: "9px 14px 9px 30px", borderTop: `1px dashed ${THEME.border}`, cursor: "pointer" }}>
           <span style={{ minWidth: 0 }}>
-            <b style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{o.orderNumber}</b><span style={{ color: THEME.muted }}> · {o.title || o.materialType || "—"}</span>
+            <b style={{ fontWeight: 600 }}>{orderTitle(o)}</b><span style={{ color: THEME.muted, fontVariantNumeric: "tabular-nums" }}> · {o.orderNumber}</span>{o.place && <> <PlaceTag place={o.place} small /></>}
             <span style={{ display: "block", marginTop: 4 }}><StageChip stage={st} /></span>
           </span>
           <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: debt > 0 ? THEME.rose : THEME.dim }}>{debt > 0 ? fmt(debt) : "—"}</span>
@@ -423,7 +439,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           <span style={{ minWidth: 0, position: "relative", paddingLeft: 34 }}>
             <span aria-hidden style={{ position: "absolute", left: 14, top: -9, bottom: last ? "50%" : -9, width: 2, background: THEME.border2 }} />
             <span aria-hidden style={{ position: "absolute", left: 14, top: "50%", width: 14, height: 2, background: THEME.border2 }} />
-            <b style={{ display: "block", fontWeight: 600, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.title || o.materialType || o.orderNumber}</b>
+            <b style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13.5, overflow: "hidden", whiteSpace: "nowrap", minWidth: 0 }}><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{orderTitle(o)}</span>{o.place && <PlaceTag place={o.place} small />}</b>
             <span style={{ display: "block", fontSize: 12, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{o.orderNumber} · {compact ? fmt(o.agreementUzs || 0) : shortDateUz(o.date)}{st && !compact ? ` · ${stageHint(o, empById) || ""}` : ""}</span>
           </span>
           <span style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}><StageChip stage={st} />{!compact && <MiniMetro stage={st} />}</span>
@@ -525,7 +541,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
             <label style={{ flex: 1, position: "relative", display: "block" }}>
               <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Qidirish</span>
               <Search size={17} style={{ position: "absolute", left: 13, top: 14, color: THEME.muted }} />
-              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Mijoz yoki buyurtma №"
+              <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, mijoz, telefon, summa"
                 style={{ ...getInputStyle(), height: 46, paddingLeft: 38, fontSize: 15, background: THEME.card }} />
             </label>
             <button type="button" onClick={() => setToolsOpen((v) => !v)} aria-expanded={toolsOpen} aria-label="Excel va boshqa amallar"
@@ -588,16 +604,19 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           <label style={{ position: "relative", display: "block" }}>
             <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Qidiruv</span>
             <Search size={14} style={{ position: "absolute", left: 11, top: 11, color: THEME.dim }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Mijoz yoki buyurtma №" style={{ ...getInputStyle(), minHeight: 36, height: 36, paddingLeft: 32, width: 240, borderRadius: 18 }} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom, mijoz, telefon, joy, summa…" data-testid="orders-search" style={{ ...getInputStyle(), minHeight: 36, height: 36, paddingLeft: 32, width: 280, borderRadius: 18 }} />
           </label>
         </div>
         {importErrorsBox}
       </div>
       )}
+      <style>{ORDER_VISUAL_CSS}</style>
+      {!isMobile && <OrderPeek peek={pv.peek} stageLabel={pv.peek ? PROD_LABEL[stageOf(pv.peek.o)] : ""} debtOf={orderDebt} />}
+      {!customerMode && !search && <RecentOrders orders={orders} recent={marks.recent} pinSet={marks.pinSet} onOpen={(o) => (isMobile ? openSheet(o) : setSelectedId(o.id))} />}
       <div className={selected ? "uvix-split uvix-split-open" : "uvix-split"}>
       <Card style={{ padding: 0, overflowX: "auto", minWidth: 0 }} className="uvix-scroll">
         {list.length === 0 ? <EmptyState text={stageF || search || onlyDebt || onlyPaid ? "Bu filtr bo'yicha buyurtma yo'q" : "Hali buyurtma kiritilmagan"} /> : customerMode ? renderCustomers() : isMobile ? (
-          <div>
+          <div ref={flipRef}>
             {pageItems.map((o) => {
               const paid = orderTotalPaid(o);
               const debt = orderDebt(o);
@@ -606,6 +625,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
               const ct = contactOf(o);
               return (
                 <MobileOrderRow key={o.id} order={o} stage={st} paid={paid} debt={debt} total={total}
+                  pinned={marks.pinSet.has(o.id)} onPin={() => marks.togglePin(o.id)}
                   open={swiped?.id === o.id ? swiped.side : null}
                   onOpenChange={(side) => setSwiped(side ? { id: o.id, side } : null)}
                   onTouch={() => { blockTap.current = !!swiped && swiped.id !== o.id; if (blockTap.current) setSwiped(null); }}
@@ -620,12 +640,12 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
           <table className="uvix-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
             <thead>
               <tr style={{ textAlign: "left", background: THEME.isDark ? THEME.hover : "#FAFAFA", borderBottom: `1px solid ${THEME.border}` }}>
-                {[["Buyurtma"], ["Mijoz"], ["Holat"], ["Ish / material"], ["Summa, so'm", "right"], ["To'langan", "right"], ["Qarz", "right"], [""]].map(([h, al]) => (
+                {[["Buyurtma"], ["Mijoz"], ["Holat"], ["Material"], ["Summa, so'm", "right"], ["To'langan", "right"], ["Qarz", "right"], [""]].map(([h, al]) => (
                   <th key={h || "act"} style={{ padding: "10px 16px", fontSize: 12.5, color: THEME.muted, fontWeight: 500, whiteSpace: "nowrap", textAlign: al || "left" }}>{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={flipRef}>
               {pageItems.map((o, i) => {
                 const paid = orderTotalPaid(o);
                 const debt = orderDebt(o);
@@ -637,15 +657,27 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
                 const st = stageOf(o);
                 return (<Fragment key={o.id}>
                   {lineHead && <tr data-line-group={lineOfOrder(o)}><td colSpan={8} style={{ padding: "9px 16px", fontWeight: 800, fontSize: 13, color: lineColor(lineOfOrder(o), THEME.isDark), background: lineColor(lineOfOrder(o), THEME.isDark) + "12", borderTop: `3px solid ${lineColor(lineOfOrder(o), THEME.isDark)}` }}>● {lineOfOrder(o)} · {list.filter((x) => lineOfOrder(x) === lineOfOrder(o)).length} ta</td></tr>}
-                  <tr key={o.id} className={`uvix-row${isSel ? " uvix-row-selected" : ""}`} aria-selected={isSel}
+                  <tr key={o.id} data-flip={o.id} data-order={o.orderNumber} className={`uvix-row${isSel ? " uvix-row-selected" : ""}`} aria-selected={isSel}
                     style={{ borderBottom: `1px solid ${THEME.border}`, cursor: "pointer", background: isSel ? THEME.navActiveBg : undefined }}
-                    onClick={() => setSelectedId(isSel ? null : o.id)}>
-                    <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
-                      <div style={{ fontWeight: 600, color: THEME.text }}>{o.orderNumber}</div>
-                      <div style={{ fontSize: 12, color: THEME.dim, display: "flex", gap: 6, alignItems: "center" }}>
+                    onMouseEnter={(e) => pv.enter(o, e.currentTarget)} onMouseLeave={pv.leave}
+                    onClick={() => { pv.leave(); setSelectedId(isSel ? null : o.id); }}>
+                    <td style={{ padding: "8px 16px", maxWidth: 420, minWidth: 260 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                      <OrderThumb order={o} size={44} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        <b data-otitle style={{ fontWeight: 650, fontSize: 14.5, color: THEME.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flexShrink: 1 }}>{orderTitle(o)}</b>
+                        {o.place && <PlaceTag place={o.place} small />}
+                        <PinButton on={marks.pinSet.has(o.id)} onClick={() => marks.togglePin(o.id)} />
+                      </div>
+                      <div style={{ fontSize: 12, color: THEME.dim, display: "flex", gap: 6, alignItems: "center", whiteSpace: "nowrap", minWidth: 0 }}>
+                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11.5 }}>{o.orderNumber}</span>
+                        <span>·</span>
                         {shortDateUz(o.date)}
                         {o.subcategory && <span style={{ fontSize: 11, fontWeight: 600, color: THEME.muted, background: THEME.chip, padding: "0 5px", borderRadius: 4, lineHeight: "17px" }}>{o.subcategory}</span>}
                         {o.groupId && o.groupSize > 1 && <span data-group={o.groupId} style={{ fontSize: 11, fontWeight: 600, color: THEME.violet, background: THEME.violetSoft, padding: "0 6px", borderRadius: 4, lineHeight: "17px" }}>{o.groupId} · {o.groupIdx}/{o.groupSize}</span>}
+                      </div>
+                      </div>
                       </div>
                     </td>
                     <td style={{ padding: "10px 16px", maxWidth: 260 }}>
@@ -658,9 +690,8 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
                       </div>
                     </td>
                     <td style={{ padding: "10px 16px", maxWidth: 190 }}><StageChip stage={st} hint={st ? stageHint(o, empById) : ""} /></td>
-                    <td style={{ padding: "10px 16px", maxWidth: 230 }}>
-                      {o.title && o.title !== o.materialType && <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.title}</div>}
-                      <div style={{ color: mat ? (o.title && o.title !== o.materialType ? THEME.dim : THEME.text) : THEME.dim, fontSize: o.title && o.title !== o.materialType ? 12 : 13.5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{mat || "—"}</div>
+                    <td style={{ padding: "10px 16px", maxWidth: 200 }}>
+                      <div style={{ color: mat ? THEME.mutedDark : THEME.dim, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{mat || "—"}</div>
                     </td>
                     <td style={{ padding: "10px 16px", whiteSpace: "nowrap", textAlign: "right" }}>
                       {brakSum > 0 ? (

@@ -2,8 +2,8 @@
 // O'ngga surish — «To'lov»; chapga — «Topshirildi» (tayyor bo'lsa), «Telegram», «Qo'ng'iroq».
 // Bir vaqtda faqat bitta qator ochiq turadi (ota komponent boshqaradi). Bosilganda — tafsilot varag'i.
 import { useEffect, useRef, useState } from "react";
-import { CheckCheck, CreditCard, Phone, Send } from "lucide-react";
-import { Avatar } from "../../components/ui.jsx";
+import { CheckCheck, CreditCard, Phone, Pin, Send } from "lucide-react";
+import { OrderThumb, PlaceTag, orderTitle } from "../../components/OrderVisual.jsx";
 import { fmt } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { PROD_LABEL, prodColors } from "../../lib/production.js";
@@ -13,7 +13,7 @@ const AW = 78; // o'ng amallarning har biri
 const TG_SOLID = "#176FA3";
 const CALL_SOLID = "#3F3F46";
 
-export function MobileOrderRow({ order: o, stage, paid, debt, total, open, onOpenChange, onTap, onTouch, onPay, onDeliver, onTelegram, phoneHref }) {
+export function MobileOrderRow({ order: o, stage, paid, debt, total, open, onOpenChange, onTap, onTouch, onPay, onDeliver, onTelegram, phoneHref, pinned = false, onPin }) {
   const fg = useRef(null);
   const st = useRef(null);
   const suppress = useRef(false);
@@ -25,6 +25,7 @@ export function MobileOrderRow({ order: o, stage, paid, debt, total, open, onOpe
     stage === "ready" && onDeliver ? { k: "deliver", l: "Topshirildi", icon: CheckCheck, bg: THEME.greenSolid, on: onDeliver, testid: "m-deliver" } : null,
     onTelegram ? { k: "tg", l: "Telegram", icon: Send, bg: TG_SOLID, on: onTelegram, testid: "swipe-tg" } : null,
     phoneHref ? { k: "call", l: "Qo'ng'iroq", icon: Phone, bg: CALL_SOLID, href: phoneHref, testid: "swipe-call" } : null,
+    onPin ? { k: "pin", l: pinned ? "Olish" : "Qadash", icon: Pin, bg: "#B45309", on: onPin, testid: "swipe-pin" } : null,
   ].filter(Boolean);
   const RW = right.length * AW;
   const offsetFor = (side) => (side === "left" ? LW : side === "right" ? -RW : 0);
@@ -94,11 +95,11 @@ export function MobileOrderRow({ order: o, stage, paid, debt, total, open, onOpe
 
   const c = prodColors(stage);
   const pct = total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
-  const meta = [o.orderNumber, o.title || o.materialType].filter(Boolean).join(" · ");
+  const meta = [o.customer || "Mijoz ko'rsatilmagan", String(o.orderNumber || "").replace(/^[A-Z]+-/, "")].filter(Boolean).join(" · ");
   const btn = { height: "100%", border: 0, color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer", textDecoration: "none", padding: 0 };
 
   return (
-    <div className="uvix-swipe" data-order-row={o.orderNumber} data-open={open || undefined} style={{ position: "relative", overflow: "hidden", borderBottom: `1px solid ${THEME.border}` }}>
+    <div className="uvix-swipe" data-flip={o.id} data-order-row={o.orderNumber} data-open={open || undefined} style={{ position: "relative", overflow: "hidden", borderBottom: `1px solid ${THEME.border}` }}>
       {reveal === "left" && (
         <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: LW, display: "flex" }}>
           <button type="button" onClick={act(onPay)} data-testid="swipe-pay" tabIndex={open === "left" ? 0 : -1} style={{ ...btn, width: "100%", background: THEME.greenSolid }}>
@@ -122,10 +123,10 @@ export function MobileOrderRow({ order: o, stage, paid, debt, total, open, onOpe
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTap(); } }}
         className="uvix-swipe-fg"
         style={{ position: "relative", background: THEME.card, display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", touchAction: "pan-y", userSelect: "none", WebkitUserSelect: "none", cursor: "pointer" }}>
-        <Avatar name={o.customer} size={40} />
+        <OrderThumb order={o} size={50} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "Mijoz ko'rsatilmagan"}</span>
+            <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pinned && <Pin size={12} color={THEME.rose} fill={THEME.rose} style={{ marginRight: 4, verticalAlign: -1 }} />}{orderTitle(o)}</span>
             <span style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(total)}</span>
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 2 }}>
@@ -136,6 +137,7 @@ export function MobileOrderRow({ order: o, stage, paid, debt, total, open, onOpe
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 7 }}>
             {stage && <span data-stage={stage} style={{ flexShrink: 0, height: 20, padding: "0 8px", borderRadius: 10, fontSize: 11.5, fontWeight: 700, display: "inline-flex", alignItems: "center", color: c.color, background: c.bg }}>{PROD_LABEL[stage]}</span>}
+            {o.place && <PlaceTag place={o.place} small />}
             {o.groupId && o.groupSize > 1 && <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, color: THEME.violet, background: THEME.violetSoft, padding: "1px 7px", borderRadius: 8 }}>{o.groupIdx}/{o.groupSize}</span>}
             <span aria-hidden="true" style={{ flex: 1, height: 4, borderRadius: 2, background: THEME.chip, overflow: "hidden" }}>
               <span style={{ display: "block", width: `${pct}%`, height: "100%", borderRadius: 2, background: THEME.green }} />

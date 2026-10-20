@@ -20,6 +20,7 @@ export const SETTINGS_SECTIONS = [
 
 // Ctrl K uchun sozlamalar indeksi: nom + kalit so'zlar → bo'lim (+ ixtiyoriy joy)
 export const SETTINGS_INDEX = [
+  { label: "Xotira (baza va rasmlar hajmi)", section: "malumotlar", keys: "xotira disk joy hajm baza rasm server to'lib", admin: true },
   { label: "PIN kodni o'zgartirish", section: "profil", keys: "pin parol kod profil chiqish" },
   { label: "Face ID / barmoq izi", section: "profil", keys: "face id barmoq biometrik passkey" },
   { label: "Mavzu va ranglar", section: "korinish", keys: "mavzu rang tun kun dark qorong'i ko'rinish" },

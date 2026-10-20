@@ -335,7 +335,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
         manager, area: it.area, exchangeRate: itemRate, agreementUsd: usdTotal, agreementUzs: it.total,
         kraskaLines: kraska > 0 ? [{ amount: kraska }] : [], kraskaSum: kraska, materialSum: 0, payments: [],
         note: [describeItem(it), it.note].filter(Boolean).join(" · "),
-        createdBy: req.user.name, createdAt: at, photos: [],
+        createdBy: req.user.name, createdAt: at, photos: [], ...(str(b.place, 60) ? { place: str(b.place, 60) } : {}),
         leadId: lead.id, groupId, groupIdx: i + 1, groupSize: items.length, quoteNo: no, quoteItemId: it.id,
         prodStage: "new", prodAt: at,
       };

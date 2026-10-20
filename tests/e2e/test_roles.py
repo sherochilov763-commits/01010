@@ -67,7 +67,7 @@ async def main():
         dbset("uvix:orders", ol)
         await m.reload(); await m.wait_for_timeout(2500)
         await nav(m, "Buyurtmalar")
-        rows = await m.evaluate("[...document.querySelectorAll('tr.uvix-row')].map(r => r.innerText.split('\\n')[0]).join(' | ')")
+        rows = await m.evaluate("[...document.querySelectorAll('tr.uvix-row[data-order]')].map(r => r.dataset.order).join(' | ')")
         ok("katta menejer: boshqa xodim buyurtmasi ham ko'rinadi", "UV-261016-009" in rows, rows)
 
         # ---------- Bobur (operator): Aziza'ga biriktirilgan mijoz ko'rinmaydi ----------

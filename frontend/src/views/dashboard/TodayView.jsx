@@ -4,7 +4,7 @@
 // Faqat telefonda ko'rinadi; to'liq hisobot (Dashboard) pastdagi «Batafsil hisobot» bilan ochiladi.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CustMsgQueueModal, useCustMsgQueue } from "../../components/CustMsgQueue.jsx";
-import { Banknote, Send, ChevronRight, CircleCheck, ClipboardList, MessageCircle, Package, Palette, ScanLine, TrendingDown, Wallet } from "lucide-react";
+import { Send, ChevronRight, CircleCheck, ClipboardList, MessageCircle, Palette, Wallet } from "lucide-react";
 import { orderDebt } from "../../lib/finance.js";
 import { fmt, localDateStr, money, moneyCompact } from "../../lib/format.js";
 import { fetchTelegramChats } from "../../storage.js";
@@ -99,7 +99,7 @@ function Spark({ values, color }) {
   );
 }
 
-export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canExpense, canSendMsg, onOpenChat, onOpenOrder, onNavigate, onQuickAdd, onScan }) {
+export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canExpense, canSendMsg, onOpenChat, onOpenOrder, onNavigate, mode = "full" }) {
   // Mijozga xabarlar navbati (kvitansiya/tayyor/qarz eslatmasi — avtomatik ketmaydi)
   const msgQ = useCustMsgQueue(!!canSendMsg);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -154,12 +154,48 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
     { key: "debt", label: "Qarzdorlik", value: stats.debt, tone: THEME.rose, note: `${stats.debtors} ta mijoz`, go: () => onNavigate("orders", { onlyDebt: true }) },
     { key: "new", label: "Bugungi buyurtmalar", value: stats.newSum, note: `${stats.newCount} ta yangi buyurtma`, go: () => onNavigate("orders", {}) },
   ];
-  const quick = [
-    { key: "order", label: "Buyurtma", icon: Package, color: THEME.violet, on: () => onQuickAdd("order") },
-    { key: "pay", label: "To'lov", icon: Banknote, color: THEME.green, on: () => onNavigate("orders", { onlyDebt: true }) },
-    canExpense ? { key: "expense", label: "Rasxod", icon: TrendingDown, color: THEME.amber || "#B45309", on: () => onQuickAdd("expense") } : null,
-    { key: "scan", label: "Skaner", icon: ScanLine, color: THEME.text, on: onScan },
-  ].filter(Boolean);
+
+  const [attnOpen, setAttnOpen] = useState(false);
+  const attnRows = all.map((it, i) => {
+    const t = TONES[it.tone] || TONES.blue;
+    const I = iconFor[it.key] || t.icon;
+    return (
+      <div key={it.key} data-attn={it.key} role="button" tabIndex={0} onClick={() => run(it)} onKeyDown={(e) => e.key === "Enter" && run(it)}
+        style={{ display: "flex", alignItems: "center", gap: 12, padding: mode === "attention" ? "11px 14px" : "13px 14px", borderTop: `1px solid ${THEME.border}`, cursor: "pointer", minHeight: mode === "attention" ? 60 : 68 }}>
+        <span style={{ width: 40, height: 40, borderRadius: 12, background: t.bg, color: t.c, display: "grid", placeItems: "center", flexShrink: 0 }}><I size={19} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.25 }}>{it.title}</div>
+          <div style={{ fontSize: 13, color: THEME.muted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.sub}</div>
+        </div>
+        {it.action
+          ? <span data-testid={`attn-go-${it.key}`} style={{ flexShrink: 0, height: 34, padding: "0 13px", borderRadius: 999, display: "inline-flex", alignItems: "center", fontSize: 13.5, fontWeight: 700, background: it.primary ? THEME.primarySolid : t.bg, color: it.primary ? "#fff" : t.c }}>{it.action}</span>
+          : <ChevronRight size={20} color={THEME.dim} style={{ flexShrink: 0 }} />}
+      </div>
+    );
+  });
+
+  // Telefon Dashboard'i ichida: faqat «Diqqat» — bitta yig'ilgan qator, bosilsa ochiladi (raqamlar takrorlanmaydi)
+  if (mode === "attention") {
+    return (
+      <section data-testid="today-attn" aria-label="Diqqat talab qiladi" style={{ background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 16, overflow: "hidden" }}>
+        {queueOpen && <CustMsgQueueModal onClose={() => { setQueueOpen(false); msgQ.reload(); }} />}
+        <button type="button" data-testid="attn-toggle" aria-expanded={attnOpen} disabled={!all.length} onClick={() => setAttnOpen((v) => !v)}
+          style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "11px 12px 11px 14px", border: 0, background: "none", fontFamily: "inherit", textAlign: "left", cursor: all.length ? "pointer" : "default", color: THEME.text }}>
+          <span style={{ width: 34, height: 34, borderRadius: 10, background: all.length ? THEME.roseBg : THEME.greenBg, color: all.length ? THEME.rose : THEME.green, display: "grid", placeItems: "center", flexShrink: 0 }}>
+            {all.length ? <b data-testid="attn-count" style={{ fontSize: 15 }}>{all.length}</b> : <CircleCheck size={18} />}
+          </span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <b style={{ display: "block", fontSize: 14.5 }}>{all.length ? "Diqqat talab qiladi" : chats === null && chatsEnabled ? "Tekshirilmoqda…" : "Hammasi joyida"}</b>
+            <small style={{ display: "block", fontSize: 12, color: THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{all.length ? all.map((x) => x.title).join(" · ") : "shoshilinch ish yo'q"}</small>
+          </span>
+          {all.length > 0 && <ChevronRight size={18} color={THEME.dim} style={{ flexShrink: 0, transform: attnOpen ? "rotate(90deg)" : "none", transition: "transform .2s ease" }} />}
+        </button>
+        <div className="uvix-attn-body" style={{ display: "grid", gridTemplateRows: attnOpen ? "1fr" : "0fr", transition: "grid-template-rows .3s cubic-bezier(.2,.8,.2,1)" }}>
+          <div data-testid="attention" style={{ overflow: "hidden", visibility: attnOpen ? "visible" : "hidden" }}>{attnRows}</div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section data-testid="today" aria-label="Bugun" className="uvix-today" style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 22 }}>
@@ -205,37 +241,10 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
               {chats === null && chatsEnabled ? "Tekshirilmoqda…" : "Hammasi joyida — shoshilinch ish yo'q"}
             </div>
           )}
-          {all.map((it, i) => {
-            const t = TONES[it.tone] || TONES.blue;
-            const I = iconFor[it.key] || t.icon;
-            return (
-              <div key={it.key} data-attn={it.key} role="button" tabIndex={0} onClick={() => run(it)} onKeyDown={(e) => e.key === "Enter" && run(it)}
-                style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 14px", borderTop: i ? `1px solid ${THEME.border}` : 0, cursor: "pointer", minHeight: 68 }}>
-                <span style={{ width: 44, height: 44, borderRadius: 13, background: t.bg, color: t.c, display: "grid", placeItems: "center", flexShrink: 0 }}><I size={21} /></span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15.5, fontWeight: 700, lineHeight: 1.25 }}>{it.title}</div>
-                  <div style={{ fontSize: 13.5, color: THEME.muted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{it.sub}</div>
-                </div>
-                {it.action
-                  ? <span data-testid={`attn-go-${it.key}`} style={{ flexShrink: 0, height: 36, padding: "0 14px", borderRadius: 999, display: "inline-flex", alignItems: "center", fontSize: 14, fontWeight: 700, background: it.primary ? THEME.primarySolid : t.bg, color: it.primary ? "#fff" : t.c }}>{it.action}</span>
-                  : <ChevronRight size={20} color={THEME.dim} style={{ flexShrink: 0 }} />}
-              </div>
-            );
-          })}
+          {attnRows}
         </div>
       </div>
 
-      <div className="uvix-today-quick" style={{ gridTemplateColumns: `repeat(${quick.length}, minmax(0, 1fr))` }}>
-        {quick.map((q) => {
-          const I = q.icon;
-          return (
-            <button key={q.key} type="button" data-quick={q.key} onClick={q.on} style={{ color: THEME.text }}>
-              <span style={{ background: THEME.card, border: `1px solid ${THEME.border}`, color: q.color }}><I size={22} /></span>
-              {q.label}
-            </button>
-          );
-        })}
-      </div>
     </section>
   );
 }
@@ -243,9 +252,5 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
 const TODAY_CSS = `
   .uvix-today-cards { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px; scroll-padding: 0 16px; }
   .uvix-today-card { flex: 0 0 82%; scroll-snap-align: start; border-radius: 22px; padding: 18px 18px 14px; min-height: 150px; box-sizing: border-box; min-width: 0; }
-  .uvix-today-quick { display: grid; gap: 10px; }
-  .uvix-today-quick button { border: 0; background: none; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 7px; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .uvix-today-quick button > span { width: 100%; height: 58px; border-radius: 18px; display: grid; place-items: center; }
-  .uvix-today-quick button:active > span { transform: scale(.96); }
   .uvix-noscrollbar { scrollbar-width: none; } .uvix-noscrollbar::-webkit-scrollbar { display: none; }
 `;

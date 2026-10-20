@@ -1,5 +1,6 @@
 import { Suspense, lazy, useContext, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Banknote, CreditCard, FileBarChart2, FolderTree, Landmark, Package, Settings, TrendingDown, TrendingUp, Users, Wallet } from "lucide-react";
+import { AlertTriangle, Banknote, ChevronRight, Clock, CreditCard, Factory, FileBarChart2, FolderTree, Landmark, Package, PieChart, Settings, ShieldCheck, TrendingDown, TrendingUp, Users, Wallet, X } from "lucide-react";
+import { useBackToClose } from "../lib/history.js";
 import { Avatar, Button, Card, EmptyState, MetricCard, SectionTitle, getInputStyle } from "../components/ui.jsx";
 import { DASHBOARD_GROUPS, DASHBOARD_SIZE_SPANS, DASHBOARD_WIDGET_CATALOG } from "../constants.js";
 import { computeFinanceStats, orderDebt } from "../lib/finance.js";
@@ -38,7 +39,7 @@ const fmtR = (r) => (r.from === r.to ? dmy(r.from) : `${dmy(r.from)}–${dmy(r.t
 const shiftDay = (s, n) => { const d = new Date(`${s}T12:00:00`); d.setDate(d.getDate() + n); return localDateStr(d); };
 const spanDaysSafe = (r) => Math.round((new Date(`${r.to}T12:00:00`) - new Date(`${r.from}T12:00:00`)) / 864e5) + 1;
 
-export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses, kassaOrders, kassaTx, employees, leads, stageOf, categories, onOpenOrder }) {
+export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses, kassaOrders, kassaTx, employees, leads, stageOf, categories, onOpenOrder, phone = false, attention = null }) {
   // Huquqlar (rahbar beradi): kassa qoldig'i va foyda ko'rinishi
   const { can } = usePerms();
   const canCash = isAdmin || (can("kassa.view") && perm?.cash !== false);
@@ -225,6 +226,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   const canSendMsg = isAdmin || can("invoice");
   const msgQ = useCustMsgQueue(canSendMsg);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [pSheet, setPSheet] = useState(null);
   const empById = useMemo(() => new Map((employees || []).map((e) => [e.id, e])), [employees]);
   const attn = useMemo(() => {
     const items = attentionItems(orders, { empById, stageOf: stageOf || ((o) => o.prodStage) });
@@ -545,6 +547,66 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
     ),
   };
 
+  const modals = (
+    <>
+      {mgrOpen && <ManagersModal ms={MS} hl={hl} plans={plans} canEdit={isAdmin} rangeLabel={periodMode === "range" ? "Tanlangan davr" : null} onExport={exportManagers} onClose={() => setMgrOpen(false)} onSavePlans={(next) => onSaveSettings?.({ ...settings, salesPlans: next })} />}
+      {fixedOpen && <FixedCostsModal items={settings?.fixedCosts || []} categories={categories} onClose={() => setFixedOpen(false)} onSave={(list) => { onSaveSettings?.({ ...settings, fixedCosts: list }); setFixedOpen(false); }} />}
+      {queueOpen && <CustMsgQueueModal onClose={() => { setQueueOpen(false); msgQ.reload(); }} />}
+    </>
+  );
+
+  // ---------- Telefon: ixcham hisobot (eskiz 62) — 4 raqam + har blok bitta qator, bosilsa pastki varaqda to'liq ----------
+  if (phone && !editMode) {
+    const visibleIds = new Set(layout.filter((w) => w.visible).map((w) => w.id));
+    const shortM = (n) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(1).replace(".", ",")} mln` : money(n));
+    const topMgr = MS.rows[0];
+    const ptyTop = ["naqd", "karta", "bank"].filter((k) => PTY.share[k]).map((k) => `${{ naqd: "naqd", karta: "karta", bank: "bank" }[k]} ${PTY.share[k]}%`).join(" · ");
+    const prodWork = Object.entries(PR.counts).filter(([k]) => !["ready", "delivered"].includes(k)).reduce((a, [, v]) => a + v, 0);
+    const rows = [
+      { id: "revenue", icon: TrendingUp, c: THEME.violet, t: "Tushum dinamikasi", s: "kunma-kun · o'tgan davr bilan", v: shortM(K.income), v2: K.incomeChange == null ? "" : `${K.incomeChange >= 0 ? "▲" : "▼"} ${Math.abs(K.incomeChange)}%`, v2c: K.incomeChange >= 0 ? THEME.green : THEME.rose },
+      { id: "managers", icon: Users, c: "#7C3AED", t: "Menejerlar", s: "bugun · hafta · oy boshidan", v: topMgr ? topMgr.name.split(" ")[0] : "—", v2: topMgr ? shortM(topMgr[hl === "x" ? "m" : hl]) : "" },
+      { id: "expenseDonut", icon: PieChart, c: THEME.amber || "#B45309", t: "Korxona rasxodi", s: EXP.parts.slice(0, 2).map((p) => `${p.name} ${EXP.total ? Math.round((p.value / EXP.total) * 100) : 0}%`).join(" · ") || "rasxod yo'q", v: shortM(EXP.total), v2: EXP.change == null ? "" : `${EXP.change >= 0 ? "▲" : "▼"} ${Math.abs(EXP.change)}%`, v2c: EXP.change > 0 ? THEME.rose : THEME.green, perm: canCash || canProfit },
+      { id: "payTypes", icon: Wallet, c: THEME.cyan, t: "To'lov turlari", s: ptyTop || "to'lov yo'q", v: shortM(PTY.total) },
+      { id: "fixedCosts", icon: ShieldCheck, c: THEME.green, t: "Oylik xarajatlar", s: FC.need ? (FC.coveredOn ? `qoplandi ${FC.coveredOn.slice(8)}-sanada` : `${FC.pct}% qoplandi`) : "hali kiritilmagan", v: FC.need ? (FC.coveredOn ? "Qoplandi" : `${FC.pct}%`) : "Sozlash", v2c: FC.coveredOn ? THEME.green : THEME.amber, badge: true, perm: canProfit },
+      { id: "debtAging", icon: Clock, c: THEME.rose, t: "Qarzdorlik yoshi", s: `${AG.count} mijoz · 30+ kun ${shortM(AG.buckets[2])}`, v: shortM(AG.total), vc: THEME.rose },
+      { id: "production", icon: Factory, c: "#0E7C6B", t: "Ishlab chiqarish", s: `${PR.avgDays != null ? `o'rtacha ${String(PR.avgDays).replace(".", ",")} kun · ` : ""}${PR.stuck ? `${PR.stuck} ta 7+ kun` : "kechikkan yo'q"}`, v: `${prodWork} ta`, v2: "ishda" },
+      { id: "customersStats", icon: Users, c: THEME.blue || THEME.violet, t: "Mijozlar", s: `${CS.fresh} yangi · ${CS.returning} qaytgan`, v: `${CS.customers}`, v2: "mijoz" },
+      { id: "recentPay", icon: Banknote, c: THEME.green, t: "So'nggi to'lovlar", s: "kim, qachon, qaysi buyurtmaga", v: `${K.payCount} ta` },
+    ].filter((r) => r.perm !== false && (visibleIds.has(r.id) || !DASHBOARD_WIDGET_CATALOG.some((c) => c.id === r.id)));
+    return (
+      <div className="uvix-preport" data-testid="phone-report" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div role="group" aria-label="Davr" className="uvix-preport-chips">
+          {[{ v: "today", l: "Bugun" }, { v: "week", l: "Hafta" }, { v: "mtd", l: "Oy boshidan" }].map((o) => (
+            <button key={o.v} type="button" data-period={o.v} aria-pressed={periodMode === o.v} onClick={() => pickPeriod(o.v)}
+              style={periodMode === o.v ? { background: THEME.text, color: THEME.card, borderColor: THEME.text } : { background: THEME.card, color: THEME.mutedDark, borderColor: THEME.border }}>{o.l}</button>
+          ))}
+        </div>
+        <span data-testid="dash-range" style={{ fontSize: 12, color: THEME.dim, marginTop: -4 }}>{fmtR(P)} · solishtirma: {fmtR(P.prev)}</span>
+        {WIDGETS.kpis()}
+        {attention}
+        <div className="uvix-preport-list" style={{ background: THEME.card, border: `1px solid ${THEME.border}` }}>
+          {rows.map((r, i) => {
+            const I = r.icon;
+            return (
+              <button key={r.id} type="button" data-prow={r.id} onClick={() => setPSheet(r.id)} style={{ borderTop: i ? `1px solid ${THEME.border}` : 0, color: THEME.text }}>
+                <span className="ic" style={{ background: `color-mix(in srgb, ${r.c} 13%, transparent)`, color: r.c }}><I size={17} /></span>
+                <span className="tx"><b>{r.t}</b><small style={{ color: THEME.muted }}>{r.s}</small></span>
+                <span className="vl">
+                  {r.badge ? <em style={{ color: r.v2c, background: `color-mix(in srgb, ${r.v2c} 13%, transparent)` }}>{r.v}</em> : <b style={{ color: r.vc || THEME.text }}>{r.v}</b>}
+                  {r.v2 && !r.badge ? <small style={{ color: r.v2c || THEME.muted }}>{r.v2}</small> : null}
+                </span>
+                <ChevronRight size={16} color={THEME.dim} style={{ flexShrink: 0 }} />
+              </button>
+            );
+          })}
+        </div>
+        {pSheet && <ReportSheet title={rows.find((r) => r.id === pSheet)?.t || ""} onClose={() => setPSheet(null)}>{WIDGETS[pSheet]?.()}</ReportSheet>}
+        {modals}
+        <style>{PHONE_REPORT_CSS}</style>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div className="uvix-dash-toolbar" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -642,9 +704,48 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         );
       })}
       {editMode && <div className="uvix-edit-spacer" aria-hidden="true" />}
-      {mgrOpen && <ManagersModal ms={MS} hl={hl} plans={plans} canEdit={isAdmin} rangeLabel={periodMode === "range" ? "Tanlangan davr" : null} onExport={exportManagers} onClose={() => setMgrOpen(false)} onSavePlans={(next) => onSaveSettings?.({ ...settings, salesPlans: next })} />}
-      {fixedOpen && <FixedCostsModal items={settings?.fixedCosts || []} categories={categories} onClose={() => setFixedOpen(false)} onSave={(list) => { onSaveSettings?.({ ...settings, fixedCosts: list }); setFixedOpen(false); }} />}
-      {queueOpen && <CustMsgQueueModal onClose={() => { setQueueOpen(false); msgQ.reload(); }} />}
+      {modals}
     </div>
   );
 }
+
+// Telefon hisoboti: blok tafsiloti pastdan chiqadigan varaqda (orqaga / Escape / fon — yopadi)
+function ReportSheet({ title, onClose, children }) {
+  useBackToClose(true, onClose);
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <>
+      <div className="uvix-more-backdrop" onClick={onClose} />
+      <div className="uvix-more-sheet" role="dialog" aria-modal="true" aria-label={title} data-testid="report-sheet" style={{ background: THEME.surface, color: THEME.text, borderTop: `1px solid ${THEME.border}` }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 2, background: THEME.surface, padding: "8px 16px 10px" }}>
+          <div aria-hidden="true" style={{ width: 40, height: 5, borderRadius: 3, background: THEME.border2, margin: "0 auto" }} />
+          <div style={{ display: "flex", alignItems: "center", marginTop: 10 }}>
+            <b style={{ fontSize: 19, letterSpacing: -0.3 }}>{title}</b>
+            <button type="button" onClick={onClose} aria-label="Yopish" style={{ marginLeft: "auto", width: 32, height: 32, borderRadius: "50%", border: 0, background: THEME.chip, color: THEME.text, display: "grid", placeItems: "center", cursor: "pointer" }}><X size={17} /></button>
+          </div>
+        </div>
+        <div style={{ padding: "0 12px 8px" }}>{children}</div>
+      </div>
+    </>
+  );
+}
+
+const PHONE_REPORT_CSS = `
+  .uvix-preport-chips { display: flex; gap: 6px; }
+  .uvix-preport-chips button { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease, color .15s ease; -webkit-tap-highlight-color: transparent; }
+  .uvix-preport-list { border-radius: 16px; overflow: hidden; }
+  .uvix-preport-list > button { width: 100%; display: flex; align-items: center; gap: 11px; padding: 11px 12px 11px 14px; border-left: 0; border-right: 0; border-bottom: 0; background: none; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .12s ease; }
+  .uvix-preport-list > button:active { background: rgba(127,127,127,.1); }
+  .uvix-preport-list .ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
+  .uvix-preport-list .tx { flex: 1; min-width: 0; }
+  .uvix-preport-list .tx b { display: block; font-size: 14px; font-weight: 650; }
+  .uvix-preport-list .tx small { display: block; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .uvix-preport-list .vl { text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; }
+  .uvix-preport-list .vl b { font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .uvix-preport-list .vl small { font-size: 11px; font-weight: 600; }
+  .uvix-preport-list .vl em { font-style: normal; font-size: 11.5px; font-weight: 800; border-radius: 6px; padding: 2px 7px; }
+`;

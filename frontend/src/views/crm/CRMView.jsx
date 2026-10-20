@@ -32,7 +32,8 @@ function StaleBadge({ lead, big = false }) {
 import { THEME } from "../../theme.js";
 
 /* ---------------- PAYMENTS MODAL ---------------- */
-export function LeadForm({ initial, employees, onClose, onSave }) {
+export function LeadForm({ initial, employees, onClose, onSave, leads = [] }) {
+  const [srcAll, setSrcAll] = useState(false);
   const isEdit = !!initial;
   const managerNames = employees ? employees.filter((e) => !isWorkerRole(e.role)).map((e) => e.name) : [];
   const [customer, setCustomer] = useState(initial?.customer || "");
@@ -99,20 +100,38 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
         </Field>
         <Field label="Manba (qayerdan kelgan)">
           <input value={source} onChange={(e) => setSource(e.target.value)} style={getInputStyle()} placeholder="Instagram, tavsiya, qo'ng'iroq..." />
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
-            {LEAD_SOURCES.map((x) => {
-              const Icon = x.icon;
-              const on = sourceMeta(source)?.key === x.key;
-              return (
-                <button key={x.key} type="button" onClick={() => setSource(x.label)} data-source={x.key}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px 4px 4px", borderRadius: 20, cursor: "pointer", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit",
-                    border: `1px solid ${on ? x.color : THEME.border}`, background: on ? `${x.color}22` : "transparent", color: THEME.text }}>
-                  <span style={{ width: 17, height: 17, borderRadius: "50%", background: x.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon size={10} strokeWidth={2.4} /></span>
-                  {x.label}
-                </button>
-              );
-            })}
-          </div>
+          {(() => {
+            // Ko'p ishlatiladigan manbalar oldinda; 4 tasidan boshqasi yig'ilgan («+N»), tanlangani doim ko'rinadi
+            const cnt = {};
+            (leads || []).forEach((l) => { const k = sourceMeta(l.source)?.key; if (k) cnt[k] = (cnt[k] || 0) + 1; });
+            const sorted = LEAD_SOURCES.map((x, i) => ({ x, i })).sort((a, b) => (cnt[b.x.key] || 0) - (cnt[a.x.key] || 0) || a.i - b.i).map((v) => v.x);
+            const curKey = sourceMeta(source)?.key;
+            const TOP = 4;
+            const shown = srcAll ? sorted : sorted.filter((x, i) => i < TOP || x.key === curKey);
+            const hidden = sorted.length - shown.length;
+            return (
+              <div data-testid="source-chips" style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
+                {shown.map((x) => {
+                  const Icon = x.icon;
+                  const on = curKey === x.key;
+                  return (
+                    <button key={x.key} type="button" onClick={() => setSource(x.label)} data-source={x.key}
+                      style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 9px 4px 4px", borderRadius: 20, cursor: "pointer", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit",
+                        border: `1px solid ${on ? x.color : THEME.border}`, background: on ? `${x.color}22` : "transparent", color: THEME.text }}>
+                      <span style={{ width: 17, height: 17, borderRadius: "50%", background: x.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><Icon size={10} strokeWidth={2.4} /></span>
+                      {x.label}{cnt[x.key] ? <span style={{ color: THEME.dim, fontWeight: 500 }}>{cnt[x.key]}</span> : null}
+                    </button>
+                  );
+                })}
+                {(hidden > 0 || srcAll) && (
+                  <button type="button" onClick={() => setSrcAll((v) => !v)} data-testid="source-more"
+                    style={{ padding: "4px 10px", borderRadius: 20, cursor: "pointer", fontSize: 11.5, fontWeight: 700, fontFamily: "inherit", border: `1px dashed ${THEME.border2}`, background: "transparent", color: THEME.violet }}>
+                    {srcAll ? "Kamroq" : `+${hidden} ta`}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </Field>
         <Field label="Taxminiy summa (so'm)">
           <input value={estimatedValueStr} onChange={(e) => setEstimatedValueStr(fmt(parseInt(e.target.value.replace(/\D/g, ""), 10) || 0))} style={getInputStyle()} placeholder="0" inputMode="numeric" />
@@ -545,6 +564,7 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
         <LeadForm
           initial={modal === true ? null : modal}
           employees={employees}
+          leads={leads}
           onClose={() => setModal(null)}
           onSave={saveLead}
         />

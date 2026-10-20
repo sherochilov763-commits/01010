@@ -1,3 +1,5 @@
+import { PlaceTag, placesOf } from "../../components/OrderVisual.jsx";
+import { PhotoViewer } from "../../components/PhotoViewer.jsx";
 import { usePerms } from "../../lib/perms.jsx";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus, Upload, X } from "lucide-react";
@@ -20,6 +22,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
   const [photos, setPhotos] = useState(initial?.photos || []);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [viewPhoto, setViewPhoto] = useState(null);
   const fileInputRef = useRef(null);
 
   async function handlePhotoSelect(e) {
@@ -45,6 +48,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
   async function handlePhotoDelete(photo) {
     try {
       await onDeletePhoto(photo.filename || photo.id);
+      if (photo.thumbFilename) onDeletePhoto(photo.thumbFilename).catch?.(() => {});
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
     } catch (err) {
       setPhotoError(err?.message || "Rasmni o'chirishda xato yuz berdi");
@@ -67,6 +71,8 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
 
   const [date, setDate] = useState(initial?.date || todayStr());
   const [customer, setCustomer] = useState(initial?.customer || prefillCustomer || "");
+  const [title, setTitle] = useState(initial?.title || "");
+  const [place, setPlace] = useState(initial?.place || "");
   const curLine = useLine();
   const [bizLine, setBizLine] = useState(initial?.subcategory || (curLine.line !== "all" ? curLine.line : BIZ_LINES[0]));
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
@@ -193,6 +199,8 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
       orderNumber: initial?.orderNumber || generateOrderNumber(allOrders, date, bizLine),
       date,
       customer: customer.trim(),
+      title: title.trim(),
+      place: place.trim(),
       subcategory: bizLine,
       materialType: materialLinesComputed.map((l) => l.materialType).filter(Boolean).join(", "),
       materialLines: materialLinesComputed.map((l) => ({ materialType: l.materialType, area: l.area, priceUsd: l.price, totalUsd: l.lineTotalUsd })),
@@ -283,6 +291,30 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
             </div>
           </Field>
         </div>
+
+        {(() => {
+          const places = placesOf(allOrders, customer);
+          const autoTitle = [materialLines[0]?.materialType, totalArea ? `${String(Math.round(totalArea * 100) / 100).replace(".", ",")} m²` : ""].filter(Boolean).join(" · ");
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Field label="Nomi — nima ish">
+                <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={autoTitle ? `masalan: ${autoTitle}` : "masalan: Oshxona fartugi, marmar"} style={getInputStyle()} data-testid="order-title" maxLength={80} />
+                <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>Ro'yxatda katta yoziladi — raqamdan tezroq taniladi. Bo'sh qolsa — material nomi.</div>
+              </Field>
+              <Field label="Joy / obyekt (ixtiyoriy)">
+                <input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="masalan: Ofis · Yunusobod" style={getInputStyle()} list="uvix-place-list" autoComplete="off" data-testid="order-place" maxLength={60} />
+                <datalist id="uvix-place-list">{places.map((p) => <option key={p} value={p} />)}</datalist>
+                {places.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }} data-testid="order-place-suggest">
+                    {places.slice(0, 4).map((p) => (
+                      <button key={p} type="button" onClick={() => setPlace(p)} style={{ border: 0, padding: 0, background: "none", cursor: "pointer", opacity: place === p ? 1 : 0.85 }}><PlaceTag place={p} small /></button>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            </div>
+          );
+        })()}
 
         <Field label="Mas'ul menedjer">
           {managerNames.length > 0 ? (
@@ -606,9 +638,9 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
               <div style={{ fontSize: 12, color: THEME.muted, padding: "10px 0" }}>Hali rasm yuklanmagan — jarayon yoki tayyor mahsulot suratlarini qo'shishingiz mumkin.</div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))", gap: 8 }}>
-                {photos.map((p) => (
+                {photos.map((p, k) => (
                   <div key={p.id} style={{ position: "relative", aspectRatio: "1", borderRadius: 10, overflow: "hidden", border: `1px solid ${THEME.border}` }}>
-                    <img src={p.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    <img src={p.thumbUrl || p.url} alt="" loading="lazy" onClick={() => setViewPhoto(k)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", cursor: "zoom-in" }} />
                     <button
                       type="button"
                       onClick={() => handlePhotoDelete(p)}
@@ -623,6 +655,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
           </div>
         )}
 
+        {viewPhoto != null && <PhotoViewer photos={photos} index={viewPhoto} title={title || customer} onClose={() => setViewPhoto(null)} />}
         {error && <div style={{ color: THEME.rose, fontSize: 12.5 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <Button variant="ghost" onClick={onClose}>Bekor qilish</Button>

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, CreditCard, FileText, MoreHorizontal, Pencil, Phone, QrCode, Send, Trash2, X } from "lucide-react";
 import { Avatar, Button } from "../../components/ui.jsx";
+import { OrderThumb, PlaceTag, orderTitle } from "../../components/OrderVisual.jsx";
+import { PhotoGrid } from "../../components/PhotoViewer.jsx";
 import { orderAddedValue, orderBrakSum, orderDebt, orderMaterialSum, orderOverpaid, orderTotalPaid } from "../../lib/finance.js";
 import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
@@ -70,14 +72,16 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
           )}
           <button type="button" onClick={onClose} aria-label="Panelni yopish" className="uvix-iconbtn" style={{ background: "none", border: 0, padding: 5, borderRadius: 6, cursor: "pointer", color: THEME.muted, display: "flex" }}><X size={16} /></button>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-          <Avatar name={order.customer} size={34} />
+        <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 6 }}>
+          <OrderThumb order={order} size={48} />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: -0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{order.customer || "Mijoz ko'rsatilmagan"}</div>
+            <div data-testid="panel-title" style={{ fontSize: 17, fontWeight: 650, letterSpacing: -0.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{orderTitle(order)}</div>
+            <div style={{ fontSize: 13, color: THEME.mutedDark, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}><Avatar name={order.customer} size={18} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{order.customer || "Mijoz ko'rsatilmagan"}</span></div>
             {phone && <div style={{ fontSize: 12.5, color: THEME.dim }}>{phone}</div>}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
+          {order.place && <PlaceTag place={order.place} />}
           {order.subcategory && <Tag>{order.subcategory}</Tag>}
           {(order.materialType || area) && <Tag>{[order.materialType, area].filter(Boolean).join(" · ")}</Tag>}
           {order.groupId && order.groupSize > 1 && <Tag>{order.groupId} · {order.groupIdx}/{order.groupSize}</Tag>}
@@ -88,6 +92,12 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
       </div>
 
       <div className="uvix-scroll" style={{ padding: "16px 18px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+        {(order.photos || []).length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Rasmlar va chizmalar <span style={{ color: THEME.dim, fontWeight: 500 }}>· {order.photos.length} · bosing — kattalashadi</span></div>
+            <PhotoGrid photos={order.photos} title={`${orderTitle(order)} · ${order.orderNumber}`} />
+          </div>
+        )}
         {pending?.length > 0 && (
           <div data-testid="order-pending" style={{ marginBottom: 12, padding: "9px 12px", borderRadius: 8, background: THEME.amberBg, color: THEME.amberText, fontSize: 12.5, fontWeight: 600, lineHeight: 1.4 }}>
             {pending.map((r) => <div key={r.id}>⏳ {PENDING_LABEL[r.kind]}</div>)}
@@ -123,7 +133,6 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
             </div>
             {stage && <StageTimeline order={order} stage={stage} />}
             {sheet && stage && <ProdSteps order={order} stage={stage} employees={employees} />}
-            {order.title && <div style={{ fontSize: 13, marginTop: 6 }}>{order.title}</div>}
             {[["design", "Dizayner", "designer"], ["print", "Pechatchi", "printer"]].map(([kind, label, role]) => {
               const t = order[kind];
               const people = (employees || []).filter((e) => e.role === role);

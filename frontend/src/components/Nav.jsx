@@ -17,7 +17,7 @@ const DEFAULT_BAR = ["dashboard", "orders", "expense", "crm"];
 // Telefon pastki paneli — xodim o'zi tanlamagan bo'lsa, rolga mos standart
 export const ROLE_BAR = {
   operator: ["dashboard", "chats", "orders", "crm"],
-  admin: ["dashboard", "orders", "operations", "crm"],
+  admin: ["dashboard", "orders", "crm", "operations"],
 };
 export const roleBar = (role) => ROLE_BAR[role] || DEFAULT_BAR;
 // Eski standart (["dashboard","orders","expense","crm"]) qo'lda tanlanmagan deb hisoblanadi — rol standarti qo'llanadi

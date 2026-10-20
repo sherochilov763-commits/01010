@@ -2,10 +2,11 @@
 // Bo'limlarga o'tish, yangi buyurtma/rasxod/lid, buyurtma, mijoz va lidlarni nomi yoki raqami bo'yicha topish.
 // Faqat navigatsiya: ma'lumot o'zgartirmaydi, mavjud oynalarni ochadi.
 import { useEffect, useMemo, useRef, useState } from "react";
+import { OrderThumb, orderTitle } from "./OrderVisual.jsx";
 import { ArrowRight, Contact, CornerDownLeft, Package, Plus, Search, Settings2, TrendingDown, Users2 } from "lucide-react";
 import { SETTINGS_INDEX } from "../views/settings/settingsParts.jsx";
 import { THEME } from "../theme.js";
-import { money, shortDateUz } from "../lib/format.js";
+import { money } from "../lib/format.js";
 import { orderDebt } from "../lib/finance.js";
 import { useBackToClose } from "../lib/history.js";
 
@@ -49,7 +50,7 @@ export function SearchTrigger({ onClick, compact = false }) {
   );
 }
 
-export function CommandPalette({ open, onClose, nav, orders, leads, customers, onNavigate, onSearchOrders, onQuickAdd, onNewLead, isAdmin, onOpenSetting }) {
+export function CommandPalette({ open, onClose, nav, orders, leads, customers, onNavigate, onSearchOrders, onOpenOrder, onQuickAdd, onNewLead, isAdmin, onOpenSetting }) {
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef(null);
@@ -86,10 +87,16 @@ export function CommandPalette({ open, onClose, nav, orders, leads, customers, o
     }
 
     if (s.length >= 2) {
-      const ords = (orders || []).filter((o) => !o.deletedAt && hit(o.orderNumber, o.customer)).slice(0, 6)
+      // Aqlli qidiruv: har so'z nom, mijoz, joy, material, kod, summa yoki menejerda bo'lishi kerak («oniks chilonzor», «749»)
+      const words = s.split(/\s+/).filter(Boolean);
+      const ords = (orders || []).filter((o) => {
+        if (o.deletedAt) return false;
+        const hay = norm([o.orderNumber, o.customer, o.title, o.place, o.materialType, o.manager, o.agreementUzs].join(" "));
+        return words.every((w) => hay.includes(w));
+      }).slice(0, 6)
         .map((o) => {
           const debt = orderDebt(o);
-          return { id: `o-${o.id}`, icon: Package, label: `${o.orderNumber} · ${o.customer || "—"}`, hint: `${shortDateUz(o.date)} · ${debt > 0 ? `qarz ${money(debt)}` : money(o.agreementUzs || 0)}`, run: () => onSearchOrders(o.orderNumber) };
+          return { id: `o-${o.id}`, order: o, icon: Package, label: `${orderTitle(o)} · ${o.customer || "—"}`, hint: `${o.orderNumber}${o.place ? ` · ${o.place}` : ""} · ${debt > 0 ? `qarz ${money(debt)}` : money(o.agreementUzs || 0)}`, run: () => (onOpenOrder ? onOpenOrder(o) : onSearchOrders(o.orderNumber)) };
         });
       if (ords.length) out.push({ title: "Buyurtmalar", items: ords });
       const custs = (customers || []).filter((c) => hit(c.name, c.phone, c.telegram)).slice(0, 5)
@@ -100,7 +107,7 @@ export function CommandPalette({ open, onClose, nav, orders, leads, customers, o
       if (lds.length) out.push({ title: "Lidlar", items: lds });
     }
     return out;
-  }, [open, q, nav, orders, leads, customers, onNavigate, onSearchOrders, onQuickAdd, onNewLead, isAdmin, onOpenSetting]);
+  }, [open, q, nav, orders, leads, customers, onNavigate, onSearchOrders, onOpenOrder, onQuickAdd, onNewLead, isAdmin, onOpenSetting]);
 
   const flat = groups.flatMap((g) => g.items);
   useEffect(() => { setActive(0); }, [q]);
@@ -127,7 +134,7 @@ export function CommandPalette({ open, onClose, nav, orders, leads, customers, o
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 16px", borderBottom: `1px solid ${THEME.border}` }}>
           <Search size={17} color={THEME.dim} />
           <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey}
-            placeholder="Buyurtma, mijoz, lid yoki bo'lim..." aria-label="Qidiruv so'zi" role="combobox" aria-expanded="true" aria-controls="uvix-cmdk-list"
+            placeholder="Nom, mijoz, joy, summa, lid yoki bo'lim..." aria-label="Qidiruv so'zi" role="combobox" aria-expanded="true" aria-controls="uvix-cmdk-list"
             aria-activedescendant={flat[active] ? `cmdk-${flat[active].id}` : undefined}
             style={{ flex: 1, height: 52, border: 0, outline: "none", background: "transparent", color: THEME.text, fontSize: 15, fontFamily: "inherit", boxShadow: "none" }} />
           <kbd style={{ fontFamily: "inherit", fontSize: 11, color: THEME.muted, border: `1px solid ${THEME.border2}`, borderRadius: 5, padding: "0 5px", lineHeight: "18px" }}>Esc</kbd>
@@ -149,10 +156,11 @@ export function CommandPalette({ open, onClose, nav, orders, leads, customers, o
                 return (
                   <div key={it.id} id={`cmdk-${it.id}`} role="option" aria-selected={on} data-idx={i}
                     onMouseMove={() => active !== i && setActive(i)} onClick={() => run(it)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, height: 40, padding: "0 10px", borderRadius: 7, cursor: "pointer", background: on ? THEME.hover : "transparent" }}>
-                    <span style={{ width: 26, height: 26, borderRadius: 6, background: on ? THEME.card : THEME.chip, border: `1px solid ${on ? THEME.border : "transparent"}`, display: "grid", placeItems: "center", flexShrink: 0, color: THEME.muted }}>
+                    data-cmdk-order={it.order ? it.order.orderNumber : undefined}
+                    style={{ display: "flex", alignItems: "center", gap: 10, height: it.order ? 50 : 40, padding: "0 10px", borderRadius: 7, cursor: "pointer", background: on ? THEME.hover : "transparent" }}>
+                    {it.order ? <OrderThumb order={it.order} size={36} /> : <span style={{ width: 26, height: 26, borderRadius: 6, background: on ? THEME.card : THEME.chip, border: `1px solid ${on ? THEME.border : "transparent"}`, display: "grid", placeItems: "center", flexShrink: 0, color: THEME.muted }}>
                       {Icon ? <Icon size={14} /> : <ArrowRight size={14} />}
-                    </span>
+                    </span>}
                     <span style={{ fontSize: 13.5, color: THEME.text, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{it.label}</span>
                     <span style={{ fontSize: 12.5, color: THEME.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{it.hint}</span>
                     {on && <CornerDownLeft size={14} color={THEME.dim} style={{ flexShrink: 0 }} />}

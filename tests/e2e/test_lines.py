@@ -23,7 +23,7 @@ def extra(adm):
 
 def kv(key, tok): return json.loads(api("/api/kv/" + key, token=tok)["value"])
 async def rows(pg):
-    return await pg.evaluate("[...document.querySelectorAll('tr.uvix-row')].map(r => r.innerText.split('\\n')[0]).join(' | ')")
+    return await pg.evaluate("[...document.querySelectorAll('tr.uvix-row[data-order]')].map(r => r.dataset.order).join(' | ')")
 
 async def main():
     adm = admin_token()

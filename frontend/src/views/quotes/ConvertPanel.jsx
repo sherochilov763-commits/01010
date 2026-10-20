@@ -1,6 +1,7 @@
 // ConvertPanel.jsx — «To'lov va buyurtma»: avans → har pozitsiya alohida buyurtma (bitta guruh), vazifalar, to'lov taqsimoti.
 // Yakuniy hisob, raqamlar va yozish serverda bitta amalda bajariladi (POST /api/quotes/convert).
 import { useMemo, useState } from "react";
+import { PlaceTag, placesOf } from "../../components/OrderVisual.jsx";
 import { AlertTriangle, Check } from "lucide-react";
 import { Button, Field, Modal, MultiPaymentLines, getInputStyle } from "../../components/ui.jsx";
 import { THEME } from "../../theme.js";
@@ -37,6 +38,8 @@ export function ConvertPanel({ lead, draft, items, salesCfg, employees, allOrder
   const share = useMemo(() => (paid > 0 && !over ? allocate(paid, items.map((i) => ({ id: i.id, due: i.total })), mode) || {} : {}), [paid, over, items, mode]);
   const no = lead?.quote?.status === "open" ? lead.quote.no : null;
   const customer = lead?.customer || draft?.customer || "";
+  const [place, setPlace] = useState(draft?.place || "");
+  const places = useMemo(() => placesOf(allOrders, customer), [allOrders, customer]);
   const setTask = (id, patch) => setTasks((t) => ({ ...t, [id]: { ...t[id], ...patch } }));
 
   async function submit() {
@@ -47,7 +50,7 @@ export function ConvertPanel({ lead, draft, items, salesCfg, employees, allOrder
     setBusy(true);
     try {
       const body = {
-        leadId: lead?.id || null, customer, phone: draft?.phone || "", source: draft?.source || "", manager, subcategory: line, date,
+        leadId: lead?.id || null, customer, phone: draft?.phone || "", source: draft?.source || "", manager, subcategory: line, date, place: place.trim(),
         items, distribute: mode, force: isAdmin && force,
         payments: lines.map((l) => ({ amount: amountOf(l), paymentType: l.methodType })).filter((l) => l.amount > 0),
         tasks: Object.fromEntries(items.map((it) => { const t = tasks[it.id]; return [it.id, { mode: t.mode, assigneeId: t.mode === "design" ? t.assigneeId : null, printerId: t.mode !== "none" ? t.printerId || null : null }]; })),
@@ -76,6 +79,15 @@ export function ConvertPanel({ lead, draft, items, salesCfg, employees, allOrder
           <select value={manager} onChange={(e) => setManager(e.target.value)} style={inp}>{[...new Set([manager, ...managers].filter(Boolean))].map((m) => <option key={m} value={m}>{m}</option>)}</select>
         </Field>
       </div>
+      <Field label="Joy / obyekt (ixtiyoriy) — bitta mijozning turli joylari ajralib turadi">
+        <input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="masalan: Ofis · Yunusobod" list="uvix-convert-places" autoComplete="off" maxLength={60} data-testid="convert-place" style={inp} />
+        <datalist id="uvix-convert-places">{places.map((p) => <option key={p} value={p} />)}</datalist>
+        {places.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }} data-testid="convert-place-suggest">
+            {places.slice(0, 4).map((p) => <button key={p} type="button" onClick={() => setPlace(p)} style={{ border: 0, padding: 0, background: "none", cursor: "pointer" }}><PlaceTag place={p} small /></button>)}
+          </div>
+        )}
+      </Field>
 
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>To'lov</div>

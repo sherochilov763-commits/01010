@@ -3,7 +3,7 @@ import asyncio, json, time, datetime
 from common import *  # noqa: F401,F403
 
 async def mob_login(pg, name, pin):
-    await pg.goto(B); await pg.wait_for_selector(".ul-person, .ul-pad", timeout=15000)
+    await pg.goto(B); await pg.evaluate(LIST_DEFAULT); await pg.wait_for_selector(".ul-person, .ul-pad", timeout=15000)
     if await pg.locator(".ul-person").count(): await pg.locator(".ul-person", has_text=name).click()
     for d in pin: await pg.locator(f".ul-key[aria-label='{d}']").click()
     await pg.locator(".ul-primary", has_text="Kirish").click()
@@ -87,7 +87,13 @@ async def main():
         ok("bosish avval ochiq qatorni yopadi", await m.locator("[data-order-row='UV-261013-003']").get_attribute("data-open") is None and await m.locator("[data-testid=order-sheet]").count() == 0)
         # mijozda telefon/Telegram yo'q — chapga surilmaydi
         await drag(m, "[data-order-row='UV-261005-001'] .uvix-swipe-fg", -200)
-        ok("aloqa yo'q mijoz — chapga ochilmaydi", await m.locator("[data-order-row='UV-261005-001']").get_attribute("data-open") is None)
+        ok("aloqa yo'q mijoz — chapga surilsa faqat «Qadash»", await m.locator("[data-order-row='UV-261005-001'] [data-testid=swipe-tg]").count() == 0 and await m.locator("[data-order-row='UV-261005-001'] [data-testid=swipe-call]").count() == 0 and await m.locator("[data-order-row='UV-261005-001'] [data-testid=swipe-pin]").count() == 1)
+        await m.locator("[data-order-row='UV-261005-001'] [data-testid=swipe-pin]").click(); await m.wait_for_timeout(700)
+        first = await m.evaluate("document.querySelector('[data-order-row]').dataset.orderRow")
+        ok("«Qadash» → buyurtma ro'yxat boshida", first == "UV-261005-001", first)
+        await m.locator("[data-order-row='UV-261005-001']").first.wait_for()
+        await drag(m, "[data-order-row='UV-261005-001'] .uvix-swipe-fg", -200)
+        await m.locator("[data-order-row='UV-261005-001'] [data-testid=swipe-pin]").click(); await m.wait_for_timeout(700)
         # Topshirildi
         await touch_swipe(m, cdp, R1, -230)
         await m.locator("[data-order-row='UV-261013-004'] [data-testid=m-deliver]").click(); await m.wait_for_timeout(1200)
@@ -231,14 +237,37 @@ async def main():
         a = await c2.new_page(); a.on("pageerror", lambda e: errs.append("A:" + str(e)))
         await mob_login(a, "Administrator", "0000")
         t = await tabs(a)
-        ok("admin paneli: Asosiy · Buyurtma · + · Operatsiya · CRM · Yana", t == ["dashboard", "orders", "operations", "crm", "__more"], t)
+        ok("admin paneli (iOS): Bugun · Buyurtma · CRM · Operatsiya · Yana", t == ["dashboard", "orders", "crm", "operations", "__more"], t)
+        ok("o'rtadagi «+» yo'q — 5 ta teng tab", await a.locator(".uvix-bottomnav button").count() == 5)
+        ws = await a.evaluate("[...document.querySelectorAll('.uvix-bottomnav .uvix-tab')].map(e=>Math.round(e.getBoundingClientRect().width))")
+        ok("tablar kengligi teng", max(ws) - min(ws) <= 1, ws)
+        # Operatsiyalar (telefon): katta forma o'rniga qidiruv + filtr varag'i, kunlar bo'yicha
+        await a.locator(".uvix-bottomnav [data-tab=operations]").click(); await a.wait_for_timeout(900)
+        ok("Operatsiyalar telefonda: ixcham ko'rinish", await a.locator("[data-testid=ops-phone]").count() == 1 and await a.locator("[data-opday]").count() >= 1)
+        await a.locator("[data-type=kirim]").click(); await a.wait_for_timeout(300)
+        ok("«Kirim» — faqat kirimlar", await a.locator("[data-op^=exp-]").count() == 0 and await a.locator("[data-op^=pay-]").count() >= 1)
+        await a.locator("[data-type=all]").click()
+        await a.locator("[data-testid=ops-filter-btn]").click(); await a.wait_for_timeout(400)
+        await a.locator("[data-per=today]").click(); await a.wait_for_timeout(300)
+        btxt = await a.locator("[data-testid=ops-filter-apply]").inner_text()
+        await a.screenshot(path=S + "s10b_ops_filter.png")
+        await a.locator("[data-testid=ops-filter-apply]").click(); await a.wait_for_timeout(400)
+        ok("filtr: «Bugun» → natija soni tugmada, nuqta yoqildi", "natijani" in btxt and await a.locator("[data-testid=ops-filter-btn] i").count() == 1, btxt)
+        ok("gorizontal siljish yo'q (operatsiyalar)", await a.evaluate("document.documentElement.scrollWidth <= 390"))
+        # «Yana» ichidagi bo'lim — «‹ Yana» orqaga
+        await a.locator(".uvix-bottomnav [data-tab=__more]").click(); await a.wait_for_timeout(400)
+        await a.locator("[data-tile=kassa]").click(); await a.wait_for_timeout(900)
+        ok("ichki sahifa: «‹ Yana» tugmasi", await a.locator("[data-testid=ios-back]").is_visible() and "Yana" in await a.locator("[data-testid=ios-back]").inner_text())
+        await a.locator("[data-testid=ios-back]").click(); await a.wait_for_timeout(500)
+        ok("«‹ Yana» → «Yana» varag'i ochiladi", await a.locator("[data-testid=more-sheet]").count() == 1)
+        await a.keyboard.press("Escape"); await a.wait_for_timeout(300)
         ok("admin: Chatlar panelda yo'q → «Yana» ustida raqam", await a.locator("[data-testid=tab-badge-__more]").count() == 1)
         # eski saqlangan standart (qo'lda tanlanmagan) → rol standarti
         api("/api/me/nav", {"prefs": {"layout": "side", "order": [], "hidden": [], "mobileBar": ["dashboard", "orders", "expense", "crm"]}}, adm, "PUT")
         await a.reload(); await a.wait_for_timeout(500)
         if await a.locator(".ul-person, .ul-pad").count(): await mob_login(a, "Administrator", "0000")
         t = await tabs(a)
-        ok("eski standart saqlangan admin → rol standarti", t == ["dashboard", "orders", "operations", "crm", "__more"], t)
+        ok("eski standart saqlangan admin → rol standarti", t == ["dashboard", "orders", "crm", "operations", "__more"], t)
         # qo'lda tanlangan panel saqlanadi
         api("/api/me/nav", {"prefs": {"layout": "side", "order": [], "hidden": [], "mobileBar": ["orders", "expense"], "barSet": True}}, adm, "PUT")
         await a.reload(); await a.wait_for_timeout(500)

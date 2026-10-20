@@ -1,4 +1,4 @@
-import { ArrowLeft, LogOut, Menu } from "lucide-react";
+import { ArrowLeft, ChevronLeft, LogOut, Menu } from "lucide-react";
 import { NAV, NAV_GROUP, roleLabel } from "../constants.js";
 import { EditNavButton, NavEditor } from "./Nav.jsx";
 import { longDateUz } from "../lib/format.js";
@@ -79,7 +79,8 @@ export function Sidebar({ nav, navCfg, view, setView, user, onLogout, sidebarSty
 }
 
 
-export function Topbar({ user, view, onLogout, onMenuClick, onBack, right, bare = false }) {
+// phoneBack: { label, onClick } — telefonda iOS uslubidagi «‹ Yana» matnli orqaga tugmasi (o'q tugmasi o'rniga)
+export function Topbar({ user, view, onLogout, onMenuClick, onBack, right, bare = false, phoneBack = null, sub = null }) {
   const title = NAV.find((n) => n.key === view)?.label || "";
   return (
     <div className="no-print uvix-topbar" style={{ padding: "18px 28px 0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -97,7 +98,7 @@ export function Topbar({ user, view, onLogout, onMenuClick, onBack, right, bare 
           <Menu size={19} color={THEME.text} />
         </button>
         {onBack && (
-          <button type="button" onClick={onBack} aria-label="Orqaga" title="Orqaga" className="uvix-iconbtn"
+          <button type="button" onClick={onBack} aria-label="Orqaga" title="Orqaga" className="uvix-iconbtn uvix-desk-back"
             style={{
               background: THEME.card, border: `1px solid ${THEME.border2}`, borderRadius: 8, cursor: "pointer",
               width: 40, height: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
@@ -106,9 +107,15 @@ export function Topbar({ user, view, onLogout, onMenuClick, onBack, right, bare 
             <ArrowLeft size={19} />
           </button>
         )}
-        {!bare && <div>
+        {!bare && <div className="uvix-ttl" style={{ minWidth: 0 }}>
+          {phoneBack && (
+            <button type="button" onClick={phoneBack.onClick} className="uvix-ios-back" data-testid="ios-back" style={{ color: THEME.violet }}>
+              <ChevronLeft size={22} strokeWidth={2.3} />{phoneBack.label}
+            </button>
+          )}
+          {sub && <div className="uvix-ttl-sub">{sub}</div>}
           <h1 style={{ margin: 0, fontSize: 21, fontWeight: 600, letterSpacing: -0.3, lineHeight: 1.2 }}>{title}</h1>
-          <div style={{ fontSize: 12.5, color: THEME.dim, marginTop: 2 }}>
+          <div className="uvix-ttl-date" style={{ fontSize: 12.5, color: THEME.dim, marginTop: 2 }}>
             {longDateUz()}
           </div>
         </div>}

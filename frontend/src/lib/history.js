@@ -17,6 +17,7 @@ const H = typeof window !== "undefined" ? window.history : null;
 export function useHistoryView(initial, enabled = true) {
   const [view, setView] = useState(initial);
   const [depth, setDepth] = useState(0);
+  const [from, setFrom] = useState(null); // qaysi bo'limdan kelingan (pastki menyu / «Yana»dan — null)
   const viewRef = useRef(initial);
 
   useEffect(() => {
@@ -55,12 +56,14 @@ export function useHistoryView(initial, enabled = true) {
         viewRef.current = base.view;
         setView(base.view);
         setDepth(0);
+        setFrom(null);
         return;
       }
       if (s.view !== viewRef.current) window.scrollTo(0, 0);
       viewRef.current = s.view;
       setView(s.view);
       setDepth(s.depth || 0);
+      setFrom(s.from || null);
     };
     window.addEventListener("popstate", onPop);
     window.addEventListener("pointerdown", arm, true);
@@ -72,23 +75,26 @@ export function useHistoryView(initial, enabled = true) {
     };
   }, [enabled, initial]);
 
-  const go = useCallback((next) => {
+  // opts.root — pastki menyu yoki «Yana»dan o'tish: «‹ Orqaga» tugmasi chiqmaydi (telefon «orqaga»si baribir ishlaydi)
+  const go = useCallback((next, opts = {}) => {
     if (!H || next === viewRef.current) return;
     const cur = H.state || {};
     const d = (cur.depth || 0) + 1;
-    const entry = { uvix: true, view: next, depth: d };
+    const fromView = opts.root ? null : viewRef.current;
+    const entry = { uvix: true, view: next, depth: d, from: fromView };
     // Menyu (overlay) ochiq turgan yozuvni almashtiramiz — aks holda "orqaga" ikki marta bosilishi kerak bo'lardi
     if (cur.overlay) H.replaceState(entry, "");
     else H.pushState(entry, "");
     viewRef.current = next;
     setView(next);
     setDepth(d);
+    setFrom(fromView);
     window.scrollTo(0, 0);
   }, []);
 
   const back = useCallback(() => H && H.back(), []);
 
-  return { view, go, back, canGoBack: depth > 0 };
+  return { view, go, back, canGoBack: depth > 0, from };
 }
 
 /**
