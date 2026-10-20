@@ -32,6 +32,9 @@ jobs:
       - name: Unit testlar (mavzular, pul himoyasi, menyu, xatolar)
         run: npm run test:unit
 
+      - name: Xavfsizlik testlari (ma'lum hujumlar takrorlanadi)
+        run: npm run test:security
+
       - name: Build
         run: npm run build
 

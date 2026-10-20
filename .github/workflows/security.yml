@@ -1,0 +1,63 @@
+# Xavfsizlik qo'riqchisi — har bir yangilanishda va har dushanba ertalab avtomatik ishlaydi.
+#   1) Gitleaks  — kodga tushib qolgan parol, token, kalitlar
+#   2) Semgrep   — xavfli kod naqshlari (OWASP Top 10, Node.js, Express, React qoidalari)
+#   3) npm audit — zaif kutubxonalar (kritik bo'lsa — qizil)
+# Natijalar GitHub → Actions → «Xavfsizlik» sahifasida ko'rinadi.
+name: Xavfsizlik
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1" # har dushanba, Toshkent vaqti 08:00 — yangi chiqqan zaifliklar uchun
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Maxfiy kalitlar (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks detect --source . --redact --verbose --exit-code 1
+
+  code:
+    name: Kod naqshlari (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (OWASP Top 10 + Node.js + React)
+        run: |
+          semgrep scan \
+            --config p/owasp-top-ten --config p/nodejs --config p/express --config p/react \
+            --exclude 'tests/**' --exclude '**/assets/fonts/**' \
+            --severity ERROR --error
+
+  deps:
+    name: Kutubxonalar (npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Kritik zaifliklar bo'lmasligi shart
+        run: npm run audit:deps
+      - name: Hisobot (barcha darajalar — ma'lumot uchun)
+        if: always()
+        run: |
+          echo "### Backend" >> $GITHUB_STEP_SUMMARY
+          npm audit --prefix backend --omit=dev 2>&1 | tail -3 >> $GITHUB_STEP_SUMMARY || true
+          echo "### Frontend" >> $GITHUB_STEP_SUMMARY
+          npm audit --prefix frontend --omit=dev 2>&1 | tail -3 >> $GITHUB_STEP_SUMMARY || true

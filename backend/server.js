@@ -15,6 +15,8 @@ const multer = require("multer");
 const db = require("./db");
 const { registerTaskRoutes, mergeLeadTaskState } = require("./tasks");
 const { mergeOrderState } = require("./production");
+const { createLoginGuard, normName } = require("./login-guard");
+const { validateKvValue } = require("./kv-validate");
 
 // ==================== Rasm (foto hisobot) saqlash ====================
 // Rasmlar bazaning o'zi bilan bir joyda (doimiy diskda) saqlanadi — Railway'da
@@ -198,22 +200,31 @@ app.post("/api/auth/bootstrap", (req, res) => {
 // Email orqali tiklash olib tashlandi (2026-10). Endi: Telegram kodi yoki admin bergan vaqtinchalik PIN —
 // pin-recovery.js (staffBot ulangandan keyin, pastda ro'yxatdan o'tadi).
 
-// Kirish — PIN tekshiriladi, muvaffaqiyatli bo'lsa token beriladi
+// Kirish — PIN tekshiriladi, muvaffaqiyatli bo'lsa token beriladi.
+// Cheklov HAQIQIY xodim bo'yicha (login-guard.js): ism qanday yozilganidan qat'i nazar bitta hisob.
+const loginGuard = createLoginGuard({
+  onDailyLock: (empId) => {
+    const e = readEmployees().find((x) => x.id === empId);
+    notify("system", `🚨 <b>PIN taxmin qilishga urinish</b>\nXodim: ${escHtml(e?.name || empId)}\n24 soatda 100 ta noto'g'ri PIN — akkaunt 24 soatga PIN bilan kirishdan qulflandi.\nFace ID va QR orqali kirish ishlayveradi.`).catch(() => {});
+  },
+});
 app.post("/api/auth/login", (req, res) => {
   const { employeeId, name, pin } = req.body || {};
-  // Cheklov IP + xodim bo'yicha: bir ofisdagi (bitta IP) xodimlar bir-birini bloklab qo'ymaydi
-  const limitKey = `${req.ip || "unknown"}:${employeeId || String(name || "").toLowerCase()}`;
-  if (!checkRateLimit(limitKey)) {
-    return res.status(429).json({ error: "too_many_attempts", message: "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
-  }
   if ((!employeeId && !name) || !pin) {
     return res.status(400).json({ error: "missing_fields" });
   }
   const employees = readEmployees();
   const employee = employeeId
-    ? employees.find((e) => e.id === employeeId)
-    : employees.find((e) => e.name.trim().toLowerCase() === String(name).trim().toLowerCase());
+    ? employees.find((e) => e.id === String(employeeId))
+    : employees.find((e) => normName(e.name) === normName(name));
+  const ip = req.ip || "unknown";
+  const gate = loginGuard.check(ip, employee?.id);
+  if (!gate.ok) {
+    res.setHeader("Retry-After", String(gate.retryAfter));
+    return res.status(429).json({ error: "too_many_attempts", message: gate.daily ? "Juda ko'p noto'g'ri urinish — PIN bilan kirish 24 soatga yopildi. Administratorga murojaat qiling." : "Juda ko'p urinish. 10 daqiqadan so'ng qayta urinib ko'ring." });
+  }
   if (!employee || !pinMatches(String(pin), employee.pin)) {
+    loginGuard.fail(ip, employee?.id);
     return res.status(401).json({ error: "invalid_credentials", message: "Foydalanuvchi yoki PIN noto'g'ri" });
   }
   if (employee.mustChangePin && employee.tempPinExp && Date.now() > new Date(employee.tempPinExp).getTime()) {
@@ -224,7 +235,7 @@ app.post("/api/auth/login", (req, res) => {
     employee.pin = bcrypt.hashSync(String(pin), 10);
     writeEmployees(employees);
   }
-  clearRateLimit(limitKey);
+  loginGuard.success(ip, employee.id);
   res.json(issueToken(employee));
 });
 
@@ -1125,6 +1136,9 @@ app.put("/api/kv/:key", (req, res) => {
     return res.status(400).json({ error: "key_too_long" });
   }
   if (isInternalKey(key)) return res.status(403).json({ error: "forbidden" });
+  // Buzilgan yoki noto'g'ri turdagi qiymat hech qachon bazaga yozilmaydi (kv-validate.js)
+  const valid = validateKvValue(key, value);
+  if (!valid.ok) return res.status(400).json({ error: valid.error, message: valid.message });
   const isAdmin = req.user.role === "admin";
   if (isWorker(req.user) && !WORKER_WRITE_KEYS.has(key)) return res.status(403).json({ error: "forbidden" });
   if (!isAdmin && !USER_WRITABLE_KEYS.has(key) && !(PERM_WRITE_KEYS[key] && req.can(PERM_WRITE_KEYS[key]))) {
