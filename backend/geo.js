@@ -137,8 +137,9 @@ module.exports = function registerGeo(app, { getStmt, upsertStmt, deleteStmt = n
       const pts = day[e.id] || [];
       const st = shift ? statusOf(pts, { jobs: jobs.filter((j) => (j.assigneeIds || []).includes(e.id)), workshop: ws, now: t.getTime() }) : { s: "off" };
       const l = last[e.id];
+      // Oxirgi joy BUGUN (mahalliy sana) olingan bo'lsin — UTC sanasi bilan solishtirilsa, 00:00–05:00 da yo'qolardi
       return { id: e.id, name: e.name, role: e.role, line: e.line || null, onShift: !!shift, consent: !!consent[e.id], status: st,
-        pos: shift && l && String(l.at).slice(0, 10) >= date.slice(0, 10) && pts.length ? { lat: l.lat, lng: l.lng, at: l.at, src: l.src } : null };
+        pos: shift && l && localDate(new Date(l.at)) >= date && pts.length ? { lat: l.lat, lng: l.lng, at: l.at, src: l.src } : null };
     });
     res.json({ enabled: cfg().enabled, staff: list, workshop: ws });
   });
@@ -174,7 +175,7 @@ module.exports = function registerGeo(app, { getStmt, upsertStmt, deleteStmt = n
     for (const e of emps()) {
       if (!consent[e.id] || !onShift(e.id, t)) continue;
       const l = last[e.id];
-      if (!l || String(l.at).slice(0, 10) !== date) continue; // bugun umuman kelmagan — «ulashmagan», ogohlantirish emas
+      if (!l || localDate(new Date(l.at)) !== date) continue; // bugun umuman kelmagan — «ulashmagan», ogohlantirish emas
       const gap = (t.getTime() - Date.parse(l.at)) / 60000;
       const k = `${e.id}:${date}`;
       if (gap >= 20 && gap <= 240 && !alerts[k]) {
