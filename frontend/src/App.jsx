@@ -1137,6 +1137,7 @@ function AppInner() {
                 onMoveLead={moveLead}
                 onSetPriority={setLeadPriority}
                 onCreateOrderFromLead={createOrderFromLead}
+                onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id, n: Date.now() })}
                 onFetchTelegramMessages={fetchTelegramMessages}
                 onSendTelegramMessage={sendTelegramUserMessage}
               />

@@ -56,7 +56,7 @@ async def main():
         await d.locator("[data-testid=priority-menu] [data-priority-opt=urgent]").click(); await d.wait_for_timeout(1200)
         L4 = lead(adm, "l4")
         ok("muhimlik: «Shoshilinch» saqlandi va tarixga yozildi", L4.get("priority") == "urgent" and (L4.get("history") or [{}])[-1].get("to") == "urgent" and L4.get("priorityBy") == "Administrator", L4.get("history"))
-        ok("shoshilinch karta: qizil ramka va yozuv", await d.locator("[data-lead=l4][data-priority=urgent] [data-testid=priority-label]").count() == 1)
+        ok("shoshilinch karta: qizil ramka va belgi", await d.locator("[data-lead=l4][data-priority=urgent] [data-testid=priority-btn]").count() == 1)
         col = d.locator(f"[data-stage={L4['stage']}] [data-lead]")
         ok("ustunda shoshilinch — eng tepada", await col.first.get_attribute("data-lead") == "l4")
         await c4.hover(); await d.keyboard.press("4"); await d.wait_for_timeout(1200)

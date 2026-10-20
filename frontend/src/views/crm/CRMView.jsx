@@ -1,34 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { MessageCircle, Package, Pencil, Phone, Plus, Rows3, Send, Trash2, Zap } from "lucide-react";
-import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
+import { Plus, Rows3, Zap } from "lucide-react";
+import { Button, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
 import { isWorkerRole, leadStagesFor } from "../../constants.js";
-import { LINES, LineContext, leadLineOf, lineColor, useLine } from "../../lib/lines.js";
+import { LINES, LineContext, leadLineOf, useLine } from "../../lib/lines.js";
 import { LineHeader } from "../../components/LineSelector.jsx";
-import { LeadCard, PriorityIcon, PriorityMenu } from "./LeadCard.jsx";
+import { LEAD_CARD_CSS, LeadCard, PriorityIcon, leadSignals } from "./LeadCard.jsx";
+import { LeadPanel } from "./LeadPanel.jsx";
 import { PRIORITIES, PRIORITY_KEYS, priorityOf, sortLeads } from "../../lib/leadPriority.js";
-import { fetchJobs } from "../../storage.js";
+import { fetchChatTools, fetchJobs, fetchTelegramChats } from "../../storage.js";
 import { JobForm } from "../jobs/JobsView.jsx";
-import { PROD_LABEL, PROD_STAGES, prodColors } from "../../lib/production.js";
 import { fmt, money, moneyCompact, uid } from "../../lib/format.js";
-import { TaskChips } from "./TaskAssignModal.jsx";
 import { LeadArchive } from "./LeadArchive.jsx";
-import { closedDate, inPeriod, isClosed, periodRange, periodStats, staleInfo } from "../../lib/leads.js";
+import { closedDate, inPeriod, isClosed, periodRange, periodStats } from "../../lib/leads.js";
 import { PeriodPicker } from "./PeriodPicker.jsx";
-import { LEAD_SOURCES, SourceChip, TgHandle, isAutoTgNote, sourceMeta } from "../../components/LeadSource.jsx";
+import { LEAD_SOURCES, sourceMeta } from "../../components/LeadSource.jsx";
 
-// Faol bosqichda uzoq turib qolgan lid belgisi
-function StaleBadge({ lead, big = false }) {
-  const st = staleInfo(lead);
-  if (!st) return null;
-  const danger = st.level === "danger";
-  return (
-    <span data-testid="stale-badge" title="Oxirgi harakatdan beri o'tgan kun"
-      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 4, fontSize: big ? 12.5 : 11.5, fontWeight: 600, padding: big ? "2px 8px" : "1px 6px", borderRadius: 6,
-        color: danger ? THEME.rose : THEME.amber, background: danger ? THEME.roseBg : THEME.amberBg }}>
-      {st.days} kun harakatsiz
-    </span>
-  );
-}
 import { THEME } from "../../theme.js";
 
 /* ---------------- PAYMENTS MODAL ---------------- */
@@ -37,6 +23,7 @@ export function LeadForm({ initial, employees, onClose, onSave, leads = [] }) {
   const isEdit = !!initial;
   const managerNames = employees ? employees.filter((e) => !isWorkerRole(e.role)).map((e) => e.name) : [];
   const [customer, setCustomer] = useState(initial?.customer || "");
+  const [title, setTitle] = useState(initial?.jobTitle || "");
   const [phone, setPhone] = useState(initial?.phone || "");
   const [source, setSource] = useState(initial?.source || "");
   const [estimatedValueStr, setEstimatedValueStr] = useState(initial?.estimatedValue != null ? fmt(initial.estimatedValue) : "");
@@ -53,6 +40,7 @@ export function LeadForm({ initial, employees, onClose, onSave, leads = [] }) {
     const lead = {
       id: initial?.id || uid(),
       customer: customer.trim(),
+      jobTitle: title.trim() || undefined,
       phone: phone.trim(),
       source: source.trim(),
       estimatedValue: parseInt(estimatedValueStr.replace(/\s/g, ""), 10) || 0,
@@ -84,6 +72,9 @@ export function LeadForm({ initial, employees, onClose, onSave, leads = [] }) {
         </Field>
         <Field label="Mijoz ismi">
           <input value={customer} onChange={(e) => setCustomer(e.target.value)} style={getInputStyle()} placeholder="Mijoz yoki kompaniya nomi" autoFocus />
+        </Field>
+        <Field label="Nima ish (ixtiyoriy)">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} data-testid="lead-title" maxLength={80} style={getInputStyle()} placeholder="Masalan: Oniks devor, ~12 kv/m" />
         </Field>
         {curLine === "all" && !initial?.telegramChatId && (
           <Field label="Yo'nalish">
@@ -260,34 +251,6 @@ export function LeadChatModal({ lead, onClose, onFetchMessages, onSendMessage })
   );
 }
 
-// Bitim holati kartada: smetadan yaratilgan buyurtmalar (holat chizig'i) yoki ochiq smeta / eski bog'langan buyurtma
-function DealLine({ lead, orders, linkedOrder, onCreate }) {
-  const ids = lead.orderIds || [];
-  if (ids.length) {
-    const list = ids.map((id) => (orders || []).find((o) => o.id === id)).filter((o) => o && !o.deletedAt);
-    if (list.length) {
-      const cnt = {}; list.forEach((o) => { const k = o.prodStage || "new"; cnt[k] = (cnt[k] || 0) + 1; });
-      const done = (cnt.ready || 0) + (cnt.delivered || 0);
-      const parts = PROD_STAGES.filter((k) => cnt[k]);
-      return (
-        <div data-testid="deal-progress" title={list.map((o) => `${o.orderNumber} — ${PROD_LABEL[o.prodStage] || "Navbatda"}`).join("\n")}>
-          <div style={{ display: "flex", gap: 2, height: 5 }}>{parts.map((k) => <span key={k} style={{ flex: cnt[k], borderRadius: 3, background: k === "delivered" ? THEME.border2 : prodColors(k).color }} />)}</div>
-          <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>{parts.filter((k) => k !== "ready" && k !== "delivered").map((k) => `${cnt[k]} ${PROD_LABEL[k].toLowerCase()}`).concat([`${done}/${list.length} tayyor`]).join(" · ")}</div>
-        </div>
-      );
-    }
-  }
-  if (linkedOrder) return <div style={{ fontSize: 12, color: THEME.green, fontWeight: 600 }}>✓ Buyurtma {linkedOrder.orderNumber}</div>;
-  const q = lead.quote?.status === "open" ? lead.quote : null;
-  // Ochiq smeta bo'lsa — doim; aks holda faqat ish boshlangan bosqichlarda (avvalgidek)
-  if (!q && !["design", "printing", "ready"].includes(lead.stage)) return null;
-  return (
-    <button type="button" onClick={onCreate} className="uvix-lead-cta" data-testid="lead-quote-cta"
-      style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, border: 0, background: "none", padding: 0, color: THEME.violet, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-      <Package size={13} /> {q ? `Smeta ${q.no} · ${money(q.total)} — to'lov` : "Smeta / buyurtma"}
-    </button>
-  );
-}
 
 // «Yonma-yon»: ikki yo'nalish — ikki alohida voronka (har biri o'z bosqichlari bilan), aralashmaydi
 export function CRMView(props) {
@@ -309,7 +272,7 @@ export function CRMView(props) {
   );
 }
 
-function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onSetPriority, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
+function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onSetPriority, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat, onOpenOrder }) {
   // Bosqichlar yo'nalishga qarab (UVONYX: Murojaat → O'lchov → Smeta ...); lidlar ham tanlangan yo'nalish bo'yicha
   const { line } = useLine();
   const LEAD_STAGES = leadStagesFor(line);
@@ -325,6 +288,35 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
   const [jobFor, setJobFor] = useState(null);
   const loadJobs = useCallback(() => fetchJobs().then((r) => setJobs(r.jobs || [])).catch(() => {}), []);
   useEffect(() => { loadJobs(); const t = setInterval(loadJobs, 60000); return () => clearInterval(t); }, [loadJobs]);
+  // Telegram chatlari: kartada «Javob kutmoqda», «yangi xabar», oxirgi faollik (Telegram ulanmagan bo'lsa — jim)
+  const [chatMap, setChatMap] = useState(() => new Map());
+  const [sla, setSla] = useState(15);
+  const hasTg = (allLeads || []).some((l) => l.telegramChatId);
+  useEffect(() => {
+    if (!hasTg) return undefined;
+    let off = false;
+    const load = () => document.visibilityState !== "hidden" && fetchTelegramChats().then((list) => { if (!off) setChatMap(new Map((list || []).map((c) => [String(c.chatId), c]))); }).catch(() => {});
+    load();
+    fetchChatTools().then((d) => { if (!off && d?.config?.slaMinutes) setSla(d.config.slaMinutes); }).catch(() => {});
+    const t = setInterval(load, 30000);
+    return () => { off = true; clearInterval(t); };
+  }, [hasTg]);
+  // Mijozning boshqa buyurtmalari (qayta mijoz belgisi uchun)
+  const custStats = useMemo(() => {
+    const m = new Map();
+    (orders || []).forEach((o) => {
+      if (o.deletedAt) return;
+      const k = String(o.customer || "").trim().toLowerCase();
+      if (!k) return;
+      if (!m.has(k)) m.set(k, { list: [] });
+      m.get(k).list.push(o);
+    });
+    return m;
+  }, [orders]);
+  const sigOf = (lead) => leadSignals(lead, { chat: lead.telegramChatId ? chatMap.get(String(lead.telegramChatId)) : null, sla, custStats: custStats.get(String(lead.customer || "").trim().toLowerCase()) });
+  // Lid paneli (o'ngdan / telefonda pastdan)
+  const [openId, setOpenId] = useState(null);
+  const openLead = openId ? (leads || []).find((l) => l.id === openId) : null;
   useEffect(() => {
     if (!onSetPriority) return undefined;
     const onKey = (e) => {
@@ -490,6 +482,10 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
           onCreateOrder={onCreateOrderFromLead}
           employees={employees}
           onAssignTask={onAssignTask}
+          jobs={jobs}
+          sigOf={sigOf}
+          onOpen={(lead) => setOpenId(lead.id)}
+          showLine={line === "all"}
         />
       ) : (<>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${LEAD_STAGES.length}, minmax(210px, 1fr))`, gap: 12, overflowX: "auto", paddingBottom: 6 }} className="uvix-scroll uvix-kanban">
@@ -529,6 +525,7 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
                   const idx = stageIndex(lead.stage);
                   return (
                     <LeadCard key={lead.id} lead={lead} line={leadLineOf(lead)} showLine={line === "all"} orders={orders} jobs={jobs} employees={employees} compact={compact}
+                      sig={sigOf(lead)} selected={openId === lead.id} onOpen={() => setOpenId(lead.id)}
                       dragging={draggedLeadId === lead.id} first={idx === 0} last={idx === LEAD_STAGES.length - 1}
                       menuOpen={menuFor === lead.id} onMenu={setMenuFor} onPriority={(k) => onSetPriority?.(lead, k)}
                       onHover={(id) => { hoverRef.current = id; }}
@@ -546,8 +543,7 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
           </div>
         ))}
       </div>
-      <style>{`
-        .uvix-lead-card:hover { border-color: ${THEME.border2} !important; }
+      <style>{LEAD_CARD_CSS + `
         .uvix-lead-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: ${THEME.card}; border: 1px solid ${THEME.border}; box-shadow: ${THEME.shadowMd}; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
         .uvix-lead-card:hover .uvix-lead-actions, .uvix-lead-card:focus-within .uvix-lead-actions { opacity: 1; pointer-events: auto; }
         .uvix-lead-actions button, .uvix-lead-actions a { width: 26px; height: 26px; border: 0; border-radius: 5px; background: none; color: ${THEME.muted}; display: grid; place-items: center; cursor: pointer; padding: 0; }
@@ -559,6 +555,19 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
       </>      )}
       </>)}
 
+      {openLead && (
+        <LeadPanel lead={openLead} sig={sigOf(openLead)} stages={LEAD_STAGES} orders={orders} jobs={jobs} phone={isMobile}
+          onClose={() => setOpenId(null)}
+          onEdit={() => setModal(openLead)}
+          onDelete={() => setConfirmDel(openLead)}
+          onMoveTo={(k) => k !== openLead.stage && onMoveLead(openLead, k)}
+          onPriority={onSetPriority ? (k) => onSetPriority(openLead, k) : null}
+          onJob={() => setJobFor(openLead)}
+          onChat={openLead.telegramChatId && (onFetchTelegramMessages || onOpenChat) ? () => openChat(openLead) : null}
+          onCreateOrder={() => onCreateOrderFromLead(openLead)}
+          onOpenOrder={onOpenOrder}
+          onFetchMessages={onFetchTelegramMessages} />
+      )}
       {jobFor && <JobForm job={null} preset={{ kind: "measure", leadId: jobFor.id, line: jobFor.line, title: `${jobFor.customer} — o'lchov`, phone: jobFor.phone || "" }} employees={employees} orders={orders} onClose={() => setJobFor(null)} onSaved={() => { setJobFor(null); loadJobs(); }} />}
       {modal && (
         <LeadForm
@@ -573,7 +582,7 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
         <ConfirmDialog
           message={`"${confirmDel.customer}" lidini o'chirmoqchimisiz?`}
           onCancel={() => setConfirmDel(null)}
-          onConfirm={() => { onDeleteLead(confirmDel); setConfirmDel(null); }}
+          onConfirm={() => { onDeleteLead(confirmDel); if (openId === confirmDel.id) setOpenId(null); setConfirmDel(null); }}
         />
       )}
       {chatFor && (
@@ -594,19 +603,13 @@ function telLink(phone) {
   const digits = (phone || "").replace(/[^\d+]/g, "");
   return digits ? `tel:${digits}` : null;
 }
-function telegramLink(lead) {
-  if (lead.telegramUsername) return `https://t.me/${lead.telegramUsername.replace(/^@/, "")}`;
-  const digits = (lead.phone || "").replace(/\D/g, "");
-  return digits.length >= 9 ? `https://t.me/+${digits.length === 9 ? "998" + digits : digits}` : null;
-}
 
-function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelete, onMove, onChat, onCreateOrder, employees, onAssignTask, onPriority }) {
+function MobileLeadBoard({ leadsByStage, stage, onStage, orders, employees, onAssignTask, onPriority, jobs, sigOf, onOpen, showLine, onCreateOrder }) {
   const [menuFor, setMenuFor] = useState(null);
   const LEAD_STAGES = leadStagesFor(useLine().line);
   const list = leadsByStage[stage] || [];
   const total = list.reduce((s, l) => s + (Number(l.estimatedValue) || 0), 0);
   const stageInfo = LEAD_STAGES.find((s) => s.key === stage) || LEAD_STAGES[0];
-  const actionBtn = { height: 40, padding: "0 12px", borderRadius: 8, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", flexShrink: 0 };
 
   return (
     <div>
@@ -635,71 +638,15 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {<Incremental list={list} step={30} render={(lead) => {
-            const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
-            const tel = telLink(lead.phone);
-            const tg = lead.telegramChatId && onChat ? null : telegramLink(lead);
-            const meta = lead.manager || "";
-            return (
-              <Card key={lead.id} data-lead={lead.id} data-priority={priorityOf(lead)} style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10, position: "relative", boxShadow: `inset 3px 0 0 ${lineColor(leadLineOf(lead), THEME.isDark)}`, ...(priorityOf(lead) === "urgent" ? { borderColor: THEME.rose } : {}) }}>
-                {menuFor === lead.id && <PriorityMenu value={priorityOf(lead)} onPick={(k) => { onPriority?.(lead, k); setMenuFor(null); }} onClose={() => setMenuFor(null)} />}
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                      <button type="button" data-testid="priority-btn" aria-label="Muhimlik" onClick={() => setMenuFor(menuFor === lead.id ? null : lead.id)} style={{ border: 0, background: "none", padding: 0, display: "inline-flex", cursor: "pointer", flexShrink: 0 }}><PriorityIcon p={priorityOf(lead)} size={17} /></button>
-                      <div style={{ fontSize: 15.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
-                    </div>
-                    {lead.phone && <div style={{ fontSize: 13, color: THEME.muted, marginTop: 2 }}>{lead.phone}</div>}
-                    {(lead.source || lead.telegramUsername) && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-                        <SourceChip source={lead.source} size="md" />
-                        <TgHandle username={lead.telegramUsername} size="md" />
-                      </div>
-                    )}
-                    {meta && <div style={{ fontSize: 12, color: THEME.muted, marginTop: 4 }}>{meta}</div>}
-                  </div>
-                  {Number(lead.estimatedValue) > 0 && (
-                    <div style={{ fontSize: 14.5, fontWeight: 600, color: THEME.text, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(lead.estimatedValue)}</div>
-                  )}
-                </div>
-                <StaleBadge lead={lead} big />
-                {lead.notes && !isAutoTgNote(lead) && <div style={{ fontSize: 13, color: THEME.mutedDark, lineHeight: 1.45 }}>{lead.notes}</div>}
-                <TaskChips lead={lead} employees={employees} onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
-
-                {lead.orderIds?.length ? (
-                  <DealLine lead={lead} orders={orders} linkedOrder={linkedOrder} onCreate={() => onCreateOrder(lead)} />
-                ) : linkedOrder ? (
-                  <div style={{ fontSize: 12.5, color: THEME.green, fontWeight: 700, background: THEME.greenBg, padding: "6px 10px", borderRadius: 10, alignSelf: "flex-start" }}>
-                    Buyurtma: {linkedOrder.orderNumber}
-                  </div>
-                ) : (lead.quote?.status === "open" || ["design", "printing", "ready"].includes(lead.stage)) && (
-                  <Button onClick={() => onCreateOrder(lead)} style={{ justifyContent: "center" }}><Package size={15} /> {lead.quote?.status === "open" ? `Smeta ${lead.quote.no} · ${money(lead.quote.total)} — to'lov` : "Smeta / buyurtma"}</Button>
-                )}
-
-                {(tel || tg || (lead.telegramChatId && onChat)) && (
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {tel && <a href={tel} style={{ ...actionBtn, flex: 1 }}><Phone size={15} /> Qo'ng'iroq</a>}
-                    {lead.telegramChatId && onChat ? (
-                      <button type="button" onClick={() => onChat(lead)} style={{ ...actionBtn, flex: 1 }}><MessageCircle size={15} /> Chat</button>
-                    ) : tg && (
-                      <a href={tg} target="_blank" rel="noopener noreferrer" style={{ ...actionBtn, flex: 1 }}><Send size={15} /> Telegram</a>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <select value={lead.stage || "new"} onChange={(e) => onMove(lead, e.target.value)} aria-label="Bosqichni o'zgartirish"
-                    style={{ ...getInputStyle(), flex: 1, minWidth: 0, height: 40, padding: "0 10px", boxSizing: "border-box" }}>
-                    {LEAD_STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </select>
-                  <button type="button" onClick={() => onEdit(lead)} aria-label="Tahrirlash" style={{ ...actionBtn, width: 40, padding: 0 }}><Pencil size={15} /></button>
-                  <button type="button" onClick={() => onDelete(lead)} aria-label="O'chirish" style={{ ...actionBtn, width: 40, padding: 0 }}><Trash2 size={15} color={THEME.rose} /></button>
-                </div>
-              </Card>
-            );
-          }} />}
+          <Incremental list={list} step={30} render={(lead) => (
+            <LeadCard key={lead.id} lead={lead} line={leadLineOf(lead)} showLine={showLine} orders={orders} jobs={jobs} employees={employees} touch
+              sig={sigOf(lead)} onOpen={() => onOpen(lead)}
+              menuOpen={menuFor === lead.id} onMenu={setMenuFor} onPriority={(k) => onPriority?.(lead, k)}
+              onCreateOrder={() => onCreateOrder(lead)} onAssignTask={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
+          )} />
         </div>
       )}
+      <style>{LEAD_CARD_CSS}</style>
     </div>
   );
 }
