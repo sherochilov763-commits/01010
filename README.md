@@ -129,8 +129,10 @@ qo'shishni tavsiya qilamiz:
 
 ## 5. Excel eksport va PDF
 
-Excel eksport (`xlsx` kutubxonasi) va PDF hisobot (brauzer print) to'liq
-frontend'da ishlaydi — internetga yoki qo'shimcha serverga bog'liq emas.
+Har bo'limdagi «Yuklash ▾» tugmasi Excel (`exceljs` — sarlavha, rangli bosh qator, so'm formati,
+JAMI formula bilan) yoki PDF (`jspdf` + `jspdf-autotable`, Onest shrifti) beradi — to'liq frontend'da,
+internetga bog'liq emas (`frontend/src/lib/exportPro.js`). Serverdagi kunlik Telegram Excel hisoboti —
+`backend/excel-pro.js`. `xlsx` (SheetJS) faqat Buyurtmalar importi uchun qoladi.
 
 ## Savol tug'ilsa
 

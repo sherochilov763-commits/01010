@@ -1,4 +1,5 @@
 import { usePerms } from "../../lib/perms.jsx";
+import { ExportMenu } from "../../components/ExportMenu.jsx";
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
 // AttendanceView.jsx — Davomat: admin uchun Bugun / Hafta / Oy / Sozlamalar, xodim uchun o'z tarixi.
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -207,7 +208,7 @@ function PeriodTab({ kind }) {
   const title = kind === "week" ? `${dLabel(from)} — ${dLabel(to)}` : `${MONTHS[parse(from).getMonth()][0].toUpperCase()}${MONTHS[parse(from).getMonth()].slice(1)} ${from.slice(0, 4)}`;
   const allDays = useMemo(() => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; }, [from, to]);
 
-  function exportExcel() {
+  function exportExcel(kind = "xlsx") {
     const rows = [];
     data.rows.forEach((r) => { r.days.forEach((d) => rows.push({
       "Xodim": r.employee.name, "Sana": d.date, "Holat": STATUS[d.status]?.label || d.status, "Keldi": d.in || "", "Ketdi": d.out || "",
@@ -215,11 +216,11 @@ function PeriodTab({ kind }) {
       "Ishlagan (soat)": d.workedMin ? +(d.workedMin / 60).toFixed(2) : 0, "Izoh": [d.manual ? `Qo'lda (${d.manual.by}): ${d.manual.reason}` : d.missingOut ? "Ketdim belgilanmagan" : "", d.outAuto ? "Ketdim — avto" : "", d.outFar ? `Ketdim sexdan tashqarida (${d.outDist} m)` : ""].filter(Boolean).join("; "),
     }));
       const s = r.sum;
-      rows.push({ "Xodim": r.employee.name, "Sana": "JAMI", "Holat": `${s.present}/${s.workdays} kun keldi`, "Keldi": "", "Ketdi": "",
+      rows.push({ __bold: true, "Xodim": r.employee.name, "Sana": "JAMI", "Holat": `${s.present}/${s.workdays} kun keldi`, "Keldi": "", "Ketdi": "",
         "Kechikish (daq)": s.lateMin, "Kechikish": fmtDur(s.lateMin, s.dayMin), "Erta ketish (daq)": s.earlyMin, "Qo'shimcha (daq)": s.overMin,
         "Ishlagan (soat)": +(s.workedMin / 60).toFixed(2), "Izoh": `1 kun = ${fmtDur(s.dayMin)} (ish kuni)` });
     });
-    exportRows(rows, "Davomat", `UVIX_davomat_${from}_${to}.xlsx`);
+    return exportRows(rows, "Davomat", `UVIX_davomat_${from}_${to}.xlsx`, { kind, totals: false, title: "Davomat", meta: [`Davr: ${from} — ${to}`, `Xodimlar: ${data.rows.length}`] });
   }
 
   const cell = (d) => {
@@ -237,7 +238,7 @@ function PeriodTab({ kind }) {
         <div data-testid="att-period-title" style={{ fontWeight: 700, fontSize: 15, minWidth: 180, textAlign: "center" }}>{title}</div>
         <button type="button" onClick={() => shift(1)} disabled={to >= todayStr()} aria-label="Keyingi" style={{ width: 36, height: 36, borderRadius: 10, border: `1px solid ${THEME.border}`, background: THEME.card, color: THEME.text, cursor: "pointer", display: "grid", placeItems: "center", opacity: to >= todayStr() ? 0.4 : 1 }}><ChevronRight size={16} /></button>
         <div style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={exportExcel} disabled={!data?.rows?.length}><Download size={14} /> Excel</Button>
+        <ExportMenu onExport={exportExcel} disabled={!data?.rows?.length} />
       </div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11.5, color: THEME.muted }}>
         {["ontime", "late", "absent", "extra", "dayoff"].map((k) => <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 3, background: k === "dayoff" ? `${STATUS[k].color}33` : STATUS[k].color }} />{STATUS[k].label}</span>)}

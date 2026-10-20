@@ -15,6 +15,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
   const [comment, setComment] = useState("");
   const [error, setError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
+  const [overOk, setOverOk] = useState(false); // kelishuvdan ortiq to'lov — ikkinchi bosishda (ogohlantirishdan keyin)
   const [reqFor, setReqFor] = useState(null); // { kind, payment } — operator: tasdiqqa so'rov; admin: to'g'ridan-to'g'ri tahrir
   const ap = useApprovals();
 
@@ -28,6 +29,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
     if (!date) return setError("Sanani tanlang");
     const validLines = lines.filter((l) => (parseInt((l.amountStr || "").replace(/\s/g, ""), 10) || 0) > 0);
     if (validLines.length === 0) return setError("Kamida bitta summani to'g'ri kiriting (0 dan katta)");
+    if (totalNew > debt && !overOk) { setOverOk(true); return setError(`To'lov qarzdan ${money(totalNew - debt)} ko'p (qarz: ${money(debt)}). Summani tekshiring — to'g'ri bo'lsa, yana bir marta bosing: ortiqcha summa «ortiqcha to'langan» bo'lib ko'rinadi.`); }
     const newPayments = validLines.map((l) => ({
       id: uid(),
       amount: parseInt(l.amountStr.replace(/\s/g, ""), 10),
@@ -41,6 +43,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
     setLines([{ id: uid(), methodType: "naqd", amountStr: "" }]);
     setComment("");
     setError("");
+    setOverOk(false);
   }
 
   return (
@@ -141,7 +144,7 @@ export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClo
           <Field label="Sana">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ ...getInputStyle(), marginBottom: 10 }} />
           </Field>
-          <MultiPaymentLines lines={lines} onChange={setLines} bg={THEME.surface} />
+          <MultiPaymentLines lines={lines} onChange={(v) => { setLines(v); setOverOk(false); }} bg={THEME.surface} />
           {lines.length > 1 && (
             <div style={{ fontSize: 13, fontWeight: 700, marginTop: 8, textAlign: "right", color: THEME.violet }}>
               Jami: {money(totalNew)}

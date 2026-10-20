@@ -8,6 +8,8 @@ import { exportWorkbook } from "../lib/excel.js";
 import { inRange, todayStr } from "../lib/format.js";
 import { THEME } from "../theme.js";
 import { downloadAnalyticsPdf, fetchAnalytics, sendAnalyticsPdf } from "../storage.js";
+import { useLine } from "../lib/lines.js";
+import { LineHeader } from "../components/LineSelector.jsx";
 
 const MONTHS = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
 const pad = (n) => String(n).padStart(2, "0");
@@ -55,34 +57,43 @@ export function ReportView({ orders, transactions, categories }) {
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState(null);
   const range = rangeFor(kind, offset, custom);
+  const { line, split } = useLine();
+  const [dataB, setDataB] = useState(null);
 
   useEffect(() => {
     let alive = true;
     setErr("");
-    fetchAnalytics(range.from, range.to, cmp).then((d) => alive && setData(d)).catch((e) => alive && setErr(e.message));
+    // «Yonma-yon» — ikkala yo'nalish alohida; aks holda tanlangan yo'nalish (yoki hammasi)
+    if (split) {
+      Promise.all([fetchAnalytics(range.from, range.to, cmp, "UVIXPRINT"), fetchAnalytics(range.from, range.to, cmp, "UVONYX")])
+        .then(([a, b]) => { if (alive) { setData(a); setDataB(b); } }).catch((e) => alive && setErr(e.message));
+    } else {
+      setDataB(null);
+      fetchAnalytics(range.from, range.to, cmp, line).then((d) => alive && setData(d)).catch((e) => alive && setErr(e.message));
+    }
     return () => { alive = false; };
-  }, [range.from, range.to, cmp, orders, transactions]);
+  }, [range.from, range.to, cmp, orders, transactions, line, split]);
 
   const setPeriod = (k) => { setKind(k); setOffset(k === "month" && new Date().getDate() <= 5 ? -1 : 0); };
   async function pdf() {
     setBusy("pdf"); setMsg(null);
     try {
-      const blob = await downloadAnalyticsPdf(range.from, range.to, cmp);
+      const blob = await downloadAnalyticsPdf(range.from, range.to, cmp, split ? "all" : line);
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = `UVIX_hisobot_${range.from}_${range.to}.pdf`; a.click();
+      a.href = URL.createObjectURL(blob); a.download = `UVIX_hisobot_${line !== "all" && !split ? line + "_" : ""}${range.from}_${range.to}.pdf`; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     } catch (e) { setMsg({ ok: false, text: e.message }); }
     setBusy("");
   }
   async function tg() {
     setBusy("tg"); setMsg(null);
-    try { const r = await sendAnalyticsPdf(range.from, range.to, cmp); setMsg({ ok: r.ok, text: r.message }); } catch (e) { setMsg({ ok: false, text: e.message }); }
+    try { const r = await sendAnalyticsPdf(range.from, range.to, cmp, split ? "all" : line); setMsg({ ok: r.ok, text: r.message }); } catch (e) { setMsg({ ok: false, text: e.message }); }
     setBusy("");
   }
   function excel() {
     const o = orders.filter((x) => inRange(x.date, range.from, range.to));
     const t = transactions.filter((x) => inRange(x.date, range.from, range.to));
-    exportWorkbook(o, t, categories, `${range.from} — ${range.to}`, `UVIX_hisobot_${range.from}_${range.to}.xlsx`);
+    return exportWorkbook(o, t, categories, "Hisobot", `UVIX_hisobot_${range.from}_${range.to}.xlsx`, { kind: "xlsx", split, meta: [`Davr: ${range.from} — ${range.to}`, `Yo'nalish: ${split ? "yonma-yon" : line === "all" ? "barchasi" : line}`] });
   }
 
   const seg = (items, value, onChange, testid) => (
@@ -123,7 +134,10 @@ export function ReportView({ orders, transactions, categories }) {
       {msg && <div style={{ fontSize: 13, color: msg.ok ? THEME.green : THEME.rose }}>{msg.text}</div>}
       {err && <Card><div style={{ color: THEME.rose, fontSize: 13 }}>{err}</div></Card>}
       {!data && !err && <Card><div style={{ color: THEME.muted, fontSize: 13, display: "flex", gap: 8, alignItems: "center" }}><RefreshCw size={14} className="uvix-spin" /> Hisoblanmoqda…</div></Card>}
-      {data && <Report d={data} isMobile={isMobile} />}
+      {data && !split && <Report d={data} isMobile={isMobile} />}
+      {split && data && dataB && [["UVIXPRINT", data], ["UVONYX", dataB]].map(([l, d]) => (
+        <div key={l} data-report-line={l} style={{ display: "flex", flexDirection: "column", gap: 14 }}><LineHeader line={l} /><Report d={d} isMobile={isMobile} /></div>
+      ))}
     </div>
   );
 }
@@ -191,7 +205,7 @@ function PnL({ d }) {
   return (
     <Card style={{ padding: 20, minWidth: 0 }} data-testid="an-pnl">
       <div style={{ fontWeight: 700, fontSize: 15 }}>Foyda va zarar</div>
-      <div style={{ fontSize: 12.5, color: THEME.muted, margin: "4px 0 10px", lineHeight: 1.45 }}>Buyurtma sanasi bo'yicha. Material, kraska va brak — tannarxda; «Shaxsiy» foydadan tashqari. Foiz — {d.cmp.label} ga nisbatan.</div>
+      <div style={{ fontSize: 12.5, color: THEME.muted, margin: "4px 0 10px", lineHeight: 1.45 }}>Buyurtma sanasi va kelishuv summasi bo'yicha (Kassalar → «Foyda va zarar» esa tushgan pul bo'yicha). Material, kraska va brak — tannarxda; «Shaxsiy» foydadan tashqari. Foiz — {d.cmp.label} ga nisbatan.</div>
       <Row label="Tushum — buyurtmalar summasi" v={cur.revenue} p={prev.revenue} />
       <Row label="Kraska" v={-cur.kraska} p={-prev.kraska} invert />
       <Row label="Material" v={-cur.material} p={-prev.material} invert />

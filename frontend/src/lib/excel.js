@@ -1,80 +1,79 @@
-// xlsx kutubxonasi og'ir (~400 KB) — faqat Excel bilan ishlaganda yuklanadi
+// excel.js — bo'limlardagi «Yuklash» (Excel / PDF) uchun umumiy funksiyalar. Hammasi exportPro.js dvigatelida:
+// sarlavha bloki, rangli bosh qator, so'm formati, «JAMI» formula bilan, sarlavha qotirilgan, A4 ga sozlangan.
+// xlsx (SheetJS) faqat Buyurtmalar importi (Excel'dan yuklash) uchun qoladi.
 export const loadXLSX = () => import("xlsx");
-import { orderAddedValue, orderDebt, orderTotalPaid } from "./finance.js";
+import { lineOfOrder, txLine } from "./lines.js";
+import { activePayments, orderAddedValue, orderDebt, orderMaterialSum, orderTotalPaid } from "./finance.js";
 import { paymentTypeLabel } from "./format.js";
 
-function buildExcelWorkbookWith(XLSX, orders, expenses, categories, rangeLabel) {
-  const totalOrderUzs = orders.reduce((s, o) => s + (o.agreementUzs || 0), 0);
-  const totalPaid = orders.reduce((s, o) => s + orderTotalPaid(o), 0);
-  const totalDebt = orders.reduce((s, o) => s + orderDebt(o), 0);
-  const totalKraska = orders.reduce((s, o) => s + (o.kraskaSum || 0), 0);
-  const totalMaterialInOrders = orders.reduce((s, o) => s + (o.materialSum || 0), 0);
-  const totalAddedValue = orders.reduce((s, o) => s + orderAddedValue(o, expenses), 0);
-  const totalExpense = expenses.reduce((s, t) => s + t.amount, 0);
+const pro = () => import("./exportPro.js");
 
-  const catNames = Object.keys(categories || {});
-  const catTotals = {};
-  catNames.forEach((c) => (catTotals[c] = 0));
-  expenses.forEach((t) => { catTotals[t.category] = (catTotals[t.category] || 0) + t.amount; });
-
-  const orderRows = orders.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((o) => ({
-    "Buyurtma raqami": o.orderNumber || "", Sana: o.date, Mijoz: o.customer || "", "Sub kategoriya": o.subcategory || "",
-    "Material turi": o.materialType || "", "Mas'ul menedjer": o.manager || "", "Kv/m": o.area != null ? o.area : "",
-    "Umumiy buyurtma ($)": o.agreementUsd || "", "USD kursi": o.exchangeRate || "", "Umumiy buyurtma (so'm)": o.agreementUzs || "",
-    "Kraska summasi": o.kraskaSum || "", "Material summasi": o.materialSum || "",
-    "Qo'shilgan qiymat": orderAddedValue(o, expenses), "To'langan": orderTotalPaid(o), Qarzdorlik: orderDebt(o),
-    Kommentariya: o.note || "",
-  }));
-
-  const paymentRows = [];
-  orders.forEach((o) => {
-    (o.payments || []).forEach((p) => {
-      paymentRows.push({
-        "Buyurtma raqami": o.orderNumber || "", Mijoz: o.customer || "", Sana: p.date,
-        Summa: p.amount, "To'lov turi": paymentTypeLabel(p.paymentType),
-        Izoh: p.comment || "", "Kim qabul qildi": p.createdBy || "",
-      });
-    });
+// Ustun turi — sarlavhadan (so'm/summa/qarz → so'm; sana → sana; daq/kun/soni → butun; soat/m²/L → kasr)
+function guessType(k, sample) {
+  const s = k.toLowerCase();
+  if (/sana|^date/.test(s) && !/necha/.test(s)) return "date";
+  if (/so'm|summa|qarz|aylanma|to'langan|chek|qiymat|kraska summ|material summ|^kirim$|^chiqim$|rasxod|qoldiq/.test(s)) return typeof sample === "number" || sample === "" || sample == null ? "money" : "text";
+  if (/\(daq\)|necha kun|buyurtmalar$|soni|kun\)$/.test(s)) return "int";
+  if (/\(soat\)|m²|kv\/m|\(l\)|kurs|\(\$\)/.test(s)) return "num";
+  return typeof sample === "number" ? "num" : "text";
+}
+function columnsFrom(rows) {
+  const keys = [];
+  for (const r of rows) for (const k of Object.keys(r)) if (!k.startsWith("__") && !keys.includes(k)) keys.push(k);
+  return keys.map((k) => {
+    const sample = rows.find((r) => r[k] !== "" && r[k] != null)?.[k];
+    const type = guessType(k, sample);
+    return { key: k, label: k, type, total: type === "money" || (type === "int" && /buyurtmalar|soni/i.test(k)) ? "sum" : undefined, maxWidth: /izoh|komment|tavsif/i.test(k) ? 60 : 40 };
   });
+}
 
-  const expenseRows = expenses.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((t) => ({
-    Sana: t.date, Kategoriya: t.category, Subkategoriya: t.subcategory || "",
-    "To'lov turi": paymentTypeLabel(t.paymentType), Summa: t.amount, Izoh: t.note || "",
+// Oddiy jadval → Excel yoki PDF. opts: { kind: "xlsx"|"pdf", title, meta, totals: false, lineOf, split, kpis }
+export async function exportRows(rows, sheetName, filename, opts = {}) {
+  const m = await pro();
+  const clean = rows.filter((r) => r && Object.keys(r).length);
+  const columns = columnsFrom(clean);
+  if (opts.totals === false) columns.forEach((c) => { delete c.total; });
+  const base = { columns, rows: clean };
+  const sections = opts.lineOf ? m.splitSections(base, clean, opts.lineOf, opts.split) : [base];
+  const doc = { fileBase: String(filename).replace(/\.xlsx$/i, ""), title: opts.title || sheetName, meta: opts.meta || [], kpis: opts.kpis, user: opts.user, sheets: [{ name: sheetName, sections }] };
+  return m.exportDoc(doc, opts.kind === "pdf" ? "pdf" : "xlsx");
+}
+
+// Buyurtmalar + to'lovlar + rasxodlar → bir nechta varaq (Buyurtmalar, Operatsiyalar, Rasxod, Hisobot)
+export async function exportWorkbook(orders, expenses, categories, label, filename, opts = {}) {
+  const m = await pro();
+  const lineById = new Map(orders.map((o) => [o.id, lineOfOrder(o)]));
+  const exp = (expenses || []).filter((t) => t && !t.deletedAt);
+  const orderRows = orders.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((o) => ({
+    __line: lineOfOrder(o),
+    "Buyurtma raqami": o.orderNumber || "", Sana: o.date, Mijoz: o.customer || "", "Yo'nalish": o.subcategory || "",
+    "Material turi": o.materialType || "", "Mas'ul": o.manager || "", "Kv/m": o.area != null ? o.area : "",
+    "Summa (so'm)": o.agreementUzs || 0, "Kraska (so'm)": o.kraskaSum || 0, "Material (so'm)": orderMaterialSum(o, exp) || 0,
+    "Qo'shilgan qiymat": orderAddedValue(o, exp), "To'langan (so'm)": orderTotalPaid(o), "Qarz (so'm)": orderDebt(o),
+    Izoh: o.note || "",
   }));
-
-  const catRows = Object.entries(catTotals).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).map(([Kategoriya, Summa]) => ({ Kategoriya, Summa }));
-
-  const summaryRows = [
-    { Korsatkich: "Davr", Qiymat: rangeLabel || "Barcha vaqt" },
-    { Korsatkich: "Umumiy buyurtmalar summasi", Qiymat: totalOrderUzs },
-    { Korsatkich: "Jami to'langan", Qiymat: totalPaid },
-    { Korsatkich: "Jami qarzdorlik", Qiymat: totalDebt },
-    { Korsatkich: "Jami kraska", Qiymat: totalKraska },
-    { Korsatkich: "Jami material (buyurtmalarda)", Qiymat: totalMaterialInOrders },
-    { Korsatkich: "Jami qo'shilgan qiymat", Qiymat: totalAddedValue },
-    { Korsatkich: "Jami rasxod", Qiymat: totalExpense },
+  const paymentRows = [];
+  orders.forEach((o) => activePayments(o).forEach((p) => paymentRows.push({ __line: lineOfOrder(o), "Buyurtma raqami": o.orderNumber || "", Mijoz: o.customer || "", Sana: p.date, "Summa (so'm)": p.amount, "To'lov turi": paymentTypeLabel(p.paymentType), Izoh: p.comment || "", "Kim qabul qildi": p.createdBy || "" })));
+  paymentRows.sort((a, b) => (a.Sana < b.Sana ? 1 : -1));
+  const expenseRows = exp.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((t) => ({ __line: txLine(t, lineById), Sana: t.date, Kategoriya: t.category, Subkategoriya: t.subcategory || "", "To'lov turi": paymentTypeLabel(t.paymentType), "Summa (so'm)": t._fullAmount ?? t.amount, Izoh: t.note || "", Kim: t.createdBy || "" }));
+  const catTotals = {};
+  exp.forEach((t) => { catTotals[t.category || "Boshqa"] = (catTotals[t.category || "Boshqa"] || 0) + (t.amount || 0); });
+  const catRows = Object.entries(catTotals).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ Kategoriya: k, "Summa (so'm)": v }));
+  const sum = (arr, k) => arr.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+  const split = !!opts.split;
+  const lineOf = (r) => r.__line;
+  const sheet = (name, rows) => {
+    if (!rows.length) return null;
+    const base = { columns: columnsFrom(rows) };
+    return { name, sections: m.splitSections(base, rows, lineOf, split) };
+  };
+  const sheets = [sheet("Buyurtmalar", orderRows), sheet("To'lovlar", paymentRows), sheet("Rasxodlar", expenseRows), catRows.length ? { name: "Kategoriyalar", sections: [{ columns: columnsFrom(catRows), rows: catRows }] } : null].filter(Boolean);
+  if (!sheets.length) sheets.push({ name: "Bo'sh", sections: [{ columns: [{ key: "x", label: "Ma'lumot yo'q" }], rows: [] }] });
+  const kpis = [
+    ...(orderRows.length ? [{ label: "Buyurtmalar", value: fmtM(sum(orderRows, "Summa (so'm)")) }, { label: "To'langan", value: fmtM(sum(orderRows, "To'langan (so'm)")), tone: "green" }, { label: "Qarz", value: fmtM(sum(orderRows, "Qarz (so'm)")), tone: "rose" }] : []),
+    ...(expenseRows.length ? [{ label: "Rasxod", value: fmtM(sum(expenseRows, "Summa (so'm)")), tone: "rose" }] : []),
   ];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Umumiy");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderRows), "Buyurtmalar");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(paymentRows), "To'lovlar");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseRows), "Rasxodlar");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(catRows), "Kategoriyalar");
-  return wb;
+  const doc = { fileBase: String(filename).replace(/\.xlsx$/i, ""), title: label, meta: opts.meta || [], kpis: kpis.slice(0, 5), user: opts.user, sheets };
+  return m.exportDoc(doc, opts.kind === "pdf" ? "pdf" : "xlsx");
 }
-// Hisobotni tuzib, faylga yuklab beradi (async — kutubxona birinchi marta shu yerda yuklanadi)
-export async function exportWorkbook(orders, expenses, categories, label, filename) {
-  const XLSX = await loadXLSX();
-  XLSX.writeFile(buildExcelWorkbookWith(XLSX, orders, expenses, categories, label), filename);
-}
-
-// Oddiy jadvalni (qatorlar ro'yxati) bitta varaqli Excel faylga yuklab beradi
-export async function exportRows(rows, sheetName, filename) {
-  const XLSX = await loadXLSX();
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-  if (rows.length) ws["!cols"] = Object.keys(rows[0]).map((k) => ({ wch: Math.max(12, k.length + 2) }));
-  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
-  XLSX.writeFile(wb, filename);
-}
+const fmtM = (v) => { const n = Math.round(Number(v) || 0); return `${n < 0 ? "−" : ""}${Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")}`; };

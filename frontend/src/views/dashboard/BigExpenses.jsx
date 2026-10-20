@@ -5,7 +5,7 @@ import { Card } from "../../components/ui.jsx";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 import { isBigExpense, useExpenseRules } from "../../lib/expenseRules.js";
 import { lineOfOrder, txLine } from "../../lib/lines.js";
-import { money, shortDateUz } from "../../lib/format.js";
+import { localDateStr, money, shortDateUz } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 
 export function BigExpenses({ list, orders, onSeen, onOpenAll }) {
@@ -14,7 +14,7 @@ export function BigExpenses({ list, orders, onSeen, onOpenAll }) {
   const lineById = useMemo(() => new Map((orders || []).map((o) => [o.id, lineOfOrder(o)])), [orders]);
   const items = useMemo(() => {
     if (!limit) return [];
-    const from = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const from = localDateStr(new Date(Date.now() - 30 * 864e5));
     return (list || []).filter((t) => isBigExpense(t, limit) && !t.bigSeenAt && String(t.date || "") >= from).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }, [list, limit]);
   if (!items.length) return null;

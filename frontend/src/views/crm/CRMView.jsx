@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, MessageCircle, Package, Pencil, Phone, Plus, Ruler, Send, Trash2, X } from "lucide-react";
+import { MessageCircle, Package, Pencil, Phone, Plus, Rows3, Send, Trash2, Zap } from "lucide-react";
 import { Button, Card, ConfirmDialog, Field, Incremental, Modal, getInputStyle, initials, useIsMobile } from "../../components/ui.jsx";
 import { isWorkerRole, leadStagesFor } from "../../constants.js";
-import { useLine } from "../../lib/lines.js";
+import { LINES, LineContext, leadLineOf, lineColor, useLine } from "../../lib/lines.js";
+import { LineHeader } from "../../components/LineSelector.jsx";
+import { LeadCard, PriorityIcon, PriorityMenu } from "./LeadCard.jsx";
+import { PRIORITIES, PRIORITY_KEYS, priorityOf, sortLeads } from "../../lib/leadPriority.js";
 import { fetchJobs } from "../../storage.js";
 import { JobForm } from "../jobs/JobsView.jsx";
 import { PROD_LABEL, PROD_STAGES, prodColors } from "../../lib/production.js";
@@ -38,6 +41,7 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
   const [estimatedValueStr, setEstimatedValueStr] = useState(initial?.estimatedValue != null ? fmt(initial.estimatedValue) : "");
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
   const [notes, setNotes] = useState(initial?.notes || "");
+  const [priority, setPriority] = useState(priorityOf(initial));
   const [error, setError] = useState("");
   // Yo'nalish: xodim — o'zinikida (server ham shunday yozadi); rahbar — tanlaydi
   const { line: curLine } = useLine();
@@ -58,6 +62,7 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
       createdBy: initial?.createdBy,
       createdAt: initial?.createdAt,
       line: leadLine,
+      priority: priority === "mid" ? undefined : priority,
     };
     onSave(lead, isEdit);
   }
@@ -65,6 +70,17 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
   return (
     <Modal title={isEdit ? "Lidni tahrirlash" : "Yangi lid"} onClose={onClose} width={440}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <Field label="Muhimlik">
+          <div role="group" data-testid="lead-priority" style={{ display: "flex", gap: 5 }}>
+            {PRIORITIES.map((x) => (
+              <button key={x.key} type="button" onClick={() => setPriority(x.key)} aria-pressed={priority === x.key} data-priority-opt={x.key}
+                style={{ flex: 1, height: 32, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 650, fontSize: 12, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  border: `1.5px solid ${priority === x.key ? (x.key === "urgent" ? THEME.rose : THEME.text) : THEME.border}`, background: priority === x.key && x.key === "urgent" ? THEME.roseBg : THEME.card, color: x.key === "urgent" && priority === x.key ? THEME.rose : THEME.text }}>
+                <PriorityIcon p={x.key} size={13} />{x.label}
+              </button>
+            ))}
+          </div>
+        </Field>
         <Field label="Mijoz ismi">
           <input value={customer} onChange={(e) => setCustomer(e.target.value)} style={getInputStyle()} placeholder="Mijoz yoki kompaniya nomi" autoFocus />
         </Field>
@@ -109,6 +125,19 @@ export function LeadForm({ initial, employees, onClose, onSave }) {
         <Field label="Izoh">
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...getInputStyle(), resize: "vertical" }} placeholder="Qo'shimcha ma'lumot (ixtiyoriy)" />
         </Field>
+        {isEdit && initial.history?.length > 0 && (
+          <details data-testid="lead-history" style={{ fontSize: 12.5, color: THEME.muted }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Tarix ({initial.history.length})</summary>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6, maxHeight: 150, overflowY: "auto" }}>
+              {initial.history.slice().reverse().map((h, i) => (
+                <div key={i} style={{ display: "flex", gap: 8 }}>
+                  <span style={{ color: THEME.dim, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{new Date(h.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                  <span style={{ color: THEME.text }}>{h.by}: {h.kind === "priority" ? `muhimlik ${PRIORITIES.find((x) => x.key === h.from)?.label || h.from} → ${PRIORITIES.find((x) => x.key === h.to)?.label || h.to}` : `bosqich → ${h.toLabel || h.to}`}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
         {error && <div style={{ color: THEME.rose, fontSize: 12.5 }}>{error}</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
           <Button variant="ghost" onClick={onClose}>Bekor qilish</Button>
@@ -241,32 +270,57 @@ function DealLine({ lead, orders, linkedOrder, onCreate }) {
   );
 }
 
-// Lid kartasida: shu lid yoki uning buyurtmalari bo'yicha eng yaqin ochiq vazifa («O'lchov · ertaga 11:00 · Bekzod»)
-const JOB_SHORT = { measure: "O'lchov", install: "Montaj", deliver: "Yetkazish", other: "Vazifa" };
-function NextJob({ lead, jobs }) {
-  const ids = new Set([...(lead.orderIds || []), lead.orderId].filter(Boolean));
-  const open = (jobs || []).filter((j) => !["done", "cancelled"].includes(j.status) && (j.leadId === lead.id || (j.orderId && ids.has(j.orderId))))
-    .sort((a, b) => `${a.date || "9"}${a.time || ""}`.localeCompare(`${b.date || "9"}${b.time || ""}`));
-  if (!open.length) return null;
-  const j = open[0];
-  const t = new Date().toISOString().slice(0, 10);
-  const tm = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-  const day = !j.date ? "sanasiz" : j.date === t ? "bugun" : j.date === tm ? "ertaga" : j.date.slice(5).split("-").reverse().join(".");
+// «Yonma-yon»: ikki yo'nalish — ikki alohida voronka (har biri o'z bosqichlari bilan), aralashmaydi
+export function CRMView(props) {
+  const ctx = useLine();
+  if (!ctx.split) return <CRMBoard {...props} />;
   return (
-    <div data-testid="lead-next-job" style={{ fontSize: 12, fontWeight: 600, color: THEME.violet, display: "flex", alignItems: "center", gap: 5 }}>
-      <Ruler size={12} />{JOB_SHORT[j.kind] || "Vazifa"} · {day}{j.time ? ` ${j.time}` : ""}{j.assignees?.length ? ` · ${j.assignees[0].name.split(" ")[0]}` : " · mas'ulsiz"}{open.length > 1 ? ` (+${open.length - 1})` : ""}
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      {LINES.map((l, i) => (
+        <LineContext.Provider key={l} value={{ ...ctx, line: l, view: l, split: false, isAll: false }}>
+          <div data-crm-board={l}>
+            <LineHeader line={l} />
+            <div style={{ border: `1px solid ${THEME.border}`, borderTop: 0, borderRadius: "0 0 12px 12px", padding: 14 }}>
+              <CRMBoard {...props} quickAddNonce={i === 0 ? props.quickAddNonce : 0} />
+            </div>
+          </div>
+        </LineContext.Provider>
+      ))}
     </div>
   );
 }
 
-export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
-  // Bosqichlar yo'nalishga qarab (UVONYX: Murojaat → O'lchov → Smeta ...)
-  const LEAD_STAGES = leadStagesFor(useLine().line);
+function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onSetPriority, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat }) {
+  // Bosqichlar yo'nalishga qarab (UVONYX: Murojaat → O'lchov → Smeta ...); lidlar ham tanlangan yo'nalish bo'yicha
+  const { line } = useLine();
+  const LEAD_STAGES = leadStagesFor(line);
+  const leads = useMemo(() => (line === "all" ? allLeads || [] : (allLeads || []).filter((l) => leadLineOf(l) === line)), [allLeads, line]);
+  // Muhimlik: «Faqat shoshilinch» filtri, ixcham rejim (shu brauzerda eslab qolinadi), 1–4 tugmalari
+  const [urgentOnly, setUrgentOnly] = useState(false);
+  const [compact, setCompact] = useState(() => { try { return localStorage.getItem("uvix:crmCompact") === "1"; } catch { return false; } });
+  const toggleCompact = () => setCompact((v) => { try { localStorage.setItem("uvix:crmCompact", v ? "0" : "1"); } catch { /* */ } return !v; });
+  const [menuFor, setMenuFor] = useState(null);
+  const hoverRef = useRef(null);
   // Vazifalar (o'lchov, montaj): lid kartasida keyingi ish ko'rinadi; «O'lchovga yuborish»
   const [jobs, setJobs] = useState([]);
   const [jobFor, setJobFor] = useState(null);
   const loadJobs = useCallback(() => fetchJobs().then((r) => setJobs(r.jobs || [])).catch(() => {}), []);
   useEffect(() => { loadJobs(); const t = setInterval(loadJobs, 60000); return () => clearInterval(t); }, [loadJobs]);
+  useEffect(() => {
+    if (!onSetPriority) return undefined;
+    const onKey = (e) => {
+      const k = PRIORITY_KEYS[e.key];
+      if (!k || e.ctrlKey || e.metaKey || e.altKey || !hoverRef.current) return;
+      const el = document.activeElement;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
+      const lead = leads.find((l) => l.id === hoverRef.current);
+      if (!lead || !document.querySelector(`[data-lead="${CSS.escape(lead.id)}"]:hover, [data-lead="${CSS.escape(lead.id)}"]:focus`)) return;
+      e.preventDefault();
+      onSetPriority(lead, k);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [leads, onSetPriority]);
   const [modal, setModal] = useState(null); // null | true (new) | lead (edit)
   useEffect(() => {
     if (!quickAddNonce) return;
@@ -303,8 +357,12 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
     });
     // Yopilganlar — eng yangisi tepada
     ["won", "lost"].forEach((k) => map[k].sort((a, b) => String(closedDate(b, ordersById) || "").localeCompare(String(closedDate(a, ordersById) || ""))));
+    // Faol ustunlarda: muhimlik → kechikkan ish → summa
+    Object.keys(map).forEach((k) => { if (k !== "won" && k !== "lost") map[k] = sortLeads(map[k], jobs); });
     return { leadsByStage: map, archivedCount: archived };
-  }, [leads, ordersById, period]);
+  }, [leads, ordersById, period, jobs]);
+  const urgentCount = useMemo(() => leads.filter((l) => priorityOf(l) === "urgent" && !isClosed(l)).length, [leads]);
+  const shown = (list) => (urgentOnly ? list.filter((l) => priorityOf(l) === "urgent") : list);
   const pstats = useMemo(() => periodStats(leads, ordersById, period), [leads, ordersById, period]);
   const closedTotal = (leads || []).filter(isClosed).length;
 
@@ -387,12 +445,22 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
             </div>
           ))}
         </div>
-        {!isMobile && <Button onClick={() => setModal(true)} style={{ marginLeft: "auto" }}><Plus size={14} /> Yangi lid</Button>}
+        <div style={{ display: "flex", gap: 6, marginLeft: isMobile ? 0 : "auto" }}>
+          <button type="button" data-testid="urgent-only" aria-pressed={urgentOnly} onClick={() => setUrgentOnly((v) => !v)} title="Faqat shoshilinch lidlar"
+            style={{ height: 34, padding: "0 11px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 650, display: "inline-flex", alignItems: "center", gap: 5,
+              border: `1px solid ${urgentOnly ? THEME.rose : THEME.border2}`, background: urgentOnly ? THEME.roseBg : THEME.card, color: urgentOnly ? THEME.rose : THEME.text }}>
+            <Zap size={13} /> Shoshilinch{urgentCount ? <b style={{ fontSize: 11, background: THEME.rose, color: "#fff", borderRadius: 9, padding: "0 6px", lineHeight: "16px" }}>{urgentCount}</b> : null}
+          </button>
+          {!isMobile && <button type="button" data-testid="crm-compact" aria-pressed={compact} onClick={toggleCompact} title="Ixcham rejim: faqat nom, summa, mas'ul"
+            style={{ height: 34, width: 34, borderRadius: 9, cursor: "pointer", display: "inline-grid", placeItems: "center", border: `1px solid ${compact ? THEME.text : THEME.border2}`, background: compact ? THEME.chip : THEME.card, color: THEME.text }}><Rows3 size={15} /></button>}
+          {!isMobile && <Button onClick={() => setModal(true)}><Plus size={14} /> Yangi lid</Button>}
+        </div>
       </div>
 
       {isMobile ? (
         <MobileLeadBoard
-          leadsByStage={leadsByStage}
+          leadsByStage={urgentOnly ? Object.fromEntries(Object.entries(leadsByStage).map(([k, v]) => [k, shown(v)])) : leadsByStage}
+          onPriority={onSetPriority}
           stage={mobileStage}
           onStage={setMobileStage}
           orders={orders}
@@ -435,63 +503,20 @@ export function CRMView({ quickAddNonce, onQuickAddHandled, leads, orders, emplo
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, minHeight: 60 }}>
-              {leadsByStage[stage.key].length === 0 ? (
+              {shown(leadsByStage[stage.key]).length === 0 ? (
                 <div style={{ fontSize: 12.5, color: THEME.dim, padding: "16px 0", textAlign: "center", border: `1px dashed ${THEME.border2}`, borderRadius: 8 }}>Bo'sh</div>
               ) : (
-                <Incremental list={leadsByStage[stage.key]} step={25} render={(lead) => {
+                <Incremental list={shown(leadsByStage[stage.key])} step={25} render={(lead) => {
                   const idx = stageIndex(lead.stage);
-                  const linkedOrder = lead.orderId ? (orders || []).find((o) => o.id === lead.orderId) : null;
-                  const st = staleInfo(lead);
-                  const tel = telLink(lead.phone);
-                  const note = lead.notes && !isAutoTgNote(lead) ? lead.notes : "";
                   return (
-                    <div
-                      key={lead.id}
-                      className="uvix-lead-card"
-                      data-lead={lead.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, lead)}
-                      onDragEnd={handleDragEnd}
-                      onDoubleClick={() => setModal(lead)}
-                      title={lead.phone ? `${lead.customer} · ${lead.phone}` : lead.customer}
-                      style={{
-                        position: "relative", background: THEME.card, border: `1px solid ${THEME.border}`, borderRadius: 8,
-                        boxShadow: st ? `inset 3px 0 0 ${st.level === "danger" ? THEME.rose : THEME.amber}` : "none",
-                        padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6,
-                        cursor: "grab", opacity: draggedLeadId === lead.id ? 0.4 : 1, transition: "opacity 0.15s ease, border-color .15s ease",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{lead.customer}</div>
-                        {lead.manager && <span title={`Menejer: ${lead.manager}`} className="uvix-lead-mgr" style={{ fontSize: 10.5, fontWeight: 600, color: THEME.mutedDark, background: THEME.chip, borderRadius: 10, padding: "0 6px", lineHeight: "18px", flexShrink: 0 }}>{initials(lead.manager)}</span>}
-                      </div>
-                      {lead.estimatedValue > 0 && (
-                        <div style={{ fontSize: 14, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{money(lead.estimatedValue)}</div>
-                      )}
-                      {note && <div style={{ fontSize: 12.5, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{note}</div>}
-                      <TaskChips lead={lead} employees={employees} compact onOpen={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
-                      <DealLine lead={lead} orders={orders} linkedOrder={linkedOrder} onCreate={() => onCreateOrderFromLead(lead)} />
-                      <NextJob lead={lead} jobs={jobs} />
-                      {(lead.source || lead.telegramUsername || st) && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
-                          {lead.source && <SourceChip source={lead.source} />}
-                          <TgHandle username={lead.telegramUsername} />
-                          {st && <span data-testid="stale-badge" title="Oxirgi harakatdan beri o'tgan kun" style={{ fontSize: 12, fontWeight: 600, color: st.level === "danger" ? THEME.rose : THEME.amber, whiteSpace: "nowrap" }}>{st.days} kun turibdi</span>}
-                        </div>
-                      )}
-                      <div className="uvix-lead-actions" onDoubleClick={(e) => e.stopPropagation()}>
-                        {lead.telegramChatId && onFetchTelegramMessages ? (
-                          <button type="button" onClick={() => openChat(lead)} title="Telegram chat" aria-label="Telegram chat"><MessageCircle size={14} /></button>
-                        ) : tel ? (
-                          <a href={tel} title="Qo'ng'iroq" aria-label="Qo'ng'iroq"><Phone size={14} /></a>
-                        ) : null}
-                        <button type="button" onClick={() => moveStage(lead, -1)} disabled={idx === 0} title="Oldingi bosqich" aria-label="Oldingi bosqich"><ArrowLeft size={14} /></button>
-                        <button type="button" onClick={() => moveStage(lead, 1)} disabled={idx === LEAD_STAGES.length - 1} title="Keyingi bosqich" aria-label="Keyingi bosqich"><ArrowRight size={14} /></button>
-                        <button type="button" onClick={() => setJobFor(lead)} title="O'lchov / vazifa" aria-label="O'lchov / vazifa" data-lead-job={lead.id}><Ruler size={14} /></button>
-                        <button type="button" onClick={() => setModal(lead)} title="Tahrirlash" aria-label="Tahrirlash"><Pencil size={14} /></button>
-                        <button type="button" onClick={() => setConfirmDel(lead)} title="O'chirish" aria-label="O'chirish" className="danger"><Trash2 size={14} /></button>
-                      </div>
-                    </div>
+                    <LeadCard key={lead.id} lead={lead} line={leadLineOf(lead)} showLine={line === "all"} orders={orders} jobs={jobs} employees={employees} compact={compact}
+                      dragging={draggedLeadId === lead.id} first={idx === 0} last={idx === LEAD_STAGES.length - 1}
+                      menuOpen={menuFor === lead.id} onMenu={setMenuFor} onPriority={(k) => onSetPriority?.(lead, k)}
+                      onHover={(id) => { hoverRef.current = id; }}
+                      onDragStart={(e) => handleDragStart(e, lead)} onDragEnd={handleDragEnd}
+                      onEdit={() => setModal(lead)} onDelete={() => setConfirmDel(lead)} onMove={(d) => moveStage(lead, d)} onJob={() => setJobFor(lead)}
+                      onChat={lead.telegramChatId && onFetchTelegramMessages ? () => openChat(lead) : null} telHref={telLink(lead.phone)}
+                      onCreateOrder={() => onCreateOrderFromLead(lead)} onAssignTask={onAssignTask ? (kind) => onAssignTask(lead, kind) : null} />
                   );
                 }} />
               )}
@@ -555,7 +580,8 @@ function telegramLink(lead) {
   return digits.length >= 9 ? `https://t.me/+${digits.length === 9 ? "998" + digits : digits}` : null;
 }
 
-function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelete, onMove, onChat, onCreateOrder, employees, onAssignTask }) {
+function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelete, onMove, onChat, onCreateOrder, employees, onAssignTask, onPriority }) {
+  const [menuFor, setMenuFor] = useState(null);
   const LEAD_STAGES = leadStagesFor(useLine().line);
   const list = leadsByStage[stage] || [];
   const total = list.reduce((s, l) => s + (Number(l.estimatedValue) || 0), 0);
@@ -595,10 +621,14 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, onEdit, onDelet
             const tg = lead.telegramChatId && onChat ? null : telegramLink(lead);
             const meta = lead.manager || "";
             return (
-              <Card key={lead.id} style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+              <Card key={lead.id} data-lead={lead.id} data-priority={priorityOf(lead)} style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10, position: "relative", boxShadow: `inset 3px 0 0 ${lineColor(leadLineOf(lead), THEME.isDark)}`, ...(priorityOf(lead) === "urgent" ? { borderColor: THEME.rose } : {}) }}>
+                {menuFor === lead.id && <PriorityMenu value={priorityOf(lead)} onPick={(k) => { onPriority?.(lead, k); setMenuFor(null); }} onClose={() => setMenuFor(null)} />}
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 15.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                      <button type="button" data-testid="priority-btn" aria-label="Muhimlik" onClick={() => setMenuFor(menuFor === lead.id ? null : lead.id)} style={{ border: 0, background: "none", padding: 0, display: "inline-flex", cursor: "pointer", flexShrink: 0 }}><PriorityIcon p={priorityOf(lead)} size={17} /></button>
+                      <div style={{ fontSize: 15.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.customer}</div>
+                    </div>
                     {lead.phone && <div style={{ fontSize: 13, color: THEME.muted, marginTop: 2 }}>{lead.phone}</div>}
                     {(lead.source || lead.telegramUsername) && (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>

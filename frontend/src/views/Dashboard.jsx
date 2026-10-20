@@ -10,7 +10,9 @@ import { AddWidgetGallery, EDITOR_CSS, EditToolbar, WidgetFrame, useDashboardCon
 import { CardStyleContext } from "../components/CardStyleMenu.jsx";
 import { WorkStatsContext, scopeByLine, useLine } from "../lib/lines.js";
 import { LineTag } from "../components/LineSwitcher.jsx";
-import { ProfitLoss } from "./dashboard/ProfitLoss.jsx";
+import { MoneyCard, SplitCompare } from "./dashboard/MoneyCard.jsx";
+import { useTransfers } from "../lib/transfers.js";
+import { computeKassa } from "../lib/kassa.js";
 import { BigExpenses } from "./dashboard/BigExpenses.jsx";
 
 // Grafiklar alohida bo'lakda — dashboard raqamlari grafik kutubxonasini kutmasdan chiqadi
@@ -24,18 +26,20 @@ function Chart({ kind, ...props }) {
   return <Suspense fallback={<ChartSkeleton />}><C {...props} /></Suspense>;
 }
 
-export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses }) {
+export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onNavigate, settings, onSaveSettings, perm, onMarkBigSeen, allExpenses, kassaOrders, kassaTx }) {
   // Huquqlar (rahbar beradi): kassa qoldig'i va foyda ko'rinishi
   const { can } = usePerms();
   const canCash = isAdmin || (can("kassa.view") && perm?.cash !== false);
   const canProfit = isAdmin || (can("report.view") && perm?.profit !== false);
-  const { line } = useLine();
-  // Rahbar (ikkala yo'nalish) — yo'nalish tugmalari buyurtma VA rasxodni birga ajratadi (umumiy rasxod — ulush bilan)
-  const [lineFilter, setLineFilter] = useState("all");
+  // Yo'nalish — umumiy tanlovdan (menyu tepasida): ma'lumot App'da allaqachon ajratilgan
+  const { line, split } = useLine();
   const work = useContext(WorkStatsContext);
-  const sc = useMemo(() => (line === "all" && lineFilter !== "all" ? scopeByLine(lineFilter, ordersIn, expensesIn, ordersIn, work) : { orders: ordersIn, txStats: expensesIn }), [line, lineFilter, ordersIn, expensesIn, work]);
-  const orders = sc.orders;
-  const expenses = sc.txStats;
+  const orders = ordersIn;
+  const expenses = expensesIn;
+  const transfers = useTransfers();
+  // Pul (hozir) — Kassalar bilan bir xil formula; foyda — shu oy (tushgan pul bo'yicha)
+  const kassaNow = useMemo(() => computeKassa(kassaOrders || ordersIn, kassaTx || expensesIn, (transfers || []).filter((t) => !t.deletedAt)), [kassaOrders, kassaTx, ordersIn, expensesIn, transfers]);
+  const cashNow = line === "all" ? kassaNow.totals.all : kassaNow.totals[line] || 0;
   const subFilter = "all";
   const [editMode, setEditMode] = useState(false);
   const [periodMode, setPeriodMode] = useState("month"); // "all" | "month" | "range" — standart: joriy oy
@@ -85,7 +89,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
     return expenses.filter((t) => t.date >= effectivePeriod.from && t.date <= effectivePeriod.to);
   }, [expenses, effectivePeriod]);
 
-  const stats = useMemo(() => computeFinanceStats(dateFilteredOrders, dateFilteredExpenses), [dateFilteredOrders, dateFilteredExpenses]);
+  const stats = useMemo(() => computeFinanceStats(dateFilteredOrders, dateFilteredExpenses, { payOrders: filteredOrders, from: effectivePeriod?.from, to: effectivePeriod?.to, allExpenses: expenses }), [dateFilteredOrders, dateFilteredExpenses, filteredOrders, effectivePeriod, expenses]);
   const curMonth = todayStr().slice(0, 7);
   const today = todayStr();
   const monthStart = curMonth + "-01";
@@ -125,13 +129,13 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   const monthlyData = useMemo(() => {
     const months = [];
     if (effectivePeriod) {
-      const cur = new Date(effectivePeriod.from);
-      cur.setDate(1);
-      const endMonth = new Date(effectivePeriod.to);
-      endMonth.setDate(1);
+      const [fy, fm] = effectivePeriod.from.split("-").map(Number);
+      const [ty, tm] = effectivePeriod.to.split("-").map(Number);
+      const cur = new Date(fy, fm - 1, 1);
+      const endMonth = new Date(ty, tm - 1, 1);
       let guard = 0;
       while (cur <= endMonth && guard < 36) {
-        const key = cur.toISOString().slice(0, 7);
+        const key = localDateStr(cur).slice(0, 7);
         const paid = stats.allPayments.filter((p) => monthKey(p.date) === key).reduce((s, p) => s + p.amount, 0);
         const exp = dateFilteredExpenses.filter((t) => monthKey(t.date) === key).reduce((s, t) => s + t.amount, 0);
         months.push({ label: monthLabel(key), "To'lov": paid, Rasxod: exp });
@@ -141,9 +145,9 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
       return months;
     }
     for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const key = d.toISOString().slice(0, 7);
+      const n0 = new Date();
+      const d = new Date(n0.getFullYear(), n0.getMonth() - i, 1); // oyning 29–31-kunlarida ham to'g'ri (setMonth toshib ketmaydi)
+      const key = localDateStr(d).slice(0, 7);
       const paid = stats.allPayments.filter((p) => monthKey(p.date) === key).reduce((s, p) => s + p.amount, 0);
       const exp = dateFilteredExpenses.filter((t) => monthKey(t.date) === key).reduce((s, t) => s + t.amount, 0);
       months.push({ label: monthLabel(key), "To'lov": paid, Rasxod: exp });
@@ -196,55 +200,26 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
   useEffect(() => { if (!editMode) { setOpenMenu(null); setGalleryOpen(false); } }, [editMode]);
 
   const WIDGETS = {
-    hero: () => {
-      const posCard = Math.max(0, stats.cardBalance), posCash = Math.max(0, stats.cashBalance), posBank = Math.max(0, stats.bankBalance);
-      const posTotal = posCard + posCash + posBank;
-      const pct = (v) => (posTotal > 0 ? (v / posTotal) * 100 : 33.3);
-      const bal = [
-        { l: "Karta qoldig'i", v: stats.cardBalance, c: THEME.violet, I: CreditCard },
-        { l: "Naqd qoldiq", v: stats.cashBalance, c: THEME.cyan, I: Banknote },
-        { l: "Bank qoldig'i", v: stats.bankBalance, c: THEME.amber, I: Landmark },
-      ];
-      return (
+    hero: () => (
       <Card className="uvix-dash-card uvix-hero" style={{ padding: 24 }}>
-        <div className="uvix-hero-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.2fr) minmax(0,1fr)", gap: 32, alignItems: "center" }}>
+        <div className="uvix-hero-grid" style={{ display: "grid", gridTemplateColumns: canCash || canProfit ? "minmax(0,1.2fr) minmax(0,1fr)" : "1fr", gap: 32, alignItems: "center" }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <div style={{ fontSize: 13, color: THEME.muted, fontWeight: 500 }}>Buyurtmalar summasi</div>
-              {line !== "all" ? <LineTag line={line} /> : (
-                <div role="group" aria-label="Yo'nalish" data-testid="dash-line" style={{ display: "flex", gap: 2, background: THEME.chip, borderRadius: 8, padding: 2 }}>
-                  {[{ v: "all", l: "Barchasi" }, { v: "UVIXPRINT", l: "UVIXPRINT" }, { v: "UVONYX", l: "UVONYX" }].map((opt) => (
-                    <button key={opt.v} type="button" onClick={() => setLineFilter(opt.v)} aria-pressed={lineFilter === opt.v} data-line={opt.v}
-                      style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit",
-                        background: lineFilter === opt.v ? THEME.card : "transparent", color: lineFilter === opt.v ? THEME.text : THEME.muted, boxShadow: lineFilter === opt.v ? THEME.shadowSm : "none" }}>
-                      {opt.l}
-                    </button>
-                  ))}
-                </div>
-              )}
+              {line !== "all" && <LineTag line={line} />}
             </div>
             <div className="uvix-hero-big" style={{ fontSize: "clamp(26px, 6vw, 34px)", fontFamily: THEME.fontNum, fontWeight: 600, letterSpacing: -0.8, margin: "6px 0 4px", fontVariantNumeric: "tabular-nums", color: THEME.text, lineHeight: 1.15 }}>
               {money(stats.totalOrderValue)}
             </div>
-            <div style={{ fontSize: 13, color: THEME.muted }}>To'langan <b style={{ color: THEME.text, fontWeight: 600 }}>{money(stats.totalPaid)}</b> &middot; qarzdorlik <b style={{ color: stats.totalDebt > 0 ? THEME.rose : THEME.text, fontWeight: 600 }}>{money(stats.totalDebt)}</b></div>
-            {canCash && <div style={{ marginTop: 16, height: 8, borderRadius: 4, overflow: "hidden", display: "flex", gap: 2, background: THEME.chip }} aria-label="Qoldiqlar ulushi">
-              {bal.map((b) => <div key={b.l} style={{ width: `${pct(Math.max(0, b.v))}%`, background: b.c }} />)}
-            </div>}
+            <div style={{ fontSize: 13, color: THEME.muted }}>To'langan <b style={{ color: THEME.text, fontWeight: 600 }}>{money(stats.totalPaid)}</b> &middot; qarzdorlik <b style={{ color: stats.totalDebt > 0 ? THEME.rose : THEME.text, fontWeight: 600 }}>{money(stats.totalDebt)}</b>{stats.totalOverpaid > 0 && <> &middot; ortiqcha to'langan <b style={{ color: THEME.amber, fontWeight: 600 }}>{money(stats.totalOverpaid)}</b></>}</div>
+            <div style={{ marginTop: 16, height: 8, borderRadius: 4, overflow: "hidden", background: THEME.chip }} aria-label={`${Math.round(stats.collectionRatePct)}% yig'ilgan`}>
+              <div style={{ width: `${stats.collectionRatePct}%`, height: "100%", background: THEME.green }} />
+            </div>
           </div>
-          {canCash && <div className="uvix-hero-bal" data-testid="hero-balances" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
-            {bal.map((b) => (
-              <div key={b.l} style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, color: THEME.muted, fontWeight: 500, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: b.c, flexShrink: 0 }} />{b.l}
-                </div>
-                <div style={{ fontSize: 17, fontWeight: 600, marginTop: 3, color: b.v >= 0 ? THEME.text : THEME.rose, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money(b.v)}</div>
-              </div>
-            ))}
-          </div>}
+          {(canCash || canProfit) && <MoneyCard cashNow={canCash ? cashNow : null} kassaNow={kassaNow} line={line} orders={kassaOrders || ordersIn} transactions={kassaTx || expensesIn} canProfit={canProfit} onOpen={() => onNavigate?.("kassa")} />}
         </div>
       </Card>
-      );
-    },
+    ),
     debtAlert: () => stats.totalDebt <= 0 ? null : (
       <Card className="uvix-dash-card"
         onClick={() => go("orders", { onlyDebt: true })}
@@ -296,6 +271,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         label="Qo'shilgan qiymat"
         value={money(stats.totalAddedValue)}
         pctBadge={`${stats.addedValueMarginPct.toFixed(1)}% marja`}
+        sub="Buyurtma summasi − kraska − material (rasxodlarsiz)"
         progressPct={Math.max(0, stats.addedValueMarginPct)}
         accent={stats.totalAddedValue >= 0 ? THEME.green : THEME.rose}
         bg={stats.totalAddedValue >= 0 ? THEME.greenBg : THEME.roseBg}
@@ -330,7 +306,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
     ),
     m_materialExpense: () => <MetricCard label="Material xarajati" value={money(stats.materialExpense)} accent={THEME.amber} bg={THEME.amberBg} icon={Wallet} onClick={() => go("operations", { typeFilter: "chiqim", catFilter: "Material" })} />,
     m_kraska: () => <MetricCard label="Kraska hisob-kitobi" value={money(stats.totalKraska)} accent={THEME.amber} bg={THEME.amberBg} icon={Wallet} onClick={() => go("orders", {})} />,
-    m_totalMoney: () => <MetricCard label="Jami pul" value={money(stats.totalMoney)} accent={stats.totalMoney >= 0 ? THEME.green : THEME.rose} bg={stats.totalMoney >= 0 ? THEME.greenBg : THEME.roseBg} icon={Landmark} onClick={() => go("operations", {})} />,
+    m_totalMoney: () => <MetricCard label="Jami pul (kassalar)" value={money(cashNow)} accent={cashNow >= 0 ? THEME.green : THEME.rose} bg={cashNow >= 0 ? THEME.greenBg : THEME.roseBg} icon={Landmark} onClick={() => go("kassa", {})} />,
     m_topDebtors: () => (
       <Card className="uvix-dash-card" style={{ padding: 0 }}>
         <div style={{ padding: "16px 18px 8px", fontSize: 14.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -549,9 +525,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         )}
       </div>
 
-      {can("report.view", "all") && line === "all" && !editMode && (
-        <ProfitLoss orders={ordersIn} transactions={expensesIn} month={periodMode === "month" && periodMonth ? periodMonth : todayStr().slice(0, 7)} />
-      )}
+      {split && !editMode && <SplitCompare orders={kassaOrders || ordersIn} transactions={kassaTx || expensesIn} kassa={canCash ? kassaNow : null} canProfit={canProfit} work={work} range={effectivePeriod} onPick={(l) => onNavigate?.("orders", {})} />}
       {can("expense.big") && !editMode && <BigExpenses list={allExpenses || expensesIn} orders={ordersIn} onSeen={onMarkBigSeen} onOpenAll={() => onNavigate?.("expense")} />}
       <style>{EDITOR_CSS}</style>
       {editMode && (

@@ -1,5 +1,6 @@
 import { usePerms } from "../../lib/perms.jsx";
-import { useMemo, useState, useEffect } from "react";
+import { ExportMenu } from "../../components/ExportMenu.jsx";
+import { Fragment, useMemo, useState, useEffect } from "react";
 import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Pagination, getIconBtn, usePagination, useIsMobile, MobileRow } from "../../components/ui.jsx";
 import { exportWorkbook } from "../../lib/excel.js";
@@ -26,7 +27,8 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
   }, [quickAddNonce]);
   const [confirmDel, setConfirmDel] = useState(null);
   // Yo'nalish belgisi: «Ikkalasi» rejimida hammasiga, bitta yo'nalishda — faqat «Umumiy»ga
-  const { line: curLine } = useLine();
+  const lineCtx = useLine();
+  const curLine = lineCtx.line;
   const lineById = useMemo(() => new Map((orders || []).map((o) => [o.id, lineOfOrder(o)])), [orders]);
   // Rahbar: Barchasi / UVIXPRINT / UVONYX / Umumiy filtri (tanlov shu qurilmada eslab qolinadi)
   const [lineF, setLineFRaw] = useState(() => { try { return localStorage.getItem("uvix_exp_line") || "all"; } catch { return "all"; } });
@@ -35,6 +37,16 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
   const { limit: bigLimit } = useExpenseRules();
   const [onlyBig, setOnlyBig] = useState(false);
   const list = transactions.filter((t) => t.type === "chiqim" && (curLine !== "all" || lineF === "all" || txLine(t, lineById) === lineF) && (!onlyBig || isBigExpense(t, bigLimit))).sort((a, b) => (a.date < b.date ? 1 : -1));
+  // «Yonma-yon»: UVIXPRINT → UVONYX → Umumiy guruhlari, har biri o'z sarlavhasi ostida
+  if (lineCtx.split) { const o = { UVIXPRINT: 0, UVONYX: 1, common: 2 }; list.sort((a, b) => o[txLine(a, lineById)] - o[txLine(b, lineById)] || (a.date < b.date ? 1 : -1)); }
+  const groupHead = (t, i) => {
+    if (!lineCtx.split) return null;
+    const l = txLine(t, lineById);
+    if (i > 0 && txLine(pageItems[i - 1], lineById) === l) return null;
+    const c = l === "common" ? THEME.muted : lineColor(l, THEME.isDark);
+    const items = list.filter((x) => txLine(x, lineById) === l);
+    return { l, c, name: l === "common" ? "Umumiy" : LINE_META[l].name, n: items.length, sum: items.reduce((s, x) => s + (x.amount || 0), 0) };
+  };
   const { page, setPage, totalPages, pageItems } = usePagination(list, [transactions.length, lineF, onlyBig]);
   const orderById = useMemo(() => {
     const map = {};
@@ -46,8 +58,8 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
     return <>{curLine === "all" || l === "common" ? <LineTag line={l} /> : null}{isBigExpense(t, bigLimit) && <BigTag />}</>;
   };
 
-  function exportExcel() {
-    exportWorkbook([], list, categories, "Rasxodlar", `UVIX_rasxodlar_${todayStr()}.xlsx`);
+  function exportExcel(kind = "xlsx") {
+    return exportWorkbook([], list, categories, "Rasxodlar", `UVIX_rasxodlar_${todayStr()}.xlsx`, { kind, split: lineCtx.split, user: currentUser?.name, meta: [`Rasxodlar: ${list.length} ta`] });
   }
 
   return (
@@ -74,7 +86,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
             Faqat yiriklar
           </button>
         )}
-        <Button variant="ghost" onClick={exportExcel} disabled={list.length === 0}><Download size={14} /> Excel</Button>
+        <ExportMenu onExport={exportExcel} disabled={list.length === 0} />
         {can("expense.add") && <Button onClick={() => setModal({})}><Plus size={15} /> Yangi rasxod</Button>}
       </div>
       <Card style={{ padding: 0, overflowX: "auto" }} className="uvix-scroll">
@@ -122,9 +134,11 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
               </tr>
             </thead>
             <tbody>
-              {pageItems.map((t) => {
+              {pageItems.map((t, gi) => {
                 const linkedOrder = t.relatedOrderId ? orderById[t.relatedOrderId] : null;
-                return (
+                const gh = groupHead(t, gi);
+                return (<Fragment key={t.id}>
+                {gh && <tr data-line-group={gh.l}><td colSpan={8} style={{ padding: "9px 16px", fontWeight: 800, fontSize: 13, color: gh.c, background: gh.c + "12", borderTop: `3px solid ${gh.c}` }}>● {gh.name} · {gh.n} ta · {money(gh.sum)}</td></tr>}
                 <tr key={t.id} className="uvix-row" style={{ borderBottom: `1px solid ${THEME.border}` }}>
                   <td style={{ padding: "13px 16px", whiteSpace: "nowrap" }}>{t.date}</td>
                   <td style={{ padding: "13px 16px", fontWeight: 600 }}>{t.category} {tagOf(t)}</td>
@@ -148,7 +162,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
                     </div>
                   </td>
                 </tr>
-              );})}
+                </Fragment>              );})}
             </tbody>
           </table>
         )}

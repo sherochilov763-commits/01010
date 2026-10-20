@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ExportMenu } from "../components/ExportMenu.jsx";
 import { Download, Search, Trash2 } from "lucide-react";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn, getInputStyle, usePagination, useIsMobile, MobileRow } from "../components/ui.jsx";
 import { exportWorkbook } from "../lib/excel.js";
@@ -55,11 +56,11 @@ export function OperationsView({ orders, transactions, isAdmin, onDeletePayment,
   }, [allOps, typeFilter, payFilter, catFilter, from, to, search]);
   const { page, setPage, totalPages, pageItems } = usePagination(filtered, [typeFilter, payFilter, catFilter, from, to, search]);
 
-  function exportExcel() {
+  function exportExcel(kind = "xlsx") {
     const filteredOrderIds = new Set(filtered.filter((o) => o.type === "kirim").map((o) => o.orderId));
     const relatedOrders = orders.filter((o) => filteredOrderIds.has(o.id));
     const filteredExpenses = transactions.filter((t) => filtered.some((f) => f.type === "chiqim" && f.txId === t.id));
-    exportWorkbook(relatedOrders, filteredExpenses, categories, "Operatsiyalar", `UVIX_operatsiyalar_${todayStr()}.xlsx`);
+    return exportWorkbook(relatedOrders, filteredExpenses, categories, "Operatsiyalar", `UVIX_operatsiyalar_${todayStr()}.xlsx`, { kind });
   }
 
   return (
@@ -103,7 +104,7 @@ export function OperationsView({ orders, transactions, isAdmin, onDeletePayment,
               Tozalash
             </Button>
           )}
-          <Button variant="ghost" onClick={exportExcel} disabled={filtered.length === 0}><Download size={14} /> Excel</Button>
+          <ExportMenu onExport={exportExcel} disabled={filtered.length === 0} />
         </div>
       </Card>
 

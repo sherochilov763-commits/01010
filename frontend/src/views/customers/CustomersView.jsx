@@ -1,4 +1,5 @@
 import { usePerms } from "../../lib/perms.jsx";
+import { ExportMenu } from "../../components/ExportMenu.jsx";
 import { Avatar as UiAvatar } from "../../components/ui.jsx";
 // CustomersView.jsx — Mijozlar bazasi (buyurtmalar va lidlardan avtomatik) va Qarzdorlar ro'yxati.
 import { useEffect, useMemo, useState } from "react";
@@ -124,8 +125,8 @@ function ListTab({ all, me, empName, onOpen, onOpenChat }) {
     return [...l].sort(by);
   }, [all, q, sort, filter]);
 
-  function exportExcel() {
-    exportRows(list.map((c) => ({ Mijoz: c.name, Telefon: c.phone, Telegram: c.telegram ? `@${c.telegram}` : "", "Buyurtmalar": c.count, "Aylanma (so'm)": c.total, "To'langan (so'm)": c.paid, "Qarz (so'm)": c.debt, "O'rtacha chek": c.avg, "Birinchi buyurtma": c.firstDate || "", "Oxirgi buyurtma": c.lastDate || "", "Mas'ul": empName?.(c.managerId) || "", Izoh: c.note })), "Mijozlar", `UVIX_mijozlar_${todayStr()}.xlsx`);
+  function exportExcel(kind = "xlsx") {
+    return exportRows(list.map((c) => ({ Mijoz: c.name, Telefon: c.phone, Telegram: c.telegram ? `@${c.telegram}` : "", "Buyurtmalar": c.count, "Aylanma (so'm)": c.total, "To'langan (so'm)": c.paid, "Qarz (so'm)": c.debt, "O'rtacha chek": c.avg, "Birinchi buyurtma": c.firstDate || "", "Oxirgi buyurtma": c.lastDate || "", "Mas'ul": empName?.(c.managerId) || "", Izoh: c.note })), "Mijozlar", `UVIX_mijozlar_${todayStr()}.xlsx`);
   }
   const chips = [["all", "Hammasi"], ["mine", "Meniki"], ["debt", "Qarzdor"], ["nophone", "Telefonsiz"], ["leads", "Faqat lid"]];
   return (
@@ -144,7 +145,7 @@ function ListTab({ all, me, empName, onOpen, onOpenChat }) {
           ))}
         </div>
         <div style={{ flex: 1 }} />
-        {list.length > 0 && <Button variant="ghost" onClick={exportExcel} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={15} /> Excel</Button>}
+        {list.length > 0 && <ExportMenu onExport={exportExcel} />}
       </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
         {list.length === 0 ? <EmptyState text={q ? "Hech narsa topilmadi" : "Hali mijoz yo'q — buyurtma qo'shilganda shu yerda paydo bo'ladi"} /> : isMobile ? (
@@ -198,16 +199,16 @@ function ListTab({ all, me, empName, onOpen, onOpenChat }) {
 function DebtTab({ debtors, totalDebt, isAdmin, onOpen, onPay, onInvoice, onOpenChat }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const toggle = (id) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  function exportExcel() {
+  function exportExcel(kind = "xlsx") {
     const rows = debtors.flatMap((c) => c.debtOrders.map((d) => ({ Mijoz: c.name, Telefon: c.phone, "Buyurtma №": d.order.orderNumber, Sana: d.order.date, "Summa (so'm)": d.order.agreementUzs || 0, "Qarz (so'm)": d.debt, "Necha kun": d.days })));
-    exportRows(rows, "Qarzdorlar", `UVIX_qarzdorlar_${todayStr()}.xlsx`);
+    return exportRows(rows, "Qarzdorlar", `UVIX_qarzdorlar_${todayStr()}.xlsx`, { kind });
   }
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: THEME.muted }}>Jami qarz: <b style={{ color: THEME.rose, fontSize: 15 }}>{money(totalDebt)}</b> · {debtors.length} mijoz · {debtors.reduce((s, c) => s + c.debtOrders.length, 0)} buyurtma</div>
         <div style={{ flex: 1 }} />
-        {debtors.length > 0 && <Button variant="ghost" onClick={exportExcel} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={15} /> Excel</Button>}
+        {debtors.length > 0 && <ExportMenu onExport={exportExcel} />}
       </div>
       {debtors.length === 0 ? <Card><EmptyState text="Qarzdor mijoz yo'q 🎉" /></Card> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

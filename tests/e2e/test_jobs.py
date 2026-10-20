@@ -88,7 +88,8 @@ async def main():
         ws = api("/api/work-stats", token=adm)["stats"].get(datetime.date.today().strftime("%Y-%m"), {}).get("jasur", {})
         tot = ws.get("UVIXPRINT", 0) + ws.get("UVONYX", 0)
         ok("ish statistikasi: Jasur ikkala yo'nalishda ishlagan", ws.get("UVIXPRINT", 0) > 0 and ws.get("UVONYX", 0) == 1, ws)
-        await nav(d, "Dashboard"); await d.wait_for_timeout(1500)
+        # «Foyda va zarar» endi Kassalar bo'limida
+        await nav(d, "Kassalar"); await d.locator("[data-tab=pnl]").click(); await d.wait_for_timeout(1200)
         pnl = d.locator("[data-testid=pnl]")
         uv = round(6000000 * ws.get("UVIXPRINT", 0) / tot) if tot else 0
         got = await pnl.locator("[data-pnl-row=staff] [data-col=UVIXPRINT]").inner_text() if await pnl.locator("[data-pnl-row=staff]").count() else ""

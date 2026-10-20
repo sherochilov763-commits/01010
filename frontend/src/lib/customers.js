@@ -5,13 +5,14 @@
 // lid — avval bog'langan buyurtma (lead.orderId), so'ng nom, telefon (oxirgi 9 raqam) yoki Telegram nik bo'yicha.
 import { ORDER_READY_STAGES } from "../constants.js";
 import { orderDebt, orderTotalPaid } from "./finance.js";
+import { localDateStr } from "./format.js";
 
 export const custKey = (name) => String(name || "").toLowerCase().replace(/[‘’ʻʼ`´]/g, "'").replace(/\s+/g, " ").trim();
 export const phoneKey = (p) => { const d = String(p || "").replace(/\D/g, ""); return d.length >= 7 ? d.slice(-9) : ""; };
 const tgKey = (u) => String(u || "").replace(/^@/, "").toLowerCase().trim();
 const daysSince = (date, today) => Math.max(0, Math.round((new Date(`${today}T00:00:00`) - new Date(`${String(date).slice(0, 10)}T00:00:00`)) / 86400000));
 
-export function buildCustomers(orders, leads, profiles, today = new Date().toISOString().slice(0, 10)) {
+export function buildCustomers(orders, leads, profiles, today = localDateStr(new Date())) {
   const list = [];
   const byKey = new Map(), byPhone = new Map(), byTg = new Map();
   const make = (base) => { const c = { orders: [], leads: [], keys: [], ...base }; list.push(c); return c; };

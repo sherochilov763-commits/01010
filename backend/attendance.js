@@ -441,9 +441,10 @@ module.exports = function registerAttendance(app, { getStmt, upsertStmt, readEmp
     if (dateRange(from, to).length > 400) return res.status(400).json({ error: "range_too_long" });
     const r = report(from, to);
     // «O'z yo'nalishi» — faqat shu yo'nalish va «Umumiy» xodimlar
-    if (req.perms && req.perms["att.view"] === "line" && req.user.line && req.user.line !== "common") {
+    const myLine = req.baseLine || (req.user.line && req.user.line !== "common" ? req.user.line : null);
+    if (req.perms && req.perms["att.view"] === "line" && myLine) {
       const lineOf = new Map(readEmployees().map((e) => [e.id, e.line || "UVIXPRINT"]));
-      r.rows = r.rows.filter((x) => [req.user.line, "common"].includes(lineOf.get(x.employee.id)));
+      r.rows = r.rows.filter((x) => [myLine, "common"].includes(lineOf.get(x.employee.id)));
     }
     res.json(r);
   });

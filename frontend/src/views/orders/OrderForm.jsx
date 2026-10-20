@@ -51,7 +51,8 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
     }
   }
 
-  const linkedExpense = isEdit ? (transactions || []).find((t) => t.relatedOrderId === initial.id) : null;
+  // Faqat «Material» rasxodi (brak ham buyurtmaga bog'lanadi — uni material qilib qo'ymaslik kerak)
+  const linkedExpense = isEdit ? (transactions || []).find((t) => t.relatedOrderId === initial.id && t.category === "Material" && !t.deletedAt) : null;
   const materialOptions = (categories && categories["Material"]) || ["Boshqa material"];
   const managerNames = employees ? employees.filter((e) => !isWorkerRole(e.role)).map((e) => e.name) : [];
   const defaultUsdRate = (settings && settings.usdRate) || 12700;

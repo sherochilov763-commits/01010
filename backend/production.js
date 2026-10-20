@@ -38,6 +38,8 @@ function setStage(order, stage, now) {
   if (order.prodStage === stage) return false;
   order.prodStage = stage;
   order.prodAt = now;
+  // Har bosqich qachon o'tgani (buyurtma tafsilotidagi vaqt chizig'i uchun)
+  order.stageAt = { ...(order.stageAt || {}), [stage]: now };
   if (stage === "ready") order.readyAt = now;
   if (stage === "delivered") { order.deliveredAt = now; if (!order.readyAt) order.readyAt = now; }
   if (stage !== "delivered") order.deliveredAt = null;

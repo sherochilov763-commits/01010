@@ -520,19 +520,19 @@ export async function fetchTelegramRoutes() {
 
 // ---- Hisobot va tahlil (admin) ----
 const qs = (o) => Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-export async function fetchAnalytics(from, to, cmp) {
-  const res = await fetch(`${API_BASE}/analytics?${qs({ from, to, cmp })}`, { headers: authHeaders() });
+export async function fetchAnalytics(from, to, cmp, line) {
+  const res = await fetch(`${API_BASE}/analytics?${qs({ from, to, cmp, ...(line && line !== "all" ? { line } : {}) })}`, { headers: authHeaders() });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || data.error || `Xato: ${res.status}`);
   return data;
 }
-export async function downloadAnalyticsPdf(from, to, cmp) {
-  const res = await fetch(`${API_BASE}/analytics/pdf?${qs({ from, to, cmp })}`, { headers: authHeaders() });
+export async function downloadAnalyticsPdf(from, to, cmp, line) {
+  const res = await fetch(`${API_BASE}/analytics/pdf?${qs({ from, to, cmp, ...(line && line !== "all" ? { line } : {}) })}`, { headers: authHeaders() });
   if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || "PDF yaratib bo'lmadi"); }
   return res.blob();
 }
-export async function sendAnalyticsPdf(from, to, cmp) {
-  const res = await fetch(`${API_BASE}/analytics/send-pdf`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ from, to, cmp }) });
+export async function sendAnalyticsPdf(from, to, cmp, line) {
+  const res = await fetch(`${API_BASE}/analytics/send-pdf`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ from, to, cmp, line: line && line !== "all" ? line : undefined }) });
   const d = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(d.message || "Yuborib bo'lmadi");
   return d;

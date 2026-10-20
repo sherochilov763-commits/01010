@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, CreditCard, FileText, MoreHorizontal, Pencil, Phone, QrCode, Send, Trash2, X } from "lucide-react";
 import { Avatar, Button } from "../../components/ui.jsx";
-import { orderAddedValue, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
+import { orderAddedValue, orderBrakSum, orderDebt, orderMaterialSum, orderOverpaid, orderTotalPaid } from "../../lib/finance.js";
 import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { PROD_LABEL, PROD_STAGES, prodColors, prodLabel, stageHint, stagesFor } from "../../lib/production.js";
@@ -97,7 +97,9 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
           {[
             { l: "Summa", v: fmt(total), c: THEME.text },
             { l: "To'langan", v: fmt(paid), c: THEME.green },
-            { l: "Qarz", v: debt > 0 ? fmt(debt) : "—", c: debt > 0 ? THEME.rose : THEME.dim },
+            orderOverpaid(order) > 0
+              ? { l: "Ortiqcha to'langan", v: fmt(orderOverpaid(order)), c: THEME.amber }
+              : { l: "Qarz", v: debt > 0 ? fmt(debt) : "—", c: debt > 0 ? THEME.rose : THEME.dim },
           ].map((k, i) => (
             <div key={k.l} style={{ padding: "10px 12px", borderLeft: i ? `1px solid ${THEME.border}` : "none", minWidth: 0 }}>
               <div style={{ fontSize: 12, color: THEME.muted }}>{k.l}</div>
@@ -119,6 +121,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
                 {stagesFor(order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT").map((s) => <option key={s} value={s}>{prodLabel(s, order.subcategory)}</option>)}
               </select>
             </div>
+            {stage && <StageTimeline order={order} stage={stage} />}
             {sheet && stage && <ProdSteps order={order} stage={stage} employees={employees} />}
             {order.title && <div style={{ fontSize: 13, marginTop: 6 }}>{order.title}</div>}
             {[["design", "Dizayner", "designer"], ["print", "Pechatchi", "printer"]].map(([kind, label, role]) => {
@@ -167,7 +170,7 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
           {brak > 0 && row("Asl summa", money(order.agreementUzs || 0))}
           {brak > 0 && row("Brak", `−${money(brak)}`)}
           {order.kraskaSum ? row("Kraska", money(order.kraskaSum)) : null}
-          {order.materialSum ? row("Material", money(order.materialSum)) : null}
+          {orderMaterialSum(order, transactions) ? row("Material", money(orderMaterialSum(order, transactions))) : null}
           {row("Qo'shilgan qiymat", money(added), true)}
           {row("Kiritgan", order.createdBy)}
           {order.note ? row("Izoh", order.note) : null}
@@ -291,4 +294,27 @@ function ProdSteps({ order, stage, employees }) {
 
 function Tag({ children }) {
   return <span style={{ display: "inline-flex", alignItems: "center", height: 22, padding: "0 8px", borderRadius: 6, fontSize: 12, fontWeight: 600, background: THEME.chip, color: THEME.mutedDark }}>{children}</span>;
+}
+
+// Buyurtma bosqichlari vaqt chizig'i (Amazon/Uzum «buyurtmam qayerda»): o'tilgan bosqichlar va sanasi
+const dd = (iso) => { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, "0")}`; };
+function StageTimeline({ order, stage }) {
+  const list = stagesFor(order.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+  const idx = list.indexOf(stage);
+  if (idx < 0) return null;
+  const at = (k) => order.stageAt?.[k] || (k === "new" ? order.createdAt : k === "ready" ? order.readyAt : k === "delivered" ? order.deliveredAt : k === stage ? order.prodAt : null);
+  const c = stage === "delivered" ? THEME.muted : prodColors(stage).color;
+  return (
+    <div data-testid="stage-timeline" style={{ display: "flex", position: "relative", margin: "12px 0 2px" }}>
+      <span style={{ position: "absolute", left: `${50 / list.length}%`, right: `${50 / list.length}%`, top: 5, height: 2, background: THEME.border }} />
+      <span style={{ position: "absolute", left: `${50 / list.length}%`, width: `${(idx / list.length) * 100}%`, top: 5, height: 2, background: c }} />
+      {list.map((k, i) => (
+        <div key={k} data-tl-stage={k} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, position: "relative", minWidth: 0 }}>
+          <span style={{ width: i === idx ? 13 : 9, height: i === idx ? 13 : 9, marginTop: i === idx ? -1 : 1, borderRadius: "50%", background: i <= idx ? c : THEME.card, border: i <= idx ? 0 : `2px solid ${THEME.border2}`, boxShadow: i === idx ? `0 0 0 3px ${c}33` : "none" }} />
+          <span style={{ fontSize: 10, fontWeight: i === idx ? 800 : 500, color: i === idx ? c : i < idx ? THEME.mutedDark || THEME.text : THEME.dim, textAlign: "center", lineHeight: 1.15 }}>{prodLabel(k, order.subcategory)}</span>
+          <span style={{ fontSize: 9.5, color: THEME.dim, minHeight: 11 }}>{i <= idx ? dd(at(k)) : ""}</span>
+        </div>
+      ))}
+    </div>
+  );
 }

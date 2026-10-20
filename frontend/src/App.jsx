@@ -8,6 +8,7 @@ import { GeoTracker } from "./views/jobs/GeoTracker.jsx";
 import { PermsContext, usePermsState } from "./lib/perms.jsx";
 import { ViewAsBanner } from "./components/ViewAsBanner.jsx";
 import { exitViewAs, viewAsActive } from "./storage.js";
+import { LineChip, LineSelector, LineStrip } from "./components/LineSelector.jsx";
 import { LineContext, WorkStatsContext, applyLineProfiles, scopeByLine, useLineState } from "./lib/lines.js";
 import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
 import { legacyLeadIndex, orderStage } from "./lib/production.js";
@@ -565,7 +566,14 @@ function AppInner() {
     let next;
     if (isEdit) {
       // Formadagi maydonlargina yangilanadi — Telegram bog'lanishi, dizayn/pechat vazifalari va sanalar saqlanib qoladi
-      next = leads.map((l) => (l.id === lead.id ? { ...l, ...lead, createdBy: l.createdBy, createdAt: l.createdAt, updatedAt: new Date().toISOString() } : l));
+      next = leads.map((l) => {
+        if (l.id !== lead.id) return l;
+        const upd = { ...l, ...lead, createdBy: l.createdBy, createdAt: l.createdAt, updatedAt: new Date().toISOString() };
+        if (!lead.priority) delete upd.priority;
+        const from = l.priority || "mid", to = lead.priority || "mid";
+        if (from !== to) Object.assign(upd, priorityStamp(l, from, to));
+        return upd;
+      });
       addLog(`Lid tahrirlandi: ${lead.customer}`);
     } else {
       lead.createdBy = currentUser.name;
@@ -576,6 +584,23 @@ function AppInner() {
     }
     persistLeads(next);
     showToast(isEdit ? "O‘zgartirildi" : "Qo‘shildi");
+  }
+  // Muhimlik o'zgarishi lid tarixiga yoziladi (kim, qachon); «Shoshilinch» — server mas'ulga Telegram eslatma yuboradi
+  function priorityStamp(l, from, to) {
+    const at = new Date().toISOString();
+    return { priorityAt: at, priorityBy: currentUser.name, history: [...(l.history || []).slice(-49), { at, by: currentUser.name, kind: "priority", from, to }] };
+  }
+  function setLeadPriority(lead, priority) {
+    const from = lead.priority || "mid";
+    if (from === priority) return;
+    const next = leads.map((l) => {
+      if (l.id !== lead.id) return l;
+      const upd = { ...l, ...priorityStamp(l, from, priority) };
+      if (priority === "mid") delete upd.priority; else upd.priority = priority;
+      return upd;
+    });
+    persistLeads(next);
+    addLog(`Lid muhimligi: ${lead.customer} → ${{ urgent: "Shoshilinch", high: "Yuqori", mid: "O'rta", low: "Past" }[priority]}`);
   }
   function deleteLead(lead) {
     const next = leads.filter((l) => l.id !== lead.id);
@@ -623,7 +648,7 @@ function AppInner() {
     const next = leads.map((l) => {
       if (l.id !== lead.id) return l;
       const nowIso = new Date().toISOString();
-      const upd = { ...l, stage: newStage, stageAt: nowIso };
+      const upd = { ...l, stage: newStage, stageAt: nowIso, history: [...(l.history || []).slice(-49), { at: nowIso, by: currentUser.name, kind: "stage", from: l.stage, to: newStage, toLabel: LEAD_STAGES.find((s) => s.key === newStage)?.label }] };
       // Yopilish sanasi — arxiv va oylik statistika shu bo'yicha ishlaydi
       if (newStage === "won" || newStage === "lost") upd.closedAt = nowIso;
       else delete upd.closedAt;
@@ -841,9 +866,9 @@ function AppInner() {
   const myTx = isAdmin || C("expense.edit", "line") ? activeTransactions : activeTransactions.filter((t) => t.createdBy === currentUser.name);
   const myOrders = seesAll ? activeOrders : activeOrders.filter((o) => o.createdBy === currentUser.name);
   // Yo'nalish bo'yicha: buyurtmalar, rasxodlar ro'yxati (to'liq) va hisob-kitob uchun (umumiy rasxod — ulushi bilan)
-  const scope = scopeByLine(lineState.line, myOrders, myTx, activeOrders);
+  const scope = scopeByLine(lineState.line, myOrders, myTx, activeOrders, workStats);
   const lOrders = scope.orders;
-  const reportScope = isAdmin || C("report.view") ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders) : null;
+  const reportScope = isAdmin || C("report.view") ? scopeByLine(lineState.line, activeOrders, activeTransactions, activeOrders, workStats) : null;
 
   return (
     <PermsContext.Provider value={permsCtx}>
@@ -1023,11 +1048,12 @@ function AppInner() {
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>
         <Sidebar nav={visibleNav} navCfg={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} sidebarStyle={appearance.sidebarStyle} isOpen={sidebarOpen} onClose={() => { setSidebarOpen(false); navCfg.setEditing(false); }} badges={navBadges}
-          top={<><SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} /><QrScanButton full onClick={() => setSidebarOpen(false)} /></>} />
+          top={<><LineSelector /><SearchTrigger onClick={() => { setSidebarOpen(false); openCmdk(); }} /><QrScanButton full onClick={() => setSidebarOpen(false)} /></>} />
         {navCfg.layout === "rail" && <RailNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         {navCfg.layout === "top" && <TopNav nav={navCfg} view={view} setView={goView} user={currentUser} onLogout={logout} onSearch={openCmdk} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} />{!permsCtx.viewAs && <CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} />}</>} />
+          <LineStrip />
+          <Topbar user={currentUser} view={view} bare={phoneUi && view === "dashboard"} onBack={canGoBack ? goBack : null} onLogout={logout} onMenuClick={() => setSidebarOpen(true)} right={<><span className={navCfg.layout === "side" ? "uvix-mobile-only" : ""}><LineChip /></span><span className="uvix-mobile-only"><SearchTrigger compact onClick={openCmdk} /></span><NotificationBell n={notif} onNavigate={goView} onOpenSettings={openNotifySettings} />{!permsCtx.viewAs && <CheckInButton compact={typeof window !== "undefined" && window.innerWidth < 600} />}</>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={view} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
             <ErrorBoundary inline onHome={() => goView("dashboard")}>
@@ -1049,7 +1075,7 @@ function AppInner() {
                 {fullReport ? "Batafsil hisobotni yopish" : "Batafsil hisobot"}
               </button>
             )}
-            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
+            {view === "dashboard" && (!phoneUi || fullReport) && <Dashboard orders={lOrders} expenses={scope.txStats} kassaOrders={activeOrders} kassaTx={activeTransactions} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} />}
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
@@ -1094,6 +1120,7 @@ function AppInner() {
                 onSaveLead={saveLead}
                 onDeleteLead={deleteLead}
                 onMoveLead={moveLead}
+                onSetPriority={setLeadPriority}
                 onCreateOrderFromLead={createOrderFromLead}
                 onFetchTelegramMessages={fetchTelegramMessages}
                 onSendTelegramMessage={sendTelegramUserMessage}

@@ -7,7 +7,7 @@ const compression = require("compression");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const XLSX = require("xlsx");
+const excelPro = require("./excel-pro");
 const telegramUserbot = require("./telegram-userbot");
 const telegramLogin = require("./telegram-login");
 const { TG_API } = require("./telegram-bot");
@@ -256,6 +256,7 @@ function requireAuth(req, res, next) {
   const lineFor = (k) => (baseLine && req.perms[k] === "all" ? null : baseLine);
   req.scopeFor = (key) => (key === "chats" ? lineFor("chats.view") : key === "uvix:leads" ? lineFor("crm.view") : key === "uvix:customers" ? lineFor("customers.view") : key === "uvix:transfers" ? lineFor("kassa.view") : lineFor("orders.view"));
   req.lineScope = lineFor("orders.view");
+  req.baseLine = baseLine; // xodimning asosiy yo'nalishi (rahbar/umumiy — null)
   // «Rol bo'lib ko'rish»: faqat ko'rish — hech narsa yozilmaydi
   if (payload.ro) {
     req.viewAs = { by: payload.va || null };
@@ -721,31 +722,32 @@ function escHtml(s) {
 function fmtMoney(n) {
   return Number(n || 0).toLocaleString("ru-RU").replace(/,/g, " ") + " so'm";
 }
-// Joriy ma'lumotlar asosida Excel hisobot (Buyurtmalar + Rasxodlar) yaratadi
-function buildDailyExcelBuffer() {
-  const ordersRow = getStmt.get("uvix:orders");
-  const txRow = getStmt.get("uvix:transactions");
-  const orders = ordersRow ? JSON.parse(ordersRow.value) : [];
-  const transactions = txRow ? JSON.parse(txRow.value) : [];
-
-  const orderRows = orders
-    .filter((o) => !o.deletedAt)
-    .map((o) => {
-      const paid = (o.payments || []).filter((p) => !p.deletedAt).reduce((s, p) => s + (p.amount || 0), 0);
-      return {
-        "Buyurtma №": o.orderNumber, Sana: o.date, Mijoz: o.customer, "Sub kategoriya": o.subcategory,
-        "Umumiy summasi": o.agreementUzs || 0, "To'langan": paid, Qarzdorlik: Math.max(0, (o.agreementUzs || 0) - paid),
-        "Kraska summasi": o.kraskaSum || 0, "Material summasi": o.materialSum || 0,
-      };
-    });
-  const expenseRows = transactions
-    .filter((t) => !t.deletedAt && t.type === "chiqim")
-    .map((t) => ({ Sana: t.date, Kategoriya: t.category, Subkategoriya: t.subcategory, Summa: t.amount, "To'lov turi": t.paymentType, Izoh: t.note || "" }));
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(orderRows), "Buyurtmalar");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expenseRows), "Rasxodlar");
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+// Joriy ma'lumotlar asosida Excel hisobot (Buyurtmalar + To'lovlar + Rasxodlar) — professional ko'rinishda (excel-pro.js)
+async function buildDailyExcelBuffer() {
+  const orders = (JSON.parse(getStmt.get("uvix:orders")?.value || "[]") || []).filter((o) => o && !o.deletedAt);
+  const transactions = (JSON.parse(getStmt.get("uvix:transactions")?.value || "[]") || []).filter((t) => t && !t.deletedAt && t.type === "chiqim");
+  const lineOf = (o) => (o.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+  const linkedMat = new Map();
+  for (const t of transactions) if (t.category === "Material" && t.relatedOrderId) linkedMat.set(t.relatedOrderId, (linkedMat.get(t.relatedOrderId) || 0) + (t.amount || 0));
+  const grouped = (rows, key) => ["UVIXPRINT", "UVONYX"].flatMap((l) => { const x = rows.filter((r) => r[key] === l); return x.length ? [{ __group: l }, ...x] : []; });
+  const orderRows = grouped(orders.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map((o) => {
+    const paid = (o.payments || []).filter((p) => !p.deletedAt).reduce((s, p) => s + (p.amount || 0), 0);
+    return { line: lineOf(o), no: o.orderNumber, date: o.date, customer: o.customer, sum: o.agreementUzs || 0, paid, debt: Math.max(0, (o.agreementUzs || 0) - paid), kraska: o.kraskaSum || 0, material: linkedMat.has(o.id) ? linkedMat.get(o.id) : o.materialSum || 0 };
+  }), "line");
+  const payRows = [];
+  for (const o of orders) for (const p of o.payments || []) if (!p.deletedAt) payRows.push({ line: lineOf(o), date: p.date, no: o.orderNumber, customer: o.customer, amount: p.amount || 0, type: p.paymentType === "karta" ? "Karta" : p.paymentType === "bank" || p.paymentType === "perechisleniye" ? "Bank" : "Naqd", who: p.createdBy || "" });
+  payRows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const expenseRows = transactions.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).map((t) => ({ date: t.date, cat: t.category, sub: t.subcategory || "", amount: t.amount || 0, type: t.paymentType === "karta" ? "Karta" : t.paymentType === "bank" ? "Bank" : "Naqd", note: t.note || "" }));
+  let d = new Date().toISOString().slice(0, 10);
+  try { d = attendanceApi.local(new Date()).date; } catch { /* ixtiyoriy */ }
+  return excelPro.buildWorkbook({
+    title: "Kunlik hisobot", meta: [`Sana: ${d}`, `Buyurtmalar: ${orders.length}`, `Rasxodlar: ${transactions.length}`],
+    sheets: [
+      { name: "Buyurtmalar", columns: [{ key: "no", label: "Buyurtma" }, { key: "date", label: "Sana", type: "date" }, { key: "customer", label: "Mijoz" }, { key: "sum", label: "Summa", type: "money", total: 1 }, { key: "paid", label: "To'langan", type: "money", total: 1 }, { key: "debt", label: "Qarz", type: "money", total: 1 }, { key: "kraska", label: "Kraska", type: "money", total: 1 }, { key: "material", label: "Material", type: "money", total: 1 }], rows: orderRows },
+      { name: "To'lovlar", columns: [{ key: "date", label: "Sana", type: "date" }, { key: "no", label: "Buyurtma" }, { key: "customer", label: "Mijoz" }, { key: "type", label: "Turi" }, { key: "who", label: "Kim" }, { key: "amount", label: "Summa", type: "money", total: 1 }], rows: grouped(payRows, "line") },
+      { name: "Rasxodlar", columns: [{ key: "date", label: "Sana", type: "date" }, { key: "cat", label: "Kategoriya" }, { key: "sub", label: "Subkategoriya" }, { key: "type", label: "Turi" }, { key: "note", label: "Izoh" }, { key: "amount", label: "Summa", type: "money", total: 1 }], rows: expenseRows },
+    ],
+  });
 }
 
 // Toshkent vaqti (server UTC'da ishlaydi — Railway)
@@ -758,7 +760,7 @@ async function runDailyBackup() {
   if (!settings.telegramBotToken) return;
   const today = tashkentNow().date;
   try {
-    const excelBuffer = buildDailyExcelBuffer();
+    const excelBuffer = await buildDailyExcelBuffer();
     await notifyDoc("dailyReport", excelBuffer, `UVIX_hisobot_${today}.xlsx`, `📊 Kunlik hisobot — ${today}`);
     // serialize() — WAL jurnalidagi eng so'nggi o'zgarishlar ham kiradi (faylni to'g'ridan-to'g'ri o'qish ularni tushirib qoldirardi)
     const dbBuffer = db.serialize();
@@ -789,6 +791,22 @@ setInterval(() => {
     console.error("Zaxira tekshiruvi xatosi:", e.message);
   }
 }, 5 * 60 * 1000);
+
+// Lid «Shoshilinch» qilinsa — mas'ul menejerga Telegram'da eslatma (o'zi qo'ygan bo'lsa yubormaymiz)
+function notifyUrgentLeads(oldLeads, newLeads, actor) {
+  try {
+    const was = new Map((oldLeads || []).map((l) => [l.id, l.priority]));
+    const emps = readEmployees();
+    for (const l of newLeads || []) {
+      if (l.priority !== "urgent" || was.get(l.id) === "urgent" || !l.manager) continue;
+      const emp = emps.find((e) => e.name === l.manager && !e.deletedAt);
+      if (!emp || emp.name === actor?.name) continue;
+      const esc = (x) => String(x || "").replace(/[<>&]/g, "");
+      const sum = Number(l.estimatedValue) > 0 ? ` · ${Math.round(l.estimatedValue).toLocaleString("ru-RU")} so'm` : "";
+      Promise.resolve(staffBot.sendToEmployee(emp.id, `❗ <b>Shoshilinch lid</b>: ${esc(l.customer)}${sum}${l.phone ? `\n📞 ${esc(l.phone)}` : ""}\n${esc(actor?.name)} muhimlikni «Shoshilinch» qildi — CRM'da tepada turibdi.`)).catch(() => {});
+    }
+  } catch { /* eslatma ixtiyoriy */ }
+}
 
 function notifyOrdersDiff(oldValue, newValue) {
   try {
@@ -1174,7 +1192,9 @@ app.put("/api/kv/:key", (req, res) => {
       const incomingLeads = linesApi.mergeScopedPut(key, JSON.parse(value), oldLeads, req.scopeFor(key), JSON.parse(getStmt.get("uvix:orders")?.value || "[]"));
       const merged = mergeLeadTaskState(incomingLeads, oldLeads);
       upsertStmt.run(key, JSON.stringify(merged));
-      return res.json({ key, rev: revOf(key), value: scopedValue(req, key, JSON.stringify(merged)) });
+      res.json({ key, rev: revOf(key), value: scopedValue(req, key, JSON.stringify(merged)) });
+      notifyUrgentLeads(oldLeads, merged, req.user);
+      return;
     } catch { /* JSON emas — pastda oddiy saqlanadi */ }
   }
   if (key === "uvix:audit") {

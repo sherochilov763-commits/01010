@@ -50,7 +50,11 @@ async def main():
         ok("Diqqat: chatlar, tayyor, eski qarz, dizayn, vazifasiz", keys == ["chats", "ready", "debt", "design", "queue"], keys)
         t = await m.locator("[data-attn=chats]").inner_text()
         ok("javobsiz chatlar: 2 ta, eng uzoq kutgani birinchi (javob berilgani yo'q)", "2 ta chat javobsiz" in t and t.index("Malika") < t.index("Dilshod") and "Nodira" not in t, t)
-        ok("eski qarz summasi", "2 000 000" in await m.locator("[data-attn=debt]").inner_text())
+        # 7 kundan eski qarzlar — bugungi sanaga bog'liq (seed sanalari qotirilgan), shuning uchun kutilgan summa hisoblanadi
+        lim = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+        exp_debt = sum(max(0, (o.get("agreementUzs") or 0) - sum(p["amount"] for p in o.get("payments", []) if not p.get("deletedAt"))) for o in orders(adm)
+                       if not o.get("deletedAt") and o.get("subcategory") != "UVONYX" and o.get("date") and o["date"] <= lim)
+        ok("eski qarz summasi", f"{exp_debt:,}".replace(",", " ") in (await m.locator("[data-attn=debt]").inner_text()).replace("\u00a0", " "), (exp_debt, await m.locator("[data-attn=debt]").inner_text()))
         ok("dizaynda 4 soatdan beri — dizayner ismi bilan", "4 soat" in (txt := await m.locator("[data-attn=design]").inner_text()) and "Kamola" in txt, txt)
         ok("to'liq hisobot yashirin (telefon)", await m.locator("text=Buyurtmalar summasi").count() == 0)
         ok("tezkor amallar: Buyurtma, To'lov, Rasxod, Skaner", await m.evaluate("[...document.querySelectorAll('[data-quick]')].map(e=>e.dataset.quick).join()") == "order,pay,expense,scan")

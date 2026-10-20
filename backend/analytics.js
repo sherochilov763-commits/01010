@@ -64,7 +64,13 @@ function computeCore(data, from, to) {
   const txs = data.transactions.filter((t) => t.type === "chiqim" && inR(t.date, from, to));
   const revenue = orders.reduce((s, o) => s + (o.agreementUzs || 0), 0);
   const kraska = orders.reduce((s, o) => s + (o.kraskaSum || 0), 0);
-  const material = orders.reduce((s, o) => s + (o.materialSum || 0), 0);
+  // Material: buyurtmaga bog'langan «Material» rasxodi (bo'lmasa — buyurtmadagi summa) + buyurtmaga bog'lanmagan material xaridlari (davrda)
+  const allTx = data.transactions.filter((t) => t.type === "chiqim");
+  const linkedMat = new Map();
+  for (const t of allTx) if (t.category === "Material" && t.relatedOrderId) linkedMat.set(t.relatedOrderId, (linkedMat.get(t.relatedOrderId) || 0) + (t.amount || 0));
+  const orderIds = new Set(data.orders.map((o) => o.id));
+  const material = orders.reduce((s, o) => s + (linkedMat.has(o.id) ? linkedMat.get(o.id) : (o.materialSum || 0)), 0)
+    + txs.filter((t) => t.category === "Material" && !(t.relatedOrderId && orderIds.has(t.relatedOrderId))).reduce((s, t) => s + (t.amount || 0), 0);
   const brak = txs.filter((t) => t.category === "Brak").reduce((s, t) => s + (t.amount || 0), 0);
   const added = revenue - kraska - material - brak;
   const opexMap = {};
@@ -168,14 +174,20 @@ module.exports = function registerAnalytics(app, { getStmt, upsertStmt, requireA
   const data = (req) => {
     const all = (readJson("uvix:orders", []) || []);
     let orders = all, transactions = readJson("uvix:transactions", []) || [], leads = readJson("uvix:leads", []) || [];
-    const ln = req?.perms?.["report.view"] === "line" && req.user?.line && req.user.line !== "common" ? req.user.line : null;
+    // «Yo'nalishi» huquqi — xodimning yo'nalishi (yozilmagan bo'lsa — server aniqlagan asosiy yo'nalish, req.baseLine);
+    // «Hammasi» (rahbar) — ixtiyoriy ?line= bilan bitta yo'nalish
+    const scope = req?.perms?.["report.view"];
+    let ln = scope === "line" ? (req.baseLine || null) : null;
+    const q = req?.query?.line || req?.body?.line;
+    if (!ln && scope !== "line" && (q === "UVIXPRINT" || q === "UVONYX")) ln = q;
     if (ln) {
       const L = require("./lines");
       orders = L.filterForClient("uvix:orders", orders, ln, all);
-      transactions = L.filterForClient("uvix:transactions", transactions, ln, all);
+      // umumiy rasxod — shu yo'nalish ulushi bilan
+      transactions = L.filterForClient("uvix:transactions", transactions, ln, all).map((t) => (typeof t._lineShare === "number" ? { ...t, amount: Math.round((t.amount || 0) * t._lineShare) } : t));
       leads = L.filterForClient("uvix:leads", leads, ln, all);
     }
-    return { orders: orders.filter((o) => o && !o.deletedAt), transactions: transactions.filter((t) => t && !t.deletedAt), leads: leads.filter((l) => l && !l.deletedAt) };
+    return { orders: orders.filter((o) => o && !o.deletedAt), transactions: transactions.filter((t) => t && !t.deletedAt), leads: leads.filter((l) => l && !l.deletedAt), line: ln };
   };
   const valid = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
   function rangeOf(q) {

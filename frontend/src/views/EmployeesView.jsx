@@ -4,7 +4,7 @@ import { fetchPinHelp, fetchRoles, fetchStaffTelegram, giveTempPin, startViewAs 
 import { BY_KEY, PERMS, legacyOver } from "../lib/permissions.js";
 import { EmpOverrides, permsFor } from "./settings/RolesSection.jsx";
 import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Modal, getIconBtn, getInputStyle } from "../components/ui.jsx";
-import { fmt, uid } from "../lib/format.js";
+import { fmt, todayStr, uid } from "../lib/format.js";
 import { roleLabel } from "../constants.js";
 import { EMP_LINE_OPTIONS, WorkStatsContext, empLineLabel, lineColor } from "../lib/lines.js";
 import { THEME } from "../theme.js";
@@ -31,7 +31,7 @@ const ROLE_BADGE = (role) => ({
 
 export function EmployeesView({ employees, onSave, auditLog, currentUser }) {
   const work = useContext(WorkStatsContext);
-  const curMonth = new Date().toISOString().slice(0, 7);
+  const curMonth = todayStr().slice(0, 7);
   const [modal, setModal] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState("operator");

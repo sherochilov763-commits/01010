@@ -1,4 +1,5 @@
 // LeadArchive.jsx — yopilgan va yo'qotilgan lidlar arxivi: oy/yil bo'yicha, qidiruv, oylik statistika, qayta ochish, Excel
+import { ExportMenu } from "../../components/ExportMenu.jsx";
 import { useMemo, useState } from "react";
 import { Download, RotateCcw, Search, Phone } from "lucide-react";
 import { Button, Card, Incremental, getInputStyle, useIsMobile } from "../../components/ui.jsx";
@@ -54,7 +55,7 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
   }, [filtered]);
   const total = stats(filtered);
 
-  function exportExcel() {
+  function exportExcel(kind = "xlsx") {
     const rows = filtered.map((x) => ({
       "Sana": shortDate(x.date),
       "Oy": x.month !== "0000-00" ? monthTitle(x.month) : "",
@@ -66,7 +67,7 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
       "Manba": x.lead.source || "",
       "Izoh": x.lead.notes || "",
     }));
-    exportRows(rows, "Arxiv", `UVIX_lidlar_arxivi_${periodSel.mode === "all" ? "barchasi" : `${period.from}_${period.to}`}.xlsx`);
+    return exportRows(rows, "Arxiv", `UVIX_lidlar_arxivi_${periodSel.mode === "all" ? "barchasi" : `${period.from}_${period.to}`}.xlsx`, { kind });
   }
 
   const seg = (active) => ({ padding: "7px 12px", borderRadius: 9, border: 0, cursor: "pointer", fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", background: active ? THEME.card : "transparent", color: active ? THEME.text : THEME.muted, boxShadow: active ? THEME.shadowSm : "none" });
@@ -91,7 +92,7 @@ export function LeadArchive({ leads, orders, period, periodSel, onPeriod, onReop
           <Search size={14} color={THEME.muted} style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)" }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mijoz, telefon yoki menejer" style={{ ...getInputStyle(), paddingLeft: 32 }} aria-label="Arxivdan qidirish" />
         </div>
-        <Button variant="ghost" onClick={exportExcel} disabled={!filtered.length}><Download size={14} /> Excel</Button>
+        <ExportMenu onExport={exportExcel} disabled={!filtered.length} />
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>

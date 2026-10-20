@@ -1,4 +1,5 @@
 // PaintView.jsx — Bo'yoq ombori: qoldiq va prognoz, haftalik sanash, oylik kunma-kun hisobot, sozlamalar.
+import { ExportMenu } from "../../components/ExportMenu.jsx";
 import { usePerms } from "../../lib/perms.jsx";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, ClipboardCheck, Download, Info, Plus, RefreshCw, Send, Trash2, TrendingDown } from "lucide-react";
@@ -276,17 +277,19 @@ function MonthTab({ state }) {
   const curYm = todayStr().slice(0, 7);
   const [y, m] = ym.split("-").map(Number);
 
-  function exportExcel() {
-    const rows = data.days.map((d) => {
+  async function exportExcel(kind = "xlsx") {
+    const days = data.days.map((d) => {
       const r = { Sana: d.date, "m²": d.m2 };
       items.forEach((i) => { r[`${i.name} sarf (L)`] = d.used[i.id] || 0; r[`${i.name} kirim (L)`] = d.intake[i.id] || 0; });
       r.Sanash = d.counted ? "ha" : "";
       return r;
     });
-    rows.push({});
-    data.summary.forEach((s) => { const i = items.find((x) => x.id === s.id); if (i) rows.push({ Sana: i.name, "m²": "", "Oy boshida": s.start, Kirim: s.intake, Sarf: s.used, Tuzatish: s.correction, "Oy oxirida": s.end }); });
-    exportRows(rows, "Bo'yoq", `UVIX_boyoq_${ym}.xlsx`);
+    const sum = data.summary.map((s0) => { const i = items.find((x) => x.id === s0.id); return i ? { "Bo'yoq": i.name, "Oy boshida (L)": s0.start, "Kirim (L)": s0.intake, "Sarf (L)": s0.used, "Tuzatish (L)": s0.correction, "Oy oxirida (L)": s0.end } : null; }).filter(Boolean);
+    const m = await import("../../lib/exportPro.js");
+    const cols = (rows) => Object.keys(rows[0] || {}).map((k) => ({ key: k, label: k, type: k === "Sana" ? "date" : /\(L\)|m²/.test(k) ? "num" : "text", total: /sarf|kirim|m²/i.test(k) && k !== "Sana" ? "sum" : undefined }));
+    return m.exportDoc({ fileBase: `UVIX_boyoq_${ym}`, title: "Bo'yoq ombori", meta: [`Oy: ${ym}`], sheets: [{ name: "Oy yakuni", sections: [{ columns: cols(sum), rows: sum }] }, { name: "Kunlar", sections: [{ columns: cols(days), rows: days }] }] }, kind);
   }
+
 
   return (
     <>
@@ -295,7 +298,7 @@ function MonthTab({ state }) {
         <div style={{ fontWeight: 700, fontSize: 15, minWidth: 130, textAlign: "center" }}>{MONTHS_CAP[m - 1]} {y}</div>
         <button type="button" onClick={() => setYm(shiftYm(ym, 1))} disabled={ym >= curYm} style={{ ...navBtn, opacity: ym >= curYm ? 0.4 : 1 }} aria-label="Keyingi oy"><ChevronRight size={16} /></button>
         <div style={{ flex: 1 }} />
-        {data && data.days.length > 0 && <Button variant="ghost" onClick={exportExcel} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={15} /> Excel</Button>}
+        {data && data.days.length > 0 && <ExportMenu onExport={exportExcel} />}
       </div>
       {!data ? <Card><div style={{ color: THEME.muted, fontSize: 13 }}>Yuklanmoqda…</div></Card> : !data.days.length ? <Card><div style={{ color: THEME.muted, fontSize: 13 }}>Bu oy uchun ma'lumot yo'q.</div></Card> : (
         <>

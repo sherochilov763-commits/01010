@@ -3,7 +3,7 @@
 //   "UVIXPRINT" | "UVONYX" | "common" (umumiy). Yo'nalishsiz eski rasxod: buyurtmaga bog'langan bo'lsa — o'sha
 //   buyurtmaning yo'nalishi, aks holda «Umumiy».
 // «Umumiy» rasxod yo'nalishlarga shu oydagi tushum (to'lovlar) ulushiga qarab bo'linadi; tushum bo'lmasa — teng.
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 export const LINES = ["UVIXPRINT", "UVONYX"];
 export const ALL = "all";
@@ -34,6 +34,9 @@ export const lineProfileOf = (settings, line) => ({ ...((settings?.lineProfiles 
 export const lineColor = (line, dark) => (LINE_META[line] ? (dark ? LINE_META[line].colorDark : LINE_META[line].color) : dark ? "#A1A1AA" : "#52525B");
 export const lineOfOrder = (o) => (o?.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
 export const numberPrefix = (line) => LINE_META[line === "UVONYX" ? "UVONYX" : "UVIXPRINT"].prefix;
+
+// Lid yo'nalishi: lead.line; eskilarida — UVONYX bot chati («on:» prefiksi), aks holda UVIXPRINT
+export const leadLineOf = (lead) => (LINES.includes(lead?.line) ? lead.line : String(lead?.telegramChatId || "").startsWith("on:") ? "UVONYX" : "UVIXPRINT");
 
 export function txLine(t, orderLineById) {
   if (t?.line === COMMON || LINES.includes(t?.line)) return t.line;
@@ -108,10 +111,27 @@ export function lineOfUser(user) {
   return user.line === "UVONYX" ? "UVONYX" : "UVIXPRINT";
 }
 export const empLineLabel = (e) => (e?.role === "admin" ? "Ikkalasi (rahbar)" : e?.line === COMMON ? "Umumiy" : e?.line === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+// Umumiy yo'nalish tanlovi (rahbar va «Hammasi» huquqlilar): "all" | "UVIXPRINT" | "UVONYX" | "split" («Yonma-yon»).
+//   line  — ma'lumot filtri ("split"da — "all": ikkalasi ham kerak, bo'limning o'zi ikkiga ajratib ko'rsatadi)
+//   view  — tanlangan holat; split — «Yonma-yon» rejimi. Tanlov shu brauzerda eslab qolinadi.
+export const SPLIT = "split";
+const SEL_KEY = "uvix:lineSel";
+const readSel = () => { try { const v = localStorage.getItem(SEL_KEY); return [ALL, SPLIT, ...LINES].includes(v) ? v : ALL; } catch { return ALL; } };
 export function useLineState(user) {
-  const line = lineOfUser(user);
-  return useMemo(() => ({ line, isAll: line === ALL, allowed: line === ALL ? [...LINES, ALL] : [line], setLine: () => {} }), [line]);
+  const base = lineOfUser(user);
+  const [sel, setSel] = useState(readSel);
+  const setLine = useCallback((v) => {
+    const next = [ALL, SPLIT, ...LINES].includes(v) ? v : ALL;
+    setSel(next);
+    try { localStorage.setItem(SEL_KEY, next); } catch { /* shart emas */ }
+  }, []);
+  return useMemo(() => {
+    if (base !== ALL) return { line: base, view: base, split: false, base, canSwitch: false, isAll: false, allowed: [base], setLine: () => {} };
+    const view = sel;
+    const line = view === SPLIT ? ALL : view;
+    return { line, view, split: view === SPLIT, base, canSwitch: true, isAll: line === ALL, allowed: [...LINES, ALL], setLine };
+  }, [base, sel, setLine]);
 }
 
-export const LineContext = createContext({ line: ALL, setLine: () => {}, allowed: [...LINES, ALL], isAll: true });
+export const LineContext = createContext({ line: ALL, view: ALL, split: false, canSwitch: false, setLine: () => {}, allowed: [...LINES, ALL], isAll: true });
 export const useLine = () => useContext(LineContext);
