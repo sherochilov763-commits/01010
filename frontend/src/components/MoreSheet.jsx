@@ -168,7 +168,7 @@ export function MoreSheet({ items, barKeys, view, badges, user, onNavigate, onTo
 }
 const pill = () => ({ height: 40, display: "inline-flex", alignItems: "center", gap: 6, padding: "0 12px", borderRadius: 11, border: `1px solid ${THEME.border2}`, background: THEME.card, color: THEME.text, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 });
 
-export const MORE_SHEET_CSS = `
+export const MORE_SHEET_CSS = () => `
   .uvix-more-backdrop { position: fixed; inset: 0; z-index: 215; background: rgba(9,9,11,0.38); animation: uvixFadeIn .18s ease; }
   .uvix-more-sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 220; max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain;

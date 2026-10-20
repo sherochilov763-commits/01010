@@ -845,7 +845,7 @@ function AppInner() {
       </AttendanceGate>
       </TelegramOnboard>
       </div>
-      {idle.locked && <><style>{LOCK_CSS}</style><LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={workerLogout} /></>}
+      {idle.locked && <><style>{LOCK_CSS()}</style><LockScreen user={currentUser} onUnlock={idle.unlock} onLogout={workerLogout} /></>}
       </PermsContext.Provider>
     );
   }
@@ -1056,10 +1056,10 @@ function AppInner() {
         /* Pastki menyu — oxirida turishi shart, hamburger qoidasini bekor qiladi */
         ${navCss()}
         ${ncenterCss()}
-        ${BOTTOM_NAV_CSS}
-        ${MORE_SHEET_CSS}
-        ${APPROVALS_CSS}
-        ${LOCK_CSS}
+        ${BOTTOM_NAV_CSS()}
+        ${MORE_SHEET_CSS()}
+        ${APPROVALS_CSS()}
+        ${LOCK_CSS()}
       `}</style>
       {bgOn && <div className="uvix-bg no-print" aria-hidden="true" data-testid="app-bg" data-phase={bgState.resolved.phase || ""} style={{ backgroundImage: `url("${bgState.resolved.url}")` }} />}
       <div className={`uvix-shell uvix-layout-${navCfg.layout} uvix-density-${appearance.density || "comfortable"}${bgOn ? " uvix-has-bg" : ""}${glassOn ? " uvix-glass" : ""}`} style={{ display: "flex", minHeight: "100vh", background: bgOn ? "transparent" : THEME.surface, maxWidth: "100vw", overflowX: navCfg.layout === "top" ? "visible" : "hidden" }}>

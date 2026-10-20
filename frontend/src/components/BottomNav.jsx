@@ -114,7 +114,7 @@ export function HeaderPlus({ onPick, canExpense = true, canLead = false }) {
 }
 
 // App'ning <style> blokiga qo'shiladigan CSS (faqat telefon/planshetda ko'rinadi)
-export const BOTTOM_NAV_CSS = `
+export const BOTTOM_NAV_CSS = () => `
   .uvix-bottomnav { display: none; }
   .uvix-hplus { display: none; }
   @media (max-width: 860px) {

@@ -199,7 +199,7 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
 
   return (
     <section data-testid="today" aria-label="Bugun" className="uvix-today" style={{ display: "flex", flexDirection: "column", gap: 18, marginBottom: 22 }}>
-      <style>{TODAY_CSS}</style>
+      <style>{TODAY_CSS()}</style>
       {queueOpen && <CustMsgQueueModal onClose={() => { setQueueOpen(false); msgQ.reload(); }} />}
       <header>
         <div style={{ fontSize: 14, color: THEME.muted }}>{UZ_WEEKDAYS[now.getDay()]}, {now.getDate()}-{UZ_MONTHS[now.getMonth()]}</div>
@@ -249,7 +249,7 @@ export function TodayView({ user, orders, employees, stageOf, chatsEnabled, canE
   );
 }
 
-const TODAY_CSS = `
+const TODAY_CSS = () => `
   .uvix-today-cards { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px; padding: 0 16px; scroll-padding: 0 16px; }
   .uvix-today-card { flex: 0 0 82%; scroll-snap-align: start; border-radius: 22px; padding: 18px 18px 14px; min-height: 150px; box-sizing: border-box; min-width: 0; }
   .uvix-noscrollbar { scrollbar-width: none; } .uvix-noscrollbar::-webkit-scrollbar { display: none; }

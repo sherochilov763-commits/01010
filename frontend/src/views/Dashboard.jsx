@@ -602,7 +602,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
         </div>
         {pSheet && <ReportSheet title={rows.find((r) => r.id === pSheet)?.t || ""} onClose={() => setPSheet(null)}>{WIDGETS[pSheet]?.()}</ReportSheet>}
         {modals}
-        <style>{PHONE_REPORT_CSS}</style>
+        <style>{PHONE_REPORT_CSS()}</style>
       </div>
     );
   }
@@ -665,7 +665,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
 
       {split && !editMode && <SplitCompare orders={kassaOrders || ordersIn} transactions={kassaTx || expensesIn} kassa={canCash ? kassaNow : null} canProfit={canProfit} work={work} range={effectivePeriod} onPick={(l) => onNavigate?.("orders", {})} />}
       {can("expense.big") && !editMode && <BigExpenses list={allExpenses || expensesIn} orders={ordersIn} onSeen={onMarkBigSeen} onOpenAll={() => onNavigate?.("expense")} />}
-      <style>{EDITOR_CSS}</style>
+      <style>{EDITOR_CSS()}</style>
       {editMode && (
         <EditToolbar isAdmin={isAdmin} cfg={cfg} onDone={() => setEditMode(false)} onAdd={() => setGalleryOpen(true)} hiddenCount={cfg.editing.layout.filter((w) => !w.visible).length} />
       )}
@@ -734,7 +734,7 @@ function ReportSheet({ title, onClose, children }) {
   );
 }
 
-const PHONE_REPORT_CSS = `
+const PHONE_REPORT_CSS = () => `
   .uvix-preport-chips { display: flex; gap: 6px; }
   .uvix-preport-chips button { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: background .15s ease, color .15s ease; -webkit-tap-highlight-color: transparent; }
   .uvix-preport-list { border-radius: 16px; overflow: hidden; }

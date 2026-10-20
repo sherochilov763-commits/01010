@@ -6,7 +6,7 @@ import { Button, Card, ConfirmDialog, EmptyState, Field, Pagination, getIconBtn,
 import { exportWorkbook, loadXLSX } from "../../lib/excel.js";
 import { generateOrderNumber, orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
 import { lineColor, lineOfOrder, useLine } from "../../lib/lines.js";
-import { fmt, money, todayStr, uid, usd, shortDateUz } from "../../lib/format.js";
+import { fmt, money, todayStr, uid, usd, shortDateUz, moneyCompact } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { OrderForm } from "./OrderForm.jsx";
 import { PaymentsModal } from "./PaymentsModal.jsx";
@@ -582,7 +582,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
       ) : (
       <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <div style={{ fontSize: 13, color: THEME.dim, fontVariantNumeric: "tabular-nums", marginRight: 4 }} data-testid="orders-summary">{list.length} ta · {money(listSum)}</div>
+          <div style={{ fontSize: 13, color: THEME.dim, fontVariantNumeric: "tabular-nums", marginRight: 4, whiteSpace: "nowrap" }} data-testid="orders-summary" title={`Ro'yxatdagi buyurtmalar jami: ${money(listSum)}`}>{list.length} ta buyurtma · jami {moneyCompact(listSum).replace(/ (mln|mlrd) so'm$/, " $1")}</div>
           <div style={{ flex: 1 }} />
           {viewToggle}
           {fileInput}
@@ -610,7 +610,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
         {importErrorsBox}
       </div>
       )}
-      <style>{ORDER_VISUAL_CSS}</style>
+      <style>{ORDER_VISUAL_CSS()}</style>
       {!isMobile && <OrderPeek peek={pv.peek} stageLabel={pv.peek ? PROD_LABEL[stageOf(pv.peek.o)] : ""} debtOf={orderDebt} />}
       {!customerMode && !search && <RecentOrders orders={orders} recent={marks.recent} pinSet={marks.pinSet} onOpen={(o) => (isMobile ? openSheet(o) : setSelectedId(o.id))} />}
       <div className={selected ? "uvix-split uvix-split-open" : "uvix-split"}>

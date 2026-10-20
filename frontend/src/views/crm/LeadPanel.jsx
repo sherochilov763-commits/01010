@@ -2,7 +2,7 @@
 // kompyuterda o'ngdan, telefonda pastdan. Tepada: raqam/bosqich, mijoz, ish nomi, tez amallar
 // (Qo'ng'iroq · Telegram · Smeta · Buyurtma · O'lchov); ostida «maydon: qiymat» ro'yxati va oxirgi xabarlar.
 import { useEffect, useState } from "react";
-import { CalendarClock, Check, Copy, FileText, MessageCircle, Package, Pencil, Phone, Ruler, Send, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, ChevronDown, Copy, FileText, MessageCircle, Package, Pencil, Phone, Ruler, Send, Trash2, X } from "lucide-react";
 import { THEME } from "../../theme.js";
 import { money } from "../../lib/format.js";
 import { LINE_META, lineColor } from "../../lib/lines.js";
@@ -92,10 +92,13 @@ export function LeadPanel({ lead, sig = {}, stages, orders, jobs, phone, onClose
         {phone && <div style={{ width: 38, height: 4, borderRadius: 2, background: THEME.border2, margin: "8px auto 0" }} />}
         <div style={{ padding: "14px 18px 13px", borderBottom: `1px solid ${THEME.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: THEME.dim }}>
-            <select value={lead.stage || "new"} onChange={(e) => onMoveTo(e.target.value)} data-testid="lead-panel-stage" aria-label="Bosqich"
-              style={{ appearance: "none", maxWidth: "60%", textOverflow: "ellipsis", border: 0, borderRadius: 20, padding: "3px 10px", fontFamily: "inherit", fontSize: 12, fontWeight: 700, cursor: "pointer", color: st.color, background: `${st.color}1F` }}>
-              {stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-            </select>
+            <label title="Bosqichni o'zgartirish" style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 20, padding: "3px 8px 3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: st.color, background: `${st.color}1F`, whiteSpace: "nowrap", maxWidth: "70%" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{st.label}</span><ChevronDown size={13} style={{ flexShrink: 0 }} />
+              <select value={lead.stage || "new"} onChange={(e) => onMoveTo(e.target.value)} data-testid="lead-panel-stage" aria-label="Bosqich"
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer", border: 0, fontSize: 16 }}>
+                {stages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+            </label>
             <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
               <button type="button" onClick={onEdit} title="Tahrirlash" aria-label="Tahrirlash" data-testid="lead-panel-edit" className="uvix-lp-ic"><Pencil size={15} /></button>
               <button type="button" onClick={onDelete} title="O'chirish" aria-label="O'chirish" className="uvix-lp-ic danger"><Trash2 size={15} /></button>
@@ -142,12 +145,12 @@ export function LeadPanel({ lead, sig = {}, stages, orders, jobs, phone, onClose
           )}
         </div>
       </aside>
-      <style>{LEAD_PANEL_CSS}</style>
+      <style>{LEAD_PANEL_CSS()}</style>
     </>
   );
 }
 
-const LEAD_PANEL_CSS = `
+const LEAD_PANEL_CSS = () => `
   .uvix-lp-scrim { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,${THEME.isDark ? 0.45 : 0.18}); animation: uvixLpFade .18s ease; }
   .uvix-lp { position: fixed; top: 0; right: 0; bottom: 0; z-index: 201; width: min(440px, 100vw); background: ${THEME.card}; color: ${THEME.text};
     box-shadow: -14px 0 40px rgba(0,0,0,${THEME.isDark ? 0.5 : 0.12}); display: flex; flex-direction: column; animation: uvixLpIn .24s cubic-bezier(.2,.8,.2,1);

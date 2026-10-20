@@ -242,7 +242,7 @@ export function LeadCard({ lead, line, showLine, orders, jobs, employees, compac
 }
 
 // Belgilar izohi (sichqoncha olib borilganda) — faqat sichqonchali qurilmalarda
-export const LEAD_CARD_CSS = `
+export const LEAD_CARD_CSS = () => `
   .uvix-lead-card:hover { border-color: ${THEME.border2}; }
   .uvix-lead-card:focus-visible { outline: 2px solid ${THEME.blue}; outline-offset: 2px; }
   @media (hover: hover) {

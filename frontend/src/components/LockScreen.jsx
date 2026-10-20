@@ -95,7 +95,7 @@ export function LockScreen({ user, onUnlock, onLogout }) {
   );
 }
 
-export const LOCK_CSS = `
+export const LOCK_CSS = () => `
   @keyframes uvixLockShake { 0%,100% { transform: none; } 20%,60% { transform: translateX(-8px); } 40%,80% { transform: translateX(8px); } }
   .uvix-lock-shake { animation: uvixLockShake .35s ease; }
   @media (prefers-reduced-motion: reduce) { .uvix-lock-shake { animation: none; } }

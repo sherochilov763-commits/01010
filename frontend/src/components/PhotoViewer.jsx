@@ -92,7 +92,7 @@ export function PhotoViewer({ photos, index = 0, title = "", onClose }) {
           </div>
         </>
       )}
-      <style>{PV_CSS}</style>
+      <style>{PV_CSS()}</style>
     </div>
   );
 }
@@ -117,7 +117,7 @@ export function PhotoGrid({ photos, title, size = 76 }) {
   );
 }
 
-const PV_CSS = `
+const PV_CSS = () => `
   .uvix-pv { position: fixed; inset: 0; z-index: 1000; background: rgba(8,8,10,.96); color: #fff; display: flex; flex-direction: column; animation: uvixPvIn .18s ease; touch-action: none; }
   .uvix-pv-top { display: flex; align-items: center; gap: 8px; padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; flex-shrink: 0; }
   .uvix-pv-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; position: relative; user-select: none; -webkit-user-select: none; }

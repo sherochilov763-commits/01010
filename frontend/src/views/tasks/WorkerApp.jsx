@@ -117,7 +117,7 @@ export function WorkerApp({ currentUser, onLogout }) {
 
   return (
     <div style={{ minHeight: "100vh", background: THEME.surface, color: THEME.text, fontFamily: THEME.font }}>
-      <style>{`body{background:${THEME.surface}} @keyframes uvixSpin{to{transform:rotate(360deg)}} .uvix-spin{animation:uvixSpin .9s linear infinite} @media (max-width:860px){input,select,textarea{font-size:16px!important}} @media (max-width:430px){.uvix-worker-name{display:none}} ${WORKER_NAV_CSS}`}</style>
+      <style>{`body{background:${THEME.surface}} @keyframes uvixSpin{to{transform:rotate(360deg)}} .uvix-spin{animation:uvixSpin .9s linear infinite} @media (max-width:860px){input,select,textarea{font-size:16px!important}} @media (max-width:430px){.uvix-worker-name{display:none}} ${WORKER_NAV_CSS()}`}</style>
 
       {!viewOnly && <GeoTracker user={currentUser} />}
       {/* Yuqori panel */}
@@ -408,7 +408,7 @@ function WorkerSettings({ currentUser, onLogout }) {
   );
 }
 
-const WORKER_NAV_CSS = `
+const WORKER_NAV_CSS = () => `
   .uvix-worker-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 150; display: flex; padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); }
   .uvix-worker-nav button { flex: 1; height: 56px; border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-family: inherit; font-size: 11.5px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   @media (max-width: 720px) { .uvix-worker-main { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; } }

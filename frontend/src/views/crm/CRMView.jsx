@@ -543,7 +543,7 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
           </div>
         ))}
       </div>
-      <style>{LEAD_CARD_CSS + `
+      <style>{LEAD_CARD_CSS() + `
         .uvix-lead-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: ${THEME.card}; border: 1px solid ${THEME.border}; box-shadow: ${THEME.shadowMd}; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
         .uvix-lead-card:hover .uvix-lead-actions, .uvix-lead-card:focus-within .uvix-lead-actions { opacity: 1; pointer-events: auto; }
         .uvix-lead-actions button, .uvix-lead-actions a { width: 26px; height: 26px; border: 0; border-radius: 5px; background: none; color: ${THEME.muted}; display: grid; place-items: center; cursor: pointer; padding: 0; }
@@ -646,7 +646,7 @@ function MobileLeadBoard({ leadsByStage, stage, onStage, orders, employees, onAs
           )} />
         </div>
       )}
-      <style>{LEAD_CARD_CSS}</style>
+      <style>{LEAD_CARD_CSS()}</style>
     </div>
   );
 }

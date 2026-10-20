@@ -200,7 +200,7 @@ export function OrderPeek({ peek, stageLabel, debtOf }) {
   );
 }
 
-export const ORDER_VISUAL_CSS = `
+export const ORDER_VISUAL_CSS = () => `
   .uvix-pinbtn { width: 28px; height: 28px; border: 0; background: none; border-radius: 7px; display: inline-grid; place-items: center; cursor: pointer; flex-shrink: 0; opacity: .0; transition: opacity .15s ease, background .15s ease; }
   .uvix-pinbtn.on { opacity: 1; }
   tr:hover .uvix-pinbtn, .uvix-pinbtn:focus-visible { opacity: 1; }

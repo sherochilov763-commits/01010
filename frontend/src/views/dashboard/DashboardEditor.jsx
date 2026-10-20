@@ -328,7 +328,7 @@ export function useDragReorder(cfg) {
   return { dragId, onDragStart };
 }
 
-export const EDITOR_CSS = `
+export const EDITOR_CSS = () => `
   @keyframes uvix-wiggle { 0%,100% { transform: rotate(-0.35deg); } 50% { transform: rotate(0.35deg); } }
   .uvix-wf-edit { outline: 2px dashed rgba(124,92,252,0.45); outline-offset: 3px; }
   /* faqat karta mazmuni tebranadi — tutqich va shesterenka joyida turadi, bosish oson */

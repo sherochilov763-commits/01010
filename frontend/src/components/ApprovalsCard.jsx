@@ -67,7 +67,7 @@ export function ApprovalsCard({ approvals, onDecide, showToast }) {
   );
 }
 
-export const APPROVALS_CSS = `
+export const APPROVALS_CSS = () => `
   @media (max-width: 640px) {
     .uvix-approval-row { flex-wrap: wrap; }
     .uvix-approval-actions { width: 100% !important; flex-direction: row !important; padding-left: 50px; }

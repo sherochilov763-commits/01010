@@ -139,7 +139,7 @@ export function OperationsView({ orders, transactions, isAdmin, onDeletePayment,
             }}
           />
         )}
-        <style>{OPS_PHONE_CSS}</style>
+        <style>{OPS_PHONE_CSS()}</style>
       </div>
     );
   }
@@ -335,7 +335,7 @@ function OpsFilterSheet({ count, onClose, onClear, payFilter, setPayFilter, catF
   );
 }
 
-const OPS_PHONE_CSS = `
+const OPS_PHONE_CSS = () => `
   .uvix-mops { display: flex; flex-direction: column; gap: 10px; }
   .uvix-mops-search { flex: 1; min-width: 0; height: 40px; border-radius: 11px; display: flex; align-items: center; gap: 7px; padding: 0 10px; }
   .uvix-mops-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font: inherit; }
