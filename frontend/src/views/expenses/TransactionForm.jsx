@@ -10,12 +10,13 @@ import { useExpenseRules } from "../../lib/expenseRules.js";
 /* ---------------- RASXOD FORMASI (faqat chiqim uchun) ---------------- */
 export function TransactionForm({ initial, preset, currentUser, categories, orders, employees, onAddCategory, onAddSubcategory, onClose, onSave }) {
   const catNames = categories ? Object.keys(categories) : [];
-  const [date, setDate] = useState(initial?.date || todayStr());
+  // preset — boshqa joydan ochilganda boshlang'ich qiymatlar (bo'yoq ombori, ovozli yordamchi)
+  const [date, setDate] = useState(initial?.date || preset?.date || todayStr());
   const [category, setCategory] = useState(initial?.category || (preset?.category && catNames.includes(preset.category) ? preset.category : catNames[0]) || "");
   const [subcategory, setSubcategory] = useState(initial?.subcategory || (preset?.category && categories?.[preset.category] ? preset.subcategory || categories[preset.category][0] : (categories?.[catNames[0]] || [])[0]) || "");
-  const [amountStr, setAmountStr] = useState(initial ? fmt(initial.amount) : "");
-  const [paymentType, setPaymentType] = useState(initial?.paymentType || "karta");
-  const [note, setNote] = useState(initial?.note || "");
+  const [amountStr, setAmountStr] = useState(initial ? fmt(initial.amount) : preset?.amount ? fmt(preset.amount) : "");
+  const [paymentType, setPaymentType] = useState(initial?.paymentType || preset?.paymentType || "karta");
+  const [note, setNote] = useState(initial?.note || preset?.note || "");
   // Kimga tegishli: joriy yo'nalish yoki «Umumiy» (ikkalasiga — oylik tushum ulushiga qarab bo'linadi)
   const curLine = useLine();
   const rules = useExpenseRules();
@@ -43,7 +44,7 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   const isPaint = category === "Kraska";
   // Oylik/avans: qaysi xodimniki. Xodim yo'nalishi rasxodga o'tadi; «Umumiy» xodim — bajargan ishi bo'yicha bo'linadi.
   const isStaff = category === "Xodimlar";
-  const [employeeId, setEmployeeId] = useState(initial?.employeeId || "");
+  const [employeeId, setEmployeeId] = useState(initial?.employeeId || preset?.employeeId || "");
   const staffList = (employees || []).filter((e) => e.role !== "admin");
   const pickEmployee = (id) => {
     setEmployeeId(id);

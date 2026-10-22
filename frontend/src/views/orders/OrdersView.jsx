@@ -108,7 +108,7 @@ function PayBar({ pct, left, wide }) {
 /* ---------------- ORDERS VIEW ---------------- */
 const LabelModal = lazy(() => import("./LabelModal.jsx"));
 
-export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
+export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
   // Rollar va huquqlar: o'chirish — «Ha» (so'rovsiz) / «So'rov» (rahbar tasdiqlaydi) / «Yo'q»
   const { can, scope } = usePerms();
   const directDel = isAdmin || can("orders.delete", "direct");
@@ -151,7 +151,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
   // Pastki menyudagi "+" tugmasidan kelinganda — formani darhol ochamiz
   useEffect(() => {
     if (!quickAddNonce) return;
-    setQuote({});
+    setQuote(quickAddPrefill ? { prefill: quickAddPrefill } : {});
     onQuickAddHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickAddNonce]);
@@ -170,6 +170,12 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
       if (!o) showToast?.((allOrders || []).some((x) => x.id === initialFilter.openId && !x.deletedAt) ? "Bu buyurtma sizga tegishli emas" : "Buyurtma topilmadi");
       else if (isMobile) setSheetId(o.id);
       else setSelectedId(o.id);
+    }
+    // Ovozli yordamchidan: to'lov oynasi summa va to'lov turi bilan ochiladi
+    if (initialFilter?.payId) {
+      const o = orders.find((x) => x.id === initialFilter.payId);
+      if (!o) showToast?.("Buyurtma topilmadi");
+      else setPaymentsFor({ ...o, _prefill: initialFilter.pay || null });
     }
   }, [initialFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -801,7 +807,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
       )}
       {invoiceFor && <InvoiceModal order={invoiceFor} customer={invoiceCustomer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}
       {quote && (
-        <QuoteModal lead={quote.lead || null} customers={customerList} employees={employees} allOrders={allOrders || orders} currentUser={currentUser} isAdmin={isAdmin}
+        <QuoteModal lead={quote.lead || null} prefill={quote.prefill || null} customers={customerList} employees={employees} allOrders={allOrders || orders} currentUser={currentUser} isAdmin={isAdmin}
           onClose={() => { setQuote(null); if (quote.lead) onPendingLeadHandled?.(); }}
           onSaved={(lead) => { setQuote(null); if (quote.lead) onPendingLeadHandled?.(); onServerChange?.({ lead }); showToast?.(`Smeta ${lead.quote?.no || ""} saqlandi — CRM'da «${lead.customer}»`); }}
           onConverted={(r) => {
@@ -819,6 +825,7 @@ export function OrdersView({ quickAddNonce, onQuickAddHandled, orders, allOrders
       {paymentsFor && (
         <PaymentsModal
           order={orders.find((o) => o.id === paymentsFor.id) || paymentsFor}
+          prefill={paymentsFor._prefill || null}
           transactions={transactions}
           currentUser={currentUser}
           isAdmin={isAdmin}

@@ -18,17 +18,19 @@ import { LEAD_SOURCES, sourceMeta } from "../../components/LeadSource.jsx";
 import { THEME } from "../../theme.js";
 
 /* ---------------- PAYMENTS MODAL ---------------- */
-export function LeadForm({ initial, employees, onClose, onSave, leads = [] }) {
+export function LeadForm({ initial, prefill = null, employees, onClose, onSave, leads = [] }) {
   const [srcAll, setSrcAll] = useState(false);
   const isEdit = !!initial;
   const managerNames = employees ? employees.filter((e) => !isWorkerRole(e.role)).map((e) => e.name) : [];
-  const [customer, setCustomer] = useState(initial?.customer || "");
-  const [title, setTitle] = useState(initial?.jobTitle || "");
-  const [phone, setPhone] = useState(initial?.phone || "");
-  const [source, setSource] = useState(initial?.source || "");
-  const [estimatedValueStr, setEstimatedValueStr] = useState(initial?.estimatedValue != null ? fmt(initial.estimatedValue) : "");
+  // prefill — yangi lid uchun boshlang'ich qiymatlar (ovozli yordamchi); initial — tahrirlash
+  const pre = initial || prefill || null;
+  const [customer, setCustomer] = useState(pre?.customer || "");
+  const [title, setTitle] = useState(pre?.jobTitle || "");
+  const [phone, setPhone] = useState(pre?.phone || "");
+  const [source, setSource] = useState(pre?.source || "");
+  const [estimatedValueStr, setEstimatedValueStr] = useState(initial?.estimatedValue != null ? fmt(initial.estimatedValue) : prefill?.estimatedValue ? fmt(prefill.estimatedValue) : "");
   const [manager, setManager] = useState(initial?.manager || managerNames[0] || "");
-  const [notes, setNotes] = useState(initial?.notes || "");
+  const [notes, setNotes] = useState(pre?.notes || "");
   const [priority, setPriority] = useState(priorityOf(initial));
   const [error, setError] = useState("");
   // Yo'nalish: xodim — o'zinikida (server ham shunday yozadi); rahbar — tanlaydi
@@ -272,7 +274,7 @@ export function CRMView(props) {
   );
 }
 
-function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onSetPriority, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat, onOpenOrder }) {
+function CRMBoard({ quickAddNonce, quickAddPrefill, onQuickAddHandled, leads: allLeads, orders, employees, currentUser, isAdmin, onSaveLead, onDeleteLead, onMoveLead, onSetPriority, onCreateOrderFromLead, onFetchTelegramMessages, onSendTelegramMessage, onAssignTask, onOpenChat, onOpenOrder }) {
   // Bosqichlar yo'nalishga qarab (UVONYX: Murojaat → O'lchov → Smeta ...); lidlar ham tanlangan yo'nalish bo'yicha
   const { line } = useLine();
   const LEAD_STAGES = leadStagesFor(line);
@@ -336,7 +338,7 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
   useEffect(() => {
     if (!quickAddNonce) return;
     setTab("board");
-    setModal(true);
+    setModal(quickAddPrefill ? { _prefill: quickAddPrefill } : true);
     onQuickAddHandled?.();
   }, [quickAddNonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const [confirmDel, setConfirmDel] = useState(null);
@@ -571,7 +573,8 @@ function CRMBoard({ quickAddNonce, onQuickAddHandled, leads: allLeads, orders, e
       {jobFor && <JobForm job={null} preset={{ kind: "measure", leadId: jobFor.id, line: jobFor.line, title: `${jobFor.customer} — o'lchov`, phone: jobFor.phone || "" }} employees={employees} orders={orders} onClose={() => setJobFor(null)} onSaved={() => { setJobFor(null); loadJobs(); }} />}
       {modal && (
         <LeadForm
-          initial={modal === true ? null : modal}
+          initial={modal === true || modal?._prefill ? null : modal}
+          prefill={modal?._prefill || null}
           employees={employees}
           leads={leads}
           onClose={() => setModal(null)}

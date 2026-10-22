@@ -17,12 +17,13 @@ export const themePalette = () => ({
   primary: THEME.violet, onPrimary: THEME.onPrimary, green: THEME.green, red: THEME.rose, hover: THEME.chip, link: THEME.violet, shadow: THEME.shadowLg,
 });
 
-export function QuoteModal({ lead, customers, employees, allOrders, currentUser, isAdmin, onClose, onSaved, onConverted }) {
+export function QuoteModal({ lead, prefill = null, customers, employees, allOrders, currentUser, isAdmin, onClose, onSaved, onConverted }) {
   const sales = useSales();
   const openQuote = lead?.quote?.status === "open" ? lead.quote : null;
-  const [items, setItems] = useState(openQuote?.items || []);
-  const [customer, setCustomer] = useState(lead?.customer || "");
-  const [phone, setPhone] = useState(lead?.phone || "");
+  // prefill — ovozli yordamchidan: mijoz, telefon va tayyor pozitsiyalar
+  const [items, setItems] = useState(openQuote?.items || prefill?.items || []);
+  const [customer, setCustomer] = useState(lead?.customer || prefill?.customer || "");
+  const [phone, setPhone] = useState(lead?.phone || prefill?.phone || "");
   const managers = (employees || []).filter((e) => !isWorkerRole(e.role)).map((e) => e.name);
   const [manager, setManager] = useState(lead?.manager || currentUser?.name || managers[0] || "");
   const [step, setStep] = useState("quote");

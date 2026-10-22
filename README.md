@@ -1086,6 +1086,24 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Frontend: `lib/perms.jsx` (`usePerms().can(...)`, menyu — `NAV_PERM`), `views/settings/RolesSection.jsx` (sozlama, `EmpOverrides`), `components/ViewAsBanner.jsx`.
 - Testlar: `tests/e2e/test_perms.py`, `test_roles.py`, `tests/unit/permissions.test.mjs`.
 
+## 🎤 Ovozli yordamchi CRM ichida (2026-10)
+
+Har ekranda o'ng pastda mikrofon tugmasi (faqat rahbar; `VOICE_LOG_OWNERS` bilan aniq hisoblar). Bosasiz → gapirasiz →
+«Tayyor» → kerakli bo'lim ochiladi va forma **to'ldirilgan** holda chiqadi. Saqlashni o'zingiz bosasiz — formaning
+odatiy tekshiruvlari (ortiqcha to'lov ogohlantirishi, huquqlar, tasdiqlash) o'zgarmaydi.
+
+| Gap | Nima ochiladi |
+|---|---|
+| «Sardorga banner 2 ga 1, m² 80 ming, montaj 150 ming» | Yangi buyurtma: mijoz (bazadagi yozilishi), smeta pozitsiyalari |
+| «Akmaldan 300 ming naqd oldim» | To'lov oynasi: qarzdor buyurtma bitta bo'lsa — o'zi; bir nechta bo'lsa — tanlash ro'yxati |
+| «Plyonkaga 1,2 million kartadan to'ladim», «Bekzodga 2 million avans» | Rasxod: kategoriya / bo'lim (faqat mavjudlaridan), summa, xodim |
+| «Ertaga soat 14 da Jasur bilan Malikaga montaj» | Vazifa: tur, sana, vaqt, manzil, mas'ul xodimlar |
+| «Dilshod Instagramdan oniks devor so'radi, taxminan 5 million» | Yangi lid |
+
+Mikrofon bo'lmasa — panelda matn bilan yozish mumkin. Kalitlar «Ovozli ish jurnali» bo'limidagi bilan bir xil.
+API: `GET /api/voice/status`, `POST /api/voice/command` (server hech narsa saqlamaydi). Fayllar: `backend/voice-command.js`,
+`frontend/src/components/VoiceAssistant.jsx`, `frontend/src/lib/voice.js`; testlar: `tests/unit/voice-command.test.mjs`, `tests/e2e/test_voice.py`.
+
 ## 🎙 Ovozli ish jurnali (2026-10)
 
 Rahbarning shaxsiy yordamchisi — mavjud UVIX boti ichida (alohida bot kerak emas). Faqat rahbar (role `admin`)

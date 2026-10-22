@@ -565,12 +565,15 @@ geoApi = require("./geo")(app, {
 staffBot.onLocation((empId, loc) => geoApi.onTelegramLocation(empId, loc));
 
 // ==================== Ovozli ish jurnali (faqat rahbar, mavjud bot orqali) ====================
+const voiceAi = require("./voice-ai").createAi();
 const voiceLog = require("./voice-log")(app, {
   getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin,
-  bot: staffBot, ai: require("./voice-ai").createAi(), buildWorkbook: excelPro.buildWorkbook,
+  bot: staffBot, ai: voiceAi, buildWorkbook: excelPro.buildWorkbook,
   interval: process.env.UVIX_WORKLOG_MS ? Number(process.env.UVIX_WORKLOG_MS) : 30000,
 });
 staffBot.onMessage((m) => voiceLog.handle(m));
+// CRM ichidagi mikrofon: gap → to'ldirilgan forma (server hech narsa saqlamaydi)
+require("./voice-command")(app, { getStmt, readEmployees, requireAuth, ai: voiceAi });
 
 // ==================== Smeta → buyurtmalar, holatlar, umumiy to'lov ====================
 const fx = require("./fx").createFx({ getStmt, upsertStmt });

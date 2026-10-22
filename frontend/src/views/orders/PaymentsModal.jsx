@@ -4,16 +4,17 @@ import { useState } from "react";
 import { Clock, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button, Card, ConfirmDialog, EmptyState, Field, Modal, MultiPaymentLines, getIconBtn, getInputStyle } from "../../components/ui.jsx";
 import { orderBrakSum, orderDebt, orderTotalPaid } from "../../lib/finance.js";
-import { money, paymentTypeLabel, todayStr, uid } from "../../lib/format.js";
+import { fmt, money, paymentTypeLabel, todayStr, uid } from "../../lib/format.js";
 import { THEME } from "../../theme.js";
 import { useApprovals, PENDING_LABEL } from "../../lib/approvals.jsx";
 import { ApprovalRequestModal } from "../../components/ApprovalRequestModal.jsx";
 
-export function PaymentsModal({ order, transactions, currentUser, isAdmin, onClose, onAddPayment, onDeletePayment }) {
+export function PaymentsModal({ order, prefill = null, transactions, currentUser, isAdmin, onClose, onAddPayment, onDeletePayment }) {
   const { can } = usePerms();
-  const [date, setDate] = useState(todayStr());
-  const [lines, setLines] = useState([{ id: uid(), methodType: "naqd", amountStr: "" }]);
-  const [comment, setComment] = useState("");
+  // prefill — ovozli yordamchidan: summa, to'lov turi, sana, izoh (saqlashni foydalanuvchi bosadi)
+  const [date, setDate] = useState(prefill?.date || todayStr());
+  const [lines, setLines] = useState([{ id: uid(), methodType: prefill?.paymentType || "naqd", amountStr: prefill?.amount ? fmt(prefill.amount) : "" }]);
+  const [comment, setComment] = useState(prefill?.comment || "");
   const [error, setError] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
   const [overOk, setOverOk] = useState(false); // kelishuvdan ortiq to'lov — ikkinchi bosishda (ogohlantirishdan keyin)

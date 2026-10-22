@@ -123,4 +123,10 @@ function createAi({ env = process.env, fetchImpl } = {}) {
   };
 }
 
-module.exports = { createAi, resolveConfig, parseJson };
+// Ovozli yordamchidan kim foydalanadi: VOICE_LOG_OWNERS=<id,id> yoki barcha rahbarlar (role = admin)
+function voiceOwners(employees = [], env = process.env) {
+  const only = String(env.VOICE_LOG_OWNERS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return (employees || []).filter((e) => e && !e.deletedAt && !e.archived && (only.length ? only.includes(e.id) : e.role === "admin"));
+}
+
+module.exports = { createAi, resolveConfig, parseJson, voiceOwners };

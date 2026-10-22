@@ -205,10 +205,7 @@ function registerVoiceLog(app, { getStmt, upsertStmt, readEmployees, requireAuth
   const log = () => { const v = read(KEY, []); return Array.isArray(v) ? v : []; };
   const drafts = () => { const v = read(DRAFTS, {}); return v && typeof v === "object" ? v : {}; };
 
-  const owners = () => {
-    const only = String(env.VOICE_LOG_OWNERS || "").split(",").map((s) => s.trim()).filter(Boolean);
-    return readEmployees().filter((e) => e && !e.deletedAt && !e.archived && (only.length ? only.includes(e.id) : e.role === "admin"));
-  };
+  const owners = () => require("./voice-ai").voiceOwners(readEmployees(), env);
   const isOwner = (empId) => !!empId && owners().some((e) => e.id === empId);
   const customerNames = () => {
     const list = read("uvix:customers", []);

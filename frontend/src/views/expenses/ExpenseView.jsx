@@ -12,7 +12,7 @@ import { isBigExpense, useExpenseRules } from "../../lib/expenseRules.js";
 import { LineTag } from "../../components/LineSwitcher.jsx";
 
 /* ---------------- EXPENSE VIEW ---------------- */
-export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, orders, employees, currentUser, categories, onAddCategory, onAddSubcategory, onSave, onDelete }) {
+export function ExpenseView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, transactions, orders, employees, currentUser, categories, onAddCategory, onAddSubcategory, onSave, onDelete }) {
   // Rollar va huquqlar: kiritish va tahrirlash/o'chirish (o'ziniki / yo'nalishi / hammasi)
   const { can, scope } = usePerms();
   const canEditTx = (t) => currentUser?.role === "admin" || (scope("expense.edit") !== "none" && (scope("expense.edit") !== "own" || t.createdBy === currentUser?.name));
@@ -21,7 +21,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
   // Pastki menyudagi "+" tugmasidan kelinganda — formani darhol ochamiz
   useEffect(() => {
     if (!quickAddNonce) return;
-    setModal({});
+    setModal(quickAddPrefill ? { preset: quickAddPrefill } : {});
     onQuickAddHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quickAddNonce]);
@@ -171,6 +171,7 @@ export function ExpenseView({ quickAddNonce, onQuickAddHandled, transactions, or
       {modal && (
         <TransactionForm
           initial={modal.edit}
+          preset={modal.preset}
           currentUser={currentUser}
           categories={categories}
           orders={orders}

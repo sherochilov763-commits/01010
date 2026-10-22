@@ -747,3 +747,16 @@ export const fetchCustMsgQueue = () => cmReq("/queue");
 export const sendQueuedMsg = (id, text) => cmReq(`/queue/${encodeURIComponent(id)}/send`, { method: "POST", body: JSON.stringify({ text }) });
 export const cancelQueuedMsg = (id, reason) => cmReq(`/queue/${encodeURIComponent(id)}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
 export const queueDebtReminder = (customer) => cmReq("/queue/remind", { method: "POST", body: JSON.stringify({ customer }) });
+
+// ---- Ovozli yordamchi (faqat rahbar): gap → to'ldirilgan forma ----
+export const fetchVoiceStatus = () => apiReq("/voice/status");
+export async function voiceCommand({ audio, text }) {
+  if (!audio) return apiReq("/voice/command", "POST", { text });
+  const form = new FormData();
+  const ext = /mp4|m4a|aac/.test(audio.type || "") ? "m4a" : /ogg/.test(audio.type || "") ? "ogg" : "webm";
+  form.append("audio", audio, `voice.${ext}`);
+  const res = await fetch(`${API_BASE}/voice/command`, { method: "POST", headers: authHeaders(), body: form });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(d.message || d.error || `Xato: ${res.status}`); e.status = res.status; throw e; }
+  return d;
+}

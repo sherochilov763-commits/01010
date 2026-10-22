@@ -31,7 +31,7 @@ const GROUP_ICON = { late: AlarmClock, today: Sun, tomorrow: Sunrise, later: Cal
 const lsGet = (k, fb) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* */ } };
 
-export function JobsView({ employees, orders, currentUser, onGo }) {
+export function JobsView({ employees, orders, currentUser, onGo, quickAddNonce = 0, quickAddPrefill = null, onQuickAddHandled }) {
   const isMobile = useIsMobile();
   const { line } = useLine();
   const [jobs, setJobs] = useState(null);
@@ -137,6 +137,12 @@ export function JobsView({ employees, orders, currentUser, onGo }) {
     try { const r = await updateJob(j.id, body); setJobs((l) => (l || []).map((x) => (x.id === j.id ? r.job : x))); load(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
   }
   const plan = (j, preset) => setEdit(j ? j : { _preset: preset || {} });
+  // Ovozli yordamchidan: vazifa formasi to'ldirilgan holda ochiladi
+  useEffect(() => {
+    if (!quickAddNonce) return;
+    setEdit({ _preset: quickAddPrefill || {} });
+    onQuickAddHandled?.();
+  }, [quickAddNonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const people = useMemo(() => (employees || []).filter((e) => e.role !== "admin" && !e.deletedAt), [employees]);
   const isGroupOpen = (k) => {
     if (groupF) return true;
