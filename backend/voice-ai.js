@@ -10,8 +10,8 @@
 //
 // Hammasi oddiy fetch bilan — qo'shimcha kutubxona yo'q.
 
-const DEFAULT_MODEL = { gemini: "gemini-2.5-flash", openai: "gpt-4.1-mini", claude: "claude-haiku-5-5" };
-const DEFAULT_STT_MODEL = { gemini: "gemini-2.5-flash", openai: "whisper-1" };
+const DEFAULT_MODEL = { gemini: "gemini-3.8-flash", openai: "gpt-4.1-mini", claude: "claude-haiku-5-5" };
+const DEFAULT_STT_MODEL = { gemini: "gemini-3.8-flash", openai: "whisper-1" };
 
 function resolveConfig(env = process.env) {
   const keys = { gemini: env.GEMINI_API_KEY || "", openai: env.OPENAI_API_KEY || "", claude: env.ANTHROPIC_API_KEY || "" };
