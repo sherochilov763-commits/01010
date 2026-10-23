@@ -396,7 +396,8 @@ app.get("/api/system-status", requireAuth, requireAdmin, async (req, res) => {
   const staffTg = (() => { try { return JSON.parse(getStmt.get("uvix:staffTg")?.value || "{}"); } catch { return {}; } })();
   const help = (() => { try { return JSON.parse(getStmt.get("uvix:pinHelp")?.value || "{}"); } catch { return {}; } })();
   const emps = readEmployees();
-  let fxInfo = null; try { fxInfo = await fx.current(); } catch { /* ixtiyoriy */ }
+  // Kurs hali olinmagan bo'lsa cbu.uz javobini ko'pi bilan 1,5 soniya kutamiz — sahifa 6 soniya qotib qolmasin
+  let fxInfo = null; try { fxInfo = await Promise.race([fx.current(), new Promise((r) => { const t = setTimeout(() => r(null), 1500); t.unref?.(); })]); } catch { /* ixtiyoriy */ }
   res.json({
     telegram: { bot: !!st.telegramBotToken, adminLinked: adminIds().some((id) => !!staffTg[id]), problem: staffBot.health().problem || "" },
     backup: { time: st.backupTime || "21:00", lastDate: lastBackup, configured: !!st.telegramBotToken },
