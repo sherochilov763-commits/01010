@@ -1085,3 +1085,49 @@ Faqat telefon ko'rinishi (ekran ≤ 720 px; «Yana» va pastki menyu ≤ 860 px)
 - Server: `requireAuth` → `req.perms`, `req.can(key, need)`, `req.scopeFor(kvKey)`; `requirePerm(key)`; `/api/me/perms`, `/api/roles` (GET/PUT, rahbar), `/api/auth/view-as` («bo'lib ko'rish»: 1 soatlik faqat-o'qish tokeni, yozish — 403).
 - Frontend: `lib/perms.jsx` (`usePerms().can(...)`, menyu — `NAV_PERM`), `views/settings/RolesSection.jsx` (sozlama, `EmpOverrides`), `components/ViewAsBanner.jsx`.
 - Testlar: `tests/e2e/test_perms.py`, `test_roles.py`, `tests/unit/permissions.test.mjs`.
+
+## 🎤 Ovozli yordamchi CRM ichida (2026-10)
+
+Har ekranda o'ng pastda mikrofon tugmasi (faqat rahbar; `VOICE_LOG_OWNERS` bilan aniq hisoblar). Bosasiz → gapirasiz →
+«Tayyor» → kerakli bo'lim ochiladi va forma **to'ldirilgan** holda chiqadi. Saqlashni o'zingiz bosasiz — formaning
+odatiy tekshiruvlari (ortiqcha to'lov ogohlantirishi, huquqlar, tasdiqlash) o'zgarmaydi.
+
+| Gap | Nima ochiladi |
+|---|---|
+| «Sardorga banner 2 ga 1, m² 80 ming, montaj 150 ming» | Yangi buyurtma: mijoz (bazadagi yozilishi), smeta pozitsiyalari |
+| «Akmaldan 300 ming naqd oldim» | To'lov oynasi: qarzdor buyurtma bitta bo'lsa — o'zi; bir nechta bo'lsa — tanlash ro'yxati |
+| «Plyonkaga 1,2 million kartadan to'ladim», «Bekzodga 2 million avans» | Rasxod: kategoriya / bo'lim (faqat mavjudlaridan), summa, xodim |
+| «Ertaga soat 14 da Jasur bilan Malikaga montaj» | Vazifa: tur, sana, vaqt, manzil, mas'ul xodimlar |
+| «Dilshod Instagramdan oniks devor so'radi, taxminan 5 million» | Yangi lid |
+
+Mikrofon bo'lmasa — panelda matn bilan yozish mumkin. Kalitlar «Ovozli ish jurnali» bo'limidagi bilan bir xil.
+API: `GET /api/voice/status`, `POST /api/voice/command` (server hech narsa saqlamaydi). Fayllar: `backend/voice-command.js`,
+`frontend/src/components/VoiceAssistant.jsx`, `frontend/src/lib/voice.js`; testlar: `tests/unit/voice-command.test.mjs`, `tests/e2e/test_voice.py`.
+
+## 🎙 Ovozli ish jurnali (2026-10)
+
+Rahbarning shaxsiy yordamchisi — mavjud UVIX boti ichida (alohida bot kerak emas). Faqat rahbar (role `admin`)
+hisobiga javob beradi; boshqa xodimlar uchun bot avvalgidek ishlaydi.
+
+- Botga **ovozli xabar yoki matn**: «Akmalga 3 ta viveska tayyorladim, 450 ming» → bot karta qaytaradi
+  (ish, mijoz, soni, summa, muddat) → **✅ Saqlash / ✏️ Tuzatish / ❌**. Faqat «Saqlash»dan keyin jurnalga yoziladi.
+- **Muddatli ish**: «Ertaga soat 14 da Jasurga montaj, eslatib qo'y» → 13:00 da 🔔 eslatma
+  (**✅ Bajarildi / ⏰ 1 soatdan keyin**); har kuni 09:00 da bugungi va kechikkan ishlar ro'yxati.
+- **Savollar**: «Bugun nima qildim?», «Qaysi ishlar qoldi?», «Akmalga bu oy nima qildik?»; «Excel qil» → fayl.
+- Buyruqlar: `/bugun`, `/ishlar`, `/hafta` (Excel), `/oy` (Excel), `/yordam`.
+
+**Sozlash** — Railway → Variables (kalitlar faqat serverda turadi):
+
+| O'zgaruvchi | Ma'nosi |
+|---|---|
+| `GEMINI_API_KEY` | Google Gemini — ovozni ham, ma'noni ham qiladi (eng oddiy variant) |
+| `OPENAI_API_KEY` | ChatGPT — ovoz (Whisper) va ma'no |
+| `ANTHROPIC_API_KEY` | Claude — faqat ma'no; ovoz uchun Gemini yoki OpenAI kaliti ham kerak |
+| `VOICE_AI_PROVIDER` | ma'no uchun: `gemini` / `openai` / `claude` (bo'sh — qaysi kalit bor bo'lsa) |
+| `VOICE_STT_PROVIDER` | ovoz uchun: `gemini` / `openai` |
+| `VOICE_AI_MODEL`, `VOICE_STT_MODEL` | modelni almashtirish (ixtiyoriy) |
+| `VOICE_LOG_OWNERS` | faqat shu xodim id'lari (vergul bilan); bo'sh — barcha `admin`lar |
+
+Saqlash: `uvix:worklog` (ichki kalit, KV orqali ochilmaydi). API (faqat admin): `GET /api/worklog`,
+`PATCH/DELETE /api/worklog/:id`, `GET /api/worklog/export.xlsx` — keyingi bosqichda UVIX ichidagi «Ish jurnali» sahifasi uchun.
+Fayllar: `backend/voice-log.js`, `backend/voice-ai.js`; testlar: `tests/unit/voice-log.test.mjs`.

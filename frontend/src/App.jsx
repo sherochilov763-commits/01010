@@ -47,6 +47,8 @@ import { generateOrderNumber, orderDebt } from "./lib/finance.js";
 import { money, paymentTypeLabel, uid } from "./lib/format.js";
 import { resumePending, storageGet, storageRefresh, storageSet, subscribeRemote } from "./lib/kv.js";
 import { SaveStatus } from "./components/SaveStatus.jsx";
+import { VoiceAssistant, VOICE_CSS } from "./components/VoiceAssistant.jsx";
+import { canonicalCustomer, expensePreset, jobPreset, leadPrefill, paymentPrefill, quoteItems } from "./lib/voice.js";
 import { useBackToClose, useHistoryView } from "./lib/history.js";
 import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme, migrateAppearance, withAlpha, resolveAppearance, effectiveAppearance as effectiveOf, personalPart } from "./theme.js";
 import { useAutoNight } from "./lib/autoNight.js";
@@ -200,6 +202,18 @@ function AppInner() {
   function navigateWithFilter(targetView, filter) {
     setNavFilter(filter || {});
     setView(targetView);
+  }
+  // Ovozli yordamchi: gap → kerakli bo'lim + to'ldirilgan forma (saqlashni foydalanuvchi bosadi)
+  function onVoiceAction(action, data, extra = {}) {
+    const n = Date.now();
+    const custNames = () => buildCustomers(orders, leads, customers);
+    if (action === "payment" && extra.order) return navigateWithFilter("orders", { payId: extra.order.id, pay: paymentPrefill(data), n });
+    if (action === "search") return navigateWithFilter("orders", { search: data.search || "", n });
+    setNavFilter(null);
+    if (action === "order") { setView("orders"); setQuickAdd({ kind: "order", n, prefill: { customer: canonicalCustomer(data.customer, custNames()), phone: data.phone || "", items: quoteItems(data.items) } }); }
+    else if (action === "expense") { setView("expense"); setQuickAdd({ kind: "expense", n, prefill: expensePreset(data, employees) }); }
+    else if (action === "job") { setView("jobs"); setQuickAdd({ kind: "job", n, prefill: jobPreset(data, employees) }); }
+    else if (action === "lead") { setView("crm"); setQuickAdd({ kind: "lead", n, prefill: leadPrefill(data, custNames()) }); }
   }
   const [toast, setToast] = useState(null);
   const [needsSetup, setNeedsSetup] = useState(false); // tizimda hali birorta xodim yo'q
@@ -1058,6 +1072,7 @@ function AppInner() {
         ${ncenterCss()}
         ${BOTTOM_NAV_CSS()}
         ${MORE_SHEET_CSS()}
+        ${VOICE_CSS()}
         ${APPROVALS_CSS()}
         ${LOCK_CSS()}
       `}</style>
@@ -1094,6 +1109,7 @@ function AppInner() {
             {view === "orders" && (
               <OrdersView
                 quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
+                quickAddPrefill={quickAdd?.kind === "order" ? quickAdd.prefill : null}
                 onQuickAddHandled={() => setQuickAdd(null)}
                 orders={lOrders}
                 allOrders={orders}
@@ -1124,6 +1140,7 @@ function AppInner() {
             {view === "crm" && (
               <CRMView
                 quickAddNonce={quickAdd?.kind === "lead" ? quickAdd.n : 0}
+                quickAddPrefill={quickAdd?.kind === "lead" ? quickAdd.prefill : null}
                 onQuickAddHandled={() => setQuickAdd(null)}
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onAssignTask={(lead, kind) => setTaskAssign({ lead, kind })}
@@ -1173,6 +1190,7 @@ function AppInner() {
             {view === "expense" && (
               <ExpenseView
                 quickAddNonce={quickAdd?.kind === "expense" ? quickAdd.n : 0}
+                quickAddPrefill={quickAdd?.kind === "expense" ? quickAdd.prefill : null}
                 onQuickAddHandled={() => setQuickAdd(null)}
                 transactions={scope.txList}
                 orders={myOrders}
@@ -1204,7 +1222,8 @@ function AppInner() {
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
                 onOpenOrders={(name) => { setNavFilter({ search: name }); setView("orders"); }} />
             )}
-            {view === "jobs" && <JobsView employees={employees} orders={activeOrders} currentUser={currentUser} onGo={setView} />}
+            {view === "jobs" && <JobsView employees={employees} orders={activeOrders} currentUser={currentUser} onGo={setView}
+              quickAddNonce={quickAdd?.kind === "job" ? quickAdd.n : 0} quickAddPrefill={quickAdd?.kind === "job" ? quickAdd.prefill : null} onQuickAddHandled={() => setQuickAdd(null)} />}
             {view === "paint" && (
               <PaintView currentUser={currentUser} isAdmin={isAdmin} orders={myOrders} categories={categories}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
@@ -1308,6 +1327,7 @@ function AppInner() {
         onNewLead={visibleNav.some((n) => n.key === "crm") ? () => { setNavFilter(null); setView("crm"); setQuickAdd({ kind: "lead", n: Date.now() }); } : null}
       />
       <SaveStatus />
+      {!permsCtx.viewAs && <VoiceAssistant orders={orders} onAction={onVoiceAction} />}
       <QrApproveHost />
       <BottomNav
         view={view}

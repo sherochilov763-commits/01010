@@ -396,7 +396,8 @@ app.get("/api/system-status", requireAuth, requireAdmin, async (req, res) => {
   const staffTg = (() => { try { return JSON.parse(getStmt.get("uvix:staffTg")?.value || "{}"); } catch { return {}; } })();
   const help = (() => { try { return JSON.parse(getStmt.get("uvix:pinHelp")?.value || "{}"); } catch { return {}; } })();
   const emps = readEmployees();
-  let fxInfo = null; try { fxInfo = await fx.current(); } catch { /* ixtiyoriy */ }
+  // Kurs hali olinmagan bo'lsa cbu.uz javobini ko'pi bilan 1,5 soniya kutamiz — sahifa 6 soniya qotib qolmasin
+  let fxInfo = null; try { fxInfo = await Promise.race([fx.current(), new Promise((r) => { const t = setTimeout(() => r(null), 1500); t.unref?.(); })]); } catch { /* ixtiyoriy */ }
   res.json({
     telegram: { bot: !!st.telegramBotToken, adminLinked: adminIds().some((id) => !!staffTg[id]), problem: staffBot.health().problem || "" },
     backup: { time: st.backupTime || "21:00", lastDate: lastBackup, configured: !!st.telegramBotToken },
@@ -564,6 +565,17 @@ geoApi = require("./geo")(app, {
 });
 staffBot.onLocation((empId, loc) => geoApi.onTelegramLocation(empId, loc));
 
+// ==================== Ovozli ish jurnali (faqat rahbar, mavjud bot orqali) ====================
+const voiceAi = require("./voice-ai").createAi();
+const voiceLog = require("./voice-log")(app, {
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin,
+  bot: staffBot, ai: voiceAi, buildWorkbook: excelPro.buildWorkbook,
+  interval: process.env.UVIX_WORKLOG_MS ? Number(process.env.UVIX_WORKLOG_MS) : 30000,
+});
+staffBot.onMessage((m) => voiceLog.handle(m));
+// CRM ichidagi mikrofon: gap → to'ldirilgan forma (server hech narsa saqlamaydi)
+require("./voice-command")(app, { getStmt, readEmployees, requireAuth, ai: voiceAi });
+
 // ==================== Smeta → buyurtmalar, holatlar, umumiy to'lov ====================
 const fx = require("./fx").createFx({ getStmt, upsertStmt });
 require("./quotes")(app, {
@@ -586,7 +598,7 @@ const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdR
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi

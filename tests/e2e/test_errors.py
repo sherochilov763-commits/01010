@@ -44,6 +44,9 @@ async def main():
         sec = a.locator("[data-testid=errors-section]")
         ok("«So'nggi xatolar»: xabar va kod", await sec.count() == 1 and code in await sec.inner_text())
         st = a.locator("[data-testid=system-status]")
+        # holat serverdan keyinroq kelishi mumkin — aniq vaqt o'rniga element chiqquncha kutamiz
+        try: await st.locator("[data-status=warn]", has_text="Xatolar").first.wait_for(timeout=10000)
+        except Exception: pass
         ok("Tizim holati: «Xatolar (24 soat)» ogohlantirish", await st.locator("[data-status=warn]", has_text="Xatolar").count() == 1)
         await a.screenshot(path=S + "a3_settings.png", full_page=True)
         await sec.locator("[data-testid=errors-clear]").click(); await a.wait_for_timeout(700)
