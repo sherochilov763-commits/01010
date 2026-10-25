@@ -443,6 +443,24 @@ const chatTools = require("./chat-tools")(app, {
 });
 setInterval(() => { try { chatTools.slaTick(); } catch (e) { console.error("Javobsiz chat tekshiruvi:", e.message); } }, 60 * 1000);
 
+// ==================== Chatlar: avtojavoblar (AI'siz, tayyor matn) — auto-reply.js ====================
+const AUTO_DELAY_MS = Math.max(0, Number(process.env.UVIX_AUTO_DELAY_MS) || 4000);
+const autoReply = require("./auto-reply").createAutoReply({
+  read: (k, def) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : def; } catch { return def; } },
+  write: (k, v) => upsertStmt.run(k, JSON.stringify(v)),
+  chatTools,
+  send: (chatId, text) => { const t = tgFor(chatId); return t.bot.sendMessage(t.id, text); },
+  store: (chatId, msg) => storeOutgoing(String(chatId), msg),
+  // Yangi mijozmi: Telegram'dagi oxirgi xabarlar soni (ulanmagan bo'lsa — noma'lum)
+  historyCount: async (chatId) => { const t = tgFor(chatId); if (!t.bot.isConnected()) return null; return (await t.bot.getRecentMessages(peerNum(t.id), 3)).length; },
+});
+const peerNum = (id) => (isNaN(Number(id)) ? id : Number(id));
+require("./auto-reply").registerAutoReply(app, {
+  requireAuth, requireStaff, requireEdit: requirePerm("chats.templates"), upsertStmt, autoReply, chatAllowed: (req, id) => chatAllowed(req, id),
+  sendTest: (line, text) => tgByLine(line).sendMessage("me", text),
+});
+setInterval(() => { autoReply.tick().catch((e) => console.error("Avtojavob tekshiruvi:", e.message)); }, 60 * 1000);
+
 // Telegram xabarlari — guruh yo'q: har biri shaxsan, xodim o'zi «Telegram'ni ulash»ni bosgan bo'lsa.
 //   admin — faqat admin(lar)ga · staff — admin + operatorlarga · off — yuborilmaydi
 // Pul/baza ma'lumotlari (to'lov, rasxod, hisobot, zaxira) faqat adminga — «staff» ruxsat etilmaydi.
@@ -598,7 +616,7 @@ const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdR
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -1481,6 +1499,8 @@ function handleIncomingTelegramMessage(data) {
   try {
     mergeTgMessages(String(chatId), [{ ...data, out: false }]);
     try { notifications.fromChat(data); } catch (e) { console.error("Bildirishnoma xatosi:", e.message); }
+    // Avtojavob — biroz kutib (menejer o'zi javob berib ulgursa, yuborilmaydi)
+    setTimeout(() => { autoReply.onIncoming(String(chatId)).catch((e) => console.error("Avtojavob:", e.message)); }, AUTO_DELAY_MS);
 
     rememberTgContact(String(chatId), { name: fromName, username, phone });
     // Lid bor bo'lsa — ism hali "Noma'lum" yoki telefon/username bo'sh bo'lsa, yangi ma'lumot bilan to'ldiramiz.
@@ -1723,11 +1743,16 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
     const last = msgs[msgs.length - 1];
     const lastIncoming = [...msgs].reverse().find((m) => !m.out);
     const unread = !!(lastIncoming && (!lastSeen[chatId] || new Date(lastIncoming.date) > new Date(lastSeen[chatId])));
-    byId.set(chatId, { chatId, lastText: previewText(last), lastOut: !!last?.out, lastDate: last?.date || null, unread });
+    // Avtojavob «javob berildi» deb hisoblanmaydi: holat oxirgi haqiqiy xabardan, matn — «🤖 …»
+    const real = require("./auto-reply").lastReal(msgs) || last;
+    byId.set(chatId, last?.auto
+      ? { chatId, lastText: `🤖 ${previewText(last)}`, lastOut: !!real.out, lastDate: real.date || null, autoReplied: last.auto, autoDate: last.date, unread }
+      : { chatId, lastText: previewText(last), lastOut: !!last?.out, lastDate: last?.date || null, unread });
   }
   for (const d of dialogs) {
     const cur = byId.get(d.chatId);
-    const dialogNewer = !cur || new Date(d.lastDate || 0) > new Date(cur.lastDate || 0);
+    // Avtojavobning o'zi Telegram'da «oxirgi xabar» bo'lib turadi — undan keyingisi bo'lsagina yangi deb olamiz
+    const dialogNewer = !cur || new Date(d.lastDate || 0) > new Date((cur.autoDate ? Math.max(Date.parse(cur.autoDate), Date.parse(cur.lastDate || 0)) + 5000 : Date.parse(cur.lastDate || 0)) || 0);
     const seen = lastSeen[d.chatId];
     const dialogUnread = d.unreadCount > 0 && !d.lastOut && (!seen || new Date(d.lastDate || 0) > new Date(seen));
     byId.set(d.chatId, {
@@ -1736,6 +1761,7 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
       lastOut: dialogNewer ? d.lastOut : cur.lastOut,
       lastDate: dialogNewer ? d.lastDate : cur.lastDate,
       unread: cur ? cur.unread || dialogUnread : dialogUnread,
+      ...(!dialogNewer && cur?.autoReplied ? { autoReplied: cur.autoReplied } : {}),
     });
   }
   const chats = [...byId.values()].map((c) => {

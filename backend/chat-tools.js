@@ -77,8 +77,10 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
     const out = [];
     for (const [chatId, list] of Object.entries(msgs)) {
       if (!Array.isArray(list) || !list.length || meta[chatId]?.archived) continue;
-      const last = list[list.length - 1];
-      if (last.out) continue;
+      // Avtojavob «javob berildi» deb hisoblanmaydi — oxirgi haqiqiy xabarga qaraymiz
+      let last = null;
+      for (let i = list.length - 1; i >= 0; i--) if (!list[i].auto) { last = list[i]; break; }
+      if (!last || last.out) continue;
       if (noReplyCovers(meta[chatId], last.date)) continue; // «Javob shart emas» deb belgilangan
       const mins = Math.floor((t - new Date(last.date).getTime()) / 60000);
       if (mins >= (cfg.slaMinutes || 15) && mins < 60 * 24 * 3) out.push({ chatId, mins, lastId: last.id || last.tgId || last.date, name: contacts[chatId]?.name || "", assignee: meta[chatId]?.assignee || null });
@@ -224,7 +226,8 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
     res.json({ ok: true, config: cfg });
   });
 
-  return { slaTick, waitingChats, isWorkTime, config, DEFAULT_REPLIES };
+  const typingActive = (chatId) => typingFor(chatId, null).length > 0;
+  return { slaTick, waitingChats, isWorkTime, config, typingActive, DEFAULT_REPLIES };
 };
 module.exports.DEFAULT_CFG = DEFAULT_CFG;
 module.exports.noReplyCovers = noReplyCovers;

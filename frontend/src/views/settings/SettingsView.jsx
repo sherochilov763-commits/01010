@@ -21,6 +21,7 @@ import { TelegramRoutesSection } from "./TelegramRoutesSection.jsx";
 import { NotificationsSection } from "./NotificationsSection.jsx";
 import { BackgroundSection } from "./BackgroundSection.jsx";
 import { QuickRepliesSection } from "./QuickRepliesSection.jsx";
+import { AutoRepliesSection } from "../crm/AutoReply.jsx";
 import { PriceListSection } from "./PriceListSection.jsx";
 import { loadSales, useSales } from "../quotes/useSales.js";
 import { rateText } from "../../lib/production.js";
@@ -372,6 +373,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
 
 
       <div data-testid="quick-replies-anchor"><QuickRepliesSection /></div>
+      <AutoRepliesSection />
     </>,
     integratsiya: isAdmin && <>
         {isAdmin && (

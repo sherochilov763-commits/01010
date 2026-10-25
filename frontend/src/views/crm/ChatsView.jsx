@@ -20,6 +20,8 @@ import { initials } from "../../components/ui.jsx";
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
 import { PaymentsModal } from "../orders/PaymentsModal.jsx";
 import { AiTool, OrdersTool, RAIL_W, ToolRail, ToolTabs, railCss } from "./ChatToolRail.jsx";
+import { AutoReplyChip, ChatAutoReply } from "./AutoReply.jsx";
+import { openSettingsSection } from "../../lib/deeplink.js";
 
 export const TG_BLUE = "#0088CC"; // Telegram brendi (tugmalar/belgilar uchun)
 // Quyidagilar joriy mavzuga qarab yangilanadi (applyPalette)
@@ -439,6 +441,8 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     </div>
   );
 
+  // Avtojavob matnlari — Sozlamalar → Savdo → «Avtojavoblar»
+  const openAutoSettings = onOpenSettings ? () => { onOpenSettings(); setTimeout(() => openSettingsSection("savdo", "auto-replies"), 60); } : null;
   // Vosita ichi — kompyuterda o'ng panelda, telefonda pastdagi varaqda bir xil
   function toolBody(t) {
     const isQuote = t === "quote" || t === "calc";
@@ -492,7 +496,10 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
         </div>
       </>)}
       {t === "orders" && <OrdersTool dealOrders={dealOrders} customer={customer} onPayment={(o) => setPaymentsFor(o)} />}
-      {t === "ai" && <AiTool />}
+      {t === "ai" && (<div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        <ChatAutoReply chatId={selectedChatId} messages={messages} onOpenSettings={openAutoSettings} />
+        <AiTool />
+      </div>)}
       {/* Smeta va Kalkulyator — bitta nusxa (pozitsiyalar va tahrirlash holati vositalar orasida saqlanadi) */}
       <div style={{ display: isQuote ? undefined : "none" }}>
         <ChatQuote ref={quoteRef} chatId={selectedChatId} lead={selectedLead} ensureLead={ensureLead}
@@ -543,6 +550,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               <span style={{ fontSize: 10.5, fontWeight: 700, color: "#fff", background: C.tgSolid, padding: "2px 7px", borderRadius: 10 }}>{unreadTotal}</span>
             )}
           </div>
+          <AutoReplyChip onOpenSettings={openAutoSettings} />
           <div style={{ position: "relative", marginTop: 10 }}>
             <Search size={13} color={TG_DARK_MUTED} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }} />
             <input

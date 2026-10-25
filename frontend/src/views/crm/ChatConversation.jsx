@@ -1,12 +1,13 @@
 // ChatConversation.jsx — suhbat oynasi: xabarlar (rasm, ovoz, joylashuv, javob, reaksiya) va yozish paneli
 import { usePerms } from "../../lib/perms.jsx";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Lock, Palette, Zap, CheckCheck, Copy, MoreHorizontal, Download, File as FileIcon, FileText, Image as ImageIcon, Loader2, MapPin, Mic, Pause, Paperclip, Play, Reply, Send, SmilePlus, Trash2, X } from "lucide-react";
+import { Lock, Palette, Zap, CheckCheck, Copy, MoreHorizontal, Download, File as FileIcon, FileText, Image as ImageIcon, Loader2, MapPin, Mic, Pause, Paperclip, Play, Reply, Send, SmilePlus, Trash2, X, Bot } from "lucide-react";
 import { useBackToClose } from "../../lib/history.js";
 
 export const REACTIONS = ["👍", "❤", "🔥", "😁", "😢", "🙏", "👌"];
 
 import { C } from "./chatPalette.js";
+const AUTO_LABEL = { greet: "salomlashish", away: "ish vaqtidan tashqari", late: "javob kechiksa" };
 
 // Dizaynerga yuborsa bo'ladigan xabar: mijoz yuborgan rasm yoki hujjat (ilova serverida saqlangan)
 export const isDesignable = (m) => !!m && (m.mediaType === "photo" || m.mediaType === "document") && /^\/api\/photos\//.test(String(m.mediaUrl || ""));
@@ -156,6 +157,12 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
                   style={{ margin: "6px 6px 0", padding: "4px 8px", borderLeft: `3px solid ${C.link}`, background: C.overlay, borderRadius: 6, cursor: "pointer", minWidth: 120 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: C.link }}>{quoted ? (quoted.out ? "Siz" : customerName) : "Xabar"}</div>
                   <div style={{ fontSize: 12.5, color: C.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 240 }}>{quoted ? snippet(quoted) : "Asl xabar topilmadi"}</div>
+                </div>
+              )}
+              {m.auto && (
+                <div data-testid="auto-badge" title="Avtojavob — avtomatik yuborilgan (belgini faqat xodimlar ko'radi)"
+                  style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 10px 0", fontSize: 11.5, fontWeight: 700, color: C.link }}>
+                  <Bot size={12} /> Avtojavob · {AUTO_LABEL[m.auto] || "avtomatik"}
                 </div>
               )}
               <MessageBody m={m} onPhoto={(url, e) => (isMobile ? openMenu(e, m) : setLightbox(url))} />

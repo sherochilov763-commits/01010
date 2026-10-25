@@ -612,6 +612,12 @@ export const sendChatTyping = (chatId, stop) => ctReq("/typing", "POST", { chatI
 export const searchChatMessages = (q) => ctReq(`/search?q=${encodeURIComponent(q)}`).then((d) => d.results || []);
 export const saveQuickReplies = (replies) => ctReq("/replies", "PUT", { replies }).then((d) => d.replies);
 export const saveChatConfig = (config) => ctReq("/config", "PUT", config).then((d) => d.config);
+// ---- Avtojavoblar (auto-reply.js) ----
+export const fetchAutoReply = () => apiReq("/auto-reply");
+export const saveAutoReply = (config) => apiReq("/auto-reply", "PUT", { config });
+export const fetchChatAutoOff = (chatId) => apiReq(`/auto-reply/chat/${encodeURIComponent(chatId)}`).then((d) => !!d.off);
+export const setChatAutoOff = (chatId, off) => apiReq(`/auto-reply/chat/${encodeURIComponent(chatId)}`, "PUT", { off }).then((d) => !!d.off);
+export const testAutoReply = (rule, line, text) => apiReq("/auto-reply/test", "POST", { rule, line, text });
 
 // ---- Smeta → buyurtmalar, narxlar, buyurtma holati, umumiy to'lov ----
 async function apiReq(path, method = "GET", body) {
