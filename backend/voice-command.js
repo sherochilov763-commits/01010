@@ -123,7 +123,16 @@ async function toOgg(buffer, mime) {
   } catch { return { buffer, mime }; } finally { fs.rm(dir, { recursive: true, force: true }, () => {}); }
 }
 
-function registerVoiceCommand(app, { getStmt, readEmployees, requireAuth, ai, env = process.env, now = () => new Date(), convert = toOgg }) {
+// Shaxsiy sozlama (Sozlamalar → Ko'rinish → Ovozli yordamchi): on — umuman yoqilgan, fab — burchakdagi tugma, hotkey — F2.
+// O'chiq bo'lsa yordamchi hamma joydan yo'qoladi (telefon, kompyuter). "uvix:voicepref:<xodim id>" kalitida.
+const PREF_DEFAULTS = { on: true, fab: true, hotkey: true };
+function cleanPrefs(p) {
+  const out = { ...PREF_DEFAULTS };
+  if (p && typeof p === "object" && !Array.isArray(p)) for (const k of Object.keys(PREF_DEFAULTS)) if (typeof p[k] === "boolean") out[k] = p[k];
+  return out;
+}
+
+function registerVoiceCommand(app, { getStmt, upsertStmt, readEmployees, requireAuth, ai, env = process.env, now = () => new Date(), convert = toOgg }) {
   const read = (k, fb) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
   const allowed = (user) => !!user && voiceOwners(readEmployees(), env).some((e) => e.id === user.id);
   const context = () => {
@@ -144,7 +153,13 @@ function registerVoiceCommand(app, { getStmt, readEmployees, requireAuth, ai, en
 
   app.get("/api/voice/status", requireAuth, (req, res) => {
     const st = ai.status();
-    res.json({ enabled: allowed(req.user), ready: st.ready, voice: st.voice, llm: st.llm, stt: st.stt });
+    res.json({ enabled: allowed(req.user), ready: st.ready, voice: st.voice, llm: st.llm, stt: st.stt, prefs: cleanPrefs(read(`uvix:voicepref:${req.user.id}`, null)) });
+  });
+  app.put("/api/voice/prefs", requireAuth, gate, (req, res) => {
+    if (!upsertStmt) return res.status(501).json({ error: "no_storage" });
+    const prefs = cleanPrefs({ ...cleanPrefs(read(`uvix:voicepref:${req.user.id}`, null)), ...(req.body?.prefs || {}) });
+    upsertStmt.run(`uvix:voicepref:${req.user.id}`, JSON.stringify(prefs));
+    res.json({ prefs });
   });
 
   app.post("/api/voice/command", requireAuth, gate, (req, res) => {
@@ -170,7 +185,7 @@ function registerVoiceCommand(app, { getStmt, readEmployees, requireAuth, ai, en
       }
     });
   });
-  return { normalize, buildPrompt };
+  return { normalize, buildPrompt, cleanPrefs };
 }
 
 module.exports = registerVoiceCommand;

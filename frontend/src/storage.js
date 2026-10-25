@@ -750,6 +750,7 @@ export const queueDebtReminder = (customer) => cmReq("/queue/remind", { method: 
 
 // ---- Ovozli yordamchi (faqat rahbar): gap → to'ldirilgan forma ----
 export const fetchVoiceStatus = () => apiReq("/voice/status");
+export const saveVoicePrefs = (prefs) => apiReq("/voice/prefs", "PUT", { prefs });
 export async function voiceCommand({ audio, text }) {
   if (!audio) return apiReq("/voice/command", "POST", { text });
   const form = new FormData();

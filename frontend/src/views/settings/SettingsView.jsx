@@ -13,6 +13,7 @@ import { SecuritySection } from "./SecuritySection.jsx";
 import { ErrorsSection } from "./ErrorsSection.jsx";
 import { StorageSection } from "./StorageSection.jsx";
 import { AppearancePreviewCard, AppearanceSection, CompanyAppearanceCard } from "./AppearanceSection.jsx";
+import { VoiceSettingsCard } from "../../components/VoiceAssistant.jsx";
 import { TrashSection } from "./TrashSection.jsx";
 import { BackupRestoreSection } from "./BackupRestoreSection.jsx";
 import { TelegramAccountSection } from "./TelegramAccountSection.jsx";
@@ -335,6 +336,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
       {isAdmin && companyAppearance && <CompanyAppearanceCard appearance={appearance} company={companyAppearance} onApply={onApplyCompanyAppearance} />}
       <AppearancePreviewCard appearance={appearance} />
       {bgState && <BackgroundSection bgState={bgState} />}
+      <VoiceSettingsCard />
     </>,
     bildirish: <>
       {notif?.prefs ? <NotificationsSection n={notif} /> : <Card><div style={{ fontSize: 13, color: THEME.muted }}>Bildirishnomalar yuklanmoqda…</div></Card>}
