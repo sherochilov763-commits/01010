@@ -141,7 +141,7 @@ export function useChatCustomer({ orders, leads, customerProfiles, lead, name, p
   }, [all, lead, name, phone, username]);
 }
 
-export function CustomerBox({ customer, onNewOrder, onInvoice, onPayment, onDesigner, busy }) {
+export function CustomerBox({ customer, onNewOrder, onInvoice, onPayment, onDesigner, busy, hideOrders }) {
   const debtOrder = customer?.debtOrders?.[0]?.order || null;
   const lastOrder = customer?.orders?.[0] || null;
   const btn = (label, Icon, onClick, primary, disabled, testid) => (
@@ -170,7 +170,7 @@ export function CustomerBox({ customer, onNewOrder, onInvoice, onPayment, onDesi
         {btn("To'lov", Wallet, () => onPayment(debtOrder || lastOrder), false, !lastOrder, "chat-payment")}
         {btn("Dizaynerga", Palette, onDesigner, false, false, "chat-designer")}
       </div>
-      {customer?.orders?.length > 0 && (
+      {!hideOrders && customer?.orders?.length > 0 && (
         <div>
           <div style={{ fontSize: 12.5, fontWeight: 600, color: C.text, marginBottom: 2 }}>Oxirgi buyurtmalar</div>
           {customer.orders.slice(0, 3).map((o) => {

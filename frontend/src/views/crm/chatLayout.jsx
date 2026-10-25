@@ -7,12 +7,17 @@ const KEY = "uvix-chat-layout-v1";
 export const LIST_W = { min: 220, max: 480, def: 300 };
 export const INFO_W = { min: 240, max: 440, def: 280 };
 const MIDDLE_MIN = 360;
-const DEFAULTS = { listW: LIST_W.def, infoW: INFO_W.def, listHidden: false, infoHidden: false };
+// tool — o'ng panelda ochiq vosita (client | quote | calc | orders | ai), null — panel yopiq (faqat ikonalar qatori)
+const TOOLS = ["client", "quote", "calc", "orders", "ai"];
+const DEFAULTS = { listW: LIST_W.def, infoW: INFO_W.def, listHidden: false, infoHidden: false, tool: "client" };
 
 function load() {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) || "null");
-    return v && typeof v === "object" ? { ...DEFAULTS, ...v } : DEFAULTS;
+    if (!v || typeof v !== "object") return DEFAULTS;
+    // Eski sozlama: o'ng panel yashirilgan bo'lsa — vosita yopiq
+    const tool = "tool" in v ? (TOOLS.includes(v.tool) ? v.tool : null) : v.infoHidden ? null : "client";
+    return { ...DEFAULTS, ...v, tool };
   } catch {
     return DEFAULTS;
   }
@@ -73,7 +78,7 @@ export function Resizer({ side, width, onChange, containerRef, otherWidth, color
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={side === "left" ? "Suhbatlar ro'yxati kengligi" : "Mijoz paneli kengligi"}
+      aria-label={side === "left" ? "Suhbatlar ro'yxati kengligi" : "Vosita paneli kengligi"}
       aria-valuemin={limits.min}
       aria-valuemax={limits.max}
       aria-valuenow={width}

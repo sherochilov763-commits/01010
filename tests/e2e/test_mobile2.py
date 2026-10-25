@@ -124,8 +124,9 @@ async def main():
         await m.go_back(); await m.wait_for_timeout(600)
         ok("telefonning «orqaga»si avval smetani yopadi", await m.locator("[data-testid=quote-sheet]").count() == 0 and await m.locator("[data-testid=composer-input]").count() == 1)
         await m.locator("[aria-label=\"Mijoz ma'lumotlari\"]").click(); await m.wait_for_timeout(600)
-        await m.locator("[data-testid=info-open-quote]").click(); await m.wait_for_timeout(900)
-        ok("mijoz ma'lumotidan «Smeta» — chat yonida ochiladi", await m.locator("[data-testid=quote-sheet]").count() == 1)
+        ok("mijoz ma'lumoti — o'sha pastki varaqda «Mijoz» yorlig'i", await m.locator("[data-testid=quote-sheet] [data-tool-body=client]").count() == 1 and await m.locator("[data-testid=chat-customer]").is_visible())
+        await m.locator("[data-testid=tool-tabs] [data-tool=quote]").click(); await m.wait_for_timeout(500)
+        ok("yorliq «Smeta» — varaq yopilmasdan smeta ochiladi", await m.locator("[data-testid=quote-sheet] [data-tool-body=quote]").count() == 1 and await m.locator("[data-testid=chat-quote]").is_visible())
         # «Javob shart emas»: ochish bilan o'chmaydi, belgilansa — chiqadi, mijoz yana yozsa — qaytadi
         await m.locator("[data-testid=quote-sheet-close]").click(); await m.wait_for_timeout(400)
         ok("javobsiz chatda ogohlantirish qatori (ochilgan bo'lsa ham)", await m.locator("[data-testid=wait-strip]").count() == 1 and "javob kutmoqda" in await m.locator("[data-testid=wait-strip]").inner_text())

@@ -26,10 +26,15 @@ const fxHint = (fx) => {
   return "Sozlamalardagi kurs";
 };
 
-export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advancePct = 0, titleRef, compact }) {
+// view: undefined — kalkulyator + ro'yxat (oyna); "calc" — faqat kalkulyator (chat yon paneli, «Kalkulyator» vositasi);
+// "items" — faqat smeta ro'yxati («Smeta» vositasi). Bitta nusxa ikkala vositada ishlaydi — tahrirlash holati saqlanadi.
+export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advancePct = 0, titleRef, compact, view, onEdit, onAdded }) {
+  const showCalc = view !== "items";
+  const showItems = view !== "calc";
   const fxRate = fx?.rate > 0 ? fx.rate : 0;
   const [draft, setDraft] = useState(() => ({ ...emptyDraft(prices, savedKind()), rate: fxRate ? dec(fxRate) : "", rateTouched: false }));
-  const [open, setOpenState] = useState(savedOpen);
+  const [openSaved, setOpenState] = useState(savedOpen);
+  const open = view === "calc" || openSaved;
   const setOpen = (v) => { setOpenState(v); try { localStorage.setItem(OPEN_KEY, v ? "1" : "0"); } catch { /* shart emas */ } };
   const kind = draft.unit === "lump" ? "lump" : draft.unit === "pcs" ? "pcs" : "m2";
   const kindPrices = pricesOf(prices, kind);
@@ -104,6 +109,7 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
       ...(calc.manualTotal ? { manualTotal: true, calcTotal: calc.calcTotal } : {}),
       ...(calc.cur === "usd" ? { cur: "usd", priceUsd: calc.priceUsd, rate: calc.rate, totalUsd: calc.totalUsd } : {}) };
     onChange(editingId ? items.map((i) => (i.id === editingId ? item : i)) : [...items, item]);
+    onAdded?.(!!editingId);
     setEditingId(null);
     setDraft({ ...emptyDraft(prices, kind), priceId: draft.priceId, cur: draft.cur, price: kind === "lump" ? "" : draft.price, priceUsd: kind === "lump" ? "" : draft.priceUsd, minArea: draft.minArea, priceTouched: draft.priceTouched, rate: draft.rate, rateTouched: draft.rateTouched });
   }
@@ -119,6 +125,7 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
         ? { cur: "usd", priceUsd: dec(it.priceUsd), price: "", rate: dec(it.rate), rateTouched: it.rate !== fxRate, priceTouched: p ? p.cur !== "usd" || it.priceUsd !== p.price : false }
         : { cur: "uzs", price: String(it.price), priceUsd: "", rate: draft.rate, rateTouched: draft.rateTouched, priceTouched: p ? p.cur === "usd" || it.price !== p.price : false }) });
     setMenu(null);
+    onEdit?.();
     setTimeout(() => titleRef?.current?.focus(), 0);
   }
 
@@ -129,7 +136,7 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
 
   return (
     <div data-testid="quote-builder" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {!open ? (
+      {!showCalc ? null : !open ? (
         <button type="button" onClick={() => setOpen(true)} data-testid="calc-open"
           style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: `1px solid ${P.border}`, borderRadius: 10, padding: "10px 12px", background: P.panel, color: P.text, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
           <Calculator size={15} />
@@ -138,11 +145,11 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
         </button>
       ) : (
       <div data-testid="calc-card" style={{ border: `1px solid ${P.border}`, borderRadius: 10, padding: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+        {(view !== "calc" || editingId) && <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
           <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13.5, fontWeight: 600, color: P.text, minWidth: 0 }} title="Kalkulyator mijozga ko'rinmaydi"><Calculator size={15} /> {editingId ? "Tahrirlash" : "Kalkulyator"}</span>
-          {!editingId && <button type="button" onClick={() => setOpen(false)} data-testid="calc-close" title="Kalkulyatorni yig'ish"
+          {!editingId && view !== "calc" && <button type="button" onClick={() => setOpen(false)} data-testid="calc-close" title="Kalkulyatorni yig'ish"
             style={{ display: "inline-flex", alignItems: "center", gap: 3, border: 0, background: "none", color: P.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", padding: "2px 0", flexShrink: 0 }}>Yashirish <ChevronUp size={15} /></button>}
-        </div>
+        </div>}
         <div role="tablist" aria-label="Pozitsiya turi" style={{ display: "flex", background: P.hover, borderRadius: 9, padding: 3, marginBottom: 10 }}>
           {ITEM_KINDS.map(([k, l, hint]) => (
             <button key={k} type="button" role="tab" aria-selected={kind === k} onClick={() => setKind(k)} data-testid={`q-kind-${k}`} title={hint}
@@ -238,7 +245,7 @@ export function QuoteBuilder({ items, onChange, prices = [], fx = null, P, advan
       </div>
       )}
 
-      {items.length > 0 && (
+      {showItems && items.length > 0 && (
         <div data-testid="quote-items" style={{ border: `1px solid ${P.border}`, borderRadius: 10, padding: compact ? 10 : 12 }}>
           {items.map((it, k) => (
             <div key={it.id} data-item={it.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: k ? `1px solid ${P.border}` : 0, position: "relative", background: editingId === it.id ? P.hover : "transparent" }}>
