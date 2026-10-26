@@ -767,3 +767,14 @@ export async function voiceCommand({ audio, text }) {
   if (!res.ok) { const e = new Error(d.message || d.error || `Xato: ${res.status}`); e.status = res.status; throw e; }
   return d;
 }
+
+// ---- Karta (CardXabar) — shaxsiy karta kirim-chiqimi, faqat rahbar ----
+async function cardReq(path, opts = {}) {
+  const res = await fetch(`${API_BASE}/card-tx${path}`, { ...opts, headers: { "Content-Type": "application/json", ...authHeaders(), ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.message || data.error || `Xato: ${res.status}`), { status: res.status, data });
+  return data;
+}
+export const fetchCardTx = () => cardReq("");
+export const syncCardTx = () => cardReq("/sync", { method: "POST" });
+export const markCardTx = (id, patch) => cardReq(`/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }).then((d) => d.item);

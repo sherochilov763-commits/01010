@@ -61,6 +61,7 @@ export const NAV = [
   { key: "operations", label: "Operatsiyalar", icon: ListChecks },
   { key: "kassa", label: "Kassalar", icon: Landmark, adminOnly: true, managerOk: true },
   { key: "report", label: "Hisobot", icon: FileBarChart2, adminOnly: true, managerOk: true },
+  { key: "card", label: "Karta", icon: CreditCard, adminOnly: true },
   { key: "jobs", label: "Vazifalar", icon: ClipboardCheck },
   { key: "categories", label: "Kategoriyalar", icon: FolderTree },
   { key: "employees", label: "Xodimlar", icon: Users, adminOnly: true },
@@ -72,7 +73,7 @@ export const NAV = [
 // Sidebar'dagi guruh sarlavhalari (Dashboard va Sozlamalar guruhsiz)
 export const NAV_GROUP = {
   orders: "Savdo", crm: "Savdo", chats: "Savdo", customers: "Savdo",
-  expense: "Moliya", operations: "Moliya", kassa: "Moliya", report: "Moliya",
+  expense: "Moliya", operations: "Moliya", kassa: "Moliya", report: "Moliya", card: "Moliya",
   jobs: "Ishlab chiqarish", paint: "Ishlab chiqarish", attendance: "Ishlab chiqarish", employees: "Ishlab chiqarish", categories: "Ishlab chiqarish",
 };
 

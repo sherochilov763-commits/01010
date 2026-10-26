@@ -22,6 +22,7 @@ const KEYWORDS = {
   categories: "kategoriya material",
   employees: "xodim ishchi hodim",
   paint: "bo'yoq kraska ombor",
+  card: "karta uzcard cardxabar kirim chiqim shaxsiy",
   attendance: "davomat keldi ketdi xodim",
   settings: "sozlama mavzu telegram profil",
 };
@@ -32,7 +33,7 @@ function tone(key) {
   const map = {
     dashboard: [T.violet, T.violetSoft], orders: [T.blue, T.blueBg], crm: [T.cyan, T.cyanBg], chats: [T.blue, T.blueBg],
     customers: [T.green, T.greenBg], expense: [T.rose, T.roseBg], operations: [T.amber, T.amberBg], report: [T.cyan, T.cyanBg],
-    employees: [T.blue, T.blueBg], paint: [T.rose, T.roseBg], attendance: [T.green, T.greenBg],
+    employees: [T.blue, T.blueBg], paint: [T.rose, T.roseBg], card: [T.violet, T.violetSoft], attendance: [T.green, T.greenBg],
   };
   return map[key] || [T.mutedDark, T.chip];
 }

@@ -73,6 +73,7 @@ const SettingsView = lazy(() => import("./views/settings/SettingsView.jsx").then
 const AttendanceView = lazy(() => import("./views/attendance/AttendanceView.jsx").then((m) => ({ default: m.AttendanceView })));
 const CustomersView = lazy(() => import("./views/customers/CustomersView.jsx").then((m) => ({ default: m.CustomersView })));
 const PaintView = lazy(() => import("./views/paint/PaintView.jsx").then((m) => ({ default: m.PaintView })));
+const CardView = lazy(() => import("./views/card/CardView.jsx").then((m) => ({ default: m.CardView })));
 const VIEW_PRELOADERS = [() => import("./views/customers/CustomersView.jsx"), () => import("./views/attendance/AttendanceView.jsx"), () => import("./views/paint/PaintView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
 function ViewFallback() {
   // Bo'lim yuklanayotganda — sahifa skeleti (asboblar qatori + jadval qatorlari)
@@ -1230,6 +1231,10 @@ function AppInner() {
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} />
             )}
             {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
+            {view === "card" && isAdmin && (
+              <CardView currentUser={currentUser} orders={activeOrders} categories={categories} employees={employees}
+                onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} onAddPayment={addPayment} />
+            )}
             {view === "kassa" && (isAdmin || C("kassa.view")) && (
               <KassaView orders={activeOrders} transactions={activeTransactions} isAdmin={isAdmin} canCash={C("kassa.view")} currentUser={currentUser} showToast={showToast} />
             )}

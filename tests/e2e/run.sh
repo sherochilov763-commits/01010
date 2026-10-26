@@ -25,7 +25,7 @@ if [ "$FAKE_AT" != "off" ]; then
     echo "Diqqat: libfaketime topilmadi (pip install libfaketime) — testlar haqiqiy vaqtda, kechasi yolg'on yiqilishi mumkin"
   fi
 fi
-SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_perms test_bigexp test_kassa test_lineprof test_themes test_dash test_visual test_crmcard test_voice test_autoreply}"
+SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_perms test_bigexp test_kassa test_lineprof test_themes test_dash test_visual test_crmcard test_voice test_autoreply test_card}"
 fail=0
 # GitHub Actions'da yiqilgan tekshiruvlar izoh (annotation) sifatida chiqadi — logni ochmasdan ko'rinadi
 gh_err() { [ -n "${GITHUB_ACTIONS:-}" ] && printf '::error title=%s::%s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ' | cut -c1-900)"; return 0; }

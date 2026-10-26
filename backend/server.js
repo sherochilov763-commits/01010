@@ -519,6 +519,8 @@ app.get("/api/telegram-routes", requireAuth, requireAdmin, (req, res) => {
     onboard: { offer: st.tgOnboardOffer !== false, required: !!st.tgOnboardRequired } });
 });
 const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("paint.edit"), notifyAdmins: (t) => notify("paint", t) });
+// Shaxsiy karta kirim-chiqimi (CardXabar bot xabarlaridan) — faqat rahbar
+const cardFeed = require("./card-feed")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, bots: [{ line: "UVIXPRINT", bot: telegramUserbot }, { line: "UVONYX", bot: tgOnyx }] });
 const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("custmsg.config"), notifyAdmins: (t) => notify("debts", t) });
 // Mijozga xabarlar (hisob-faktura, to'lov kvitansiyasi, qarz eslatmasi) — sizning Telegram akkauntingiz orqali
 const customerMsg = require("./customer-msg")(app, {
@@ -616,7 +618,7 @@ const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdR
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:cardTx" || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -1641,8 +1643,9 @@ function connectTelegramUserbot(line) {
   if (!settings?.telegramUserApiId || !settings?.telegramUserApiHash || !session) return Promise.resolve({ ok: false, error: "Telegram akkaunt ulanmagan" });
   const onyx = line === "UVONYX";
   const handler = onyx ? (d) => handleIncomingTelegramMessage({ ...d, chatId: ONYX + d.chatId }) : handleIncomingTelegramMessage;
-  return tgByLine(line).connectFromSettings(settings, handler, { session, onSessionDead: (info) => onTelegramSessionDead(info, line) }).then((r) => {
+  return tgByLine(line).connectFromSettings(settings, handler, { session, onSessionDead: (info) => onTelegramSessionDead(info, line), onBotMessage: cardFeed.onBotMessage(onyx ? "UVONYX" : "UVIXPRINT") }).then((r) => {
     if (r.ok) repairUnknownTelegramNames().catch((e) => console.error("Ismlarni tiklashda xato:", e.message));
+    if (r.ok) cardFeed.sync(onyx ? "UVONYX" : "UVIXPRINT").catch((e) => console.error("CardXabar tarixini o'qishda xato:", e.message));
     return r;
   });
 }

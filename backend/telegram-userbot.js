@@ -86,6 +86,7 @@ function startWatchdog() {
   if (watchdog.unref) watchdog.unref();
 }
 let onNewMessageCallback = null;
+let onBotMessageCallback = null; // botlardan kelgan shaxsiy xabarlar (CardXabar va h.k.)
 let mediaDir = null; // rasmlar saqlanadigan papka (server.js tomonidan beriladi)
 const MAX_DOWNLOAD = 50 * 1024 * 1024; // mijozdan kelgan video/hujjatni 50 MB gacha saqlaymiz
 
@@ -364,9 +365,10 @@ async function isBotChat(chatId) {
 
 // Sozlamalardan (apiId, apiHash, sessionString) o'qib, ulanishni boshlaydi.
 // onNewMessage(fromUserId, fromName, text, chatId) — yangi xabar kelganda chaqiriladi.
-async function connectFromSettings(settings, onNewMessage, { session: sessionOverride, onSessionDead } = {}) {
+async function connectFromSettings(settings, onNewMessage, { session: sessionOverride, onSessionDead, onBotMessage } = {}) {
   onNewMessageCallback = onNewMessage;
   if (onSessionDead) onSessionDeadCallback = onSessionDead;
+  if (onBotMessage) onBotMessageCallback = onBotMessage;
   const apiId = parseInt(settings?.telegramUserApiId, 10);
   const apiHash = settings?.telegramUserApiHash;
   const sessionString = sessionOverride || settings?.telegramUserSession;
@@ -405,7 +407,16 @@ async function connectFromSettings(settings, onNewMessage, { session: sessionOve
         const msg = update.message;
         if (!msg) return;
         const peer = await humanPeer(msg);
-        if (!peer) return; // bot, kanal, guruh yoki xizmat xabari — CRM'ga tushmaydi
+        if (!peer) {
+          // Botdan kelgan shaxsiy xabar (masalan CardXabar) — chatlarga tushmaydi, lekin kerakli modulga beriladi
+          if (onBotMessageCallback && msg.isPrivate && !msg.out) {
+            let e = null;
+            try { e = await msg.getChat(); } catch { /* xotirada yo'q */ }
+            if (!e || e.bot === undefined) e = (await resolveUser(msg.chatId)) || e;
+            if (e?.bot) onBotMessageCallback(botMessageOf(msg, e));
+          }
+          return; // bot, kanal, guruh yoki xizmat xabari — CRM'ga tushmaydi
+        }
         const chatId = String(msg.chatId);
         const content = await parseMessageContent(msg, MAX_DOWNLOAD);
         // Hech narsa aniqlanmasa ham, kamida chatId'ni ko'rsatamiz — "Noma'lum"lar birlashib ketmasin
@@ -545,6 +556,35 @@ const guarded = (fn) => async (...args) => {
     throw friendlyError(e);
   }
 };
+// ==================== Bot chatlari (CardXabar va h.k.) ====================
+function botMessageOf(m, entity) {
+  return {
+    chatId: String(m.chatId ?? entity?.id ?? ""),
+    tgId: m.id,
+    text: m.message || "",
+    date: new Date((m.date || 0) * 1000).toISOString(),
+    username: entity?.username || "",
+    name: describeEntity(entity, "").name,
+  };
+}
+// Nomi/username'i `match` ga mos keladigan bot chatini topib, oxirgi xabarlarini qaytaradi (eskisi birinchi)
+async function fetchBotChat(match, { limit = 300 } = {}) {
+  if (!isConnected()) throw new Error("Telegram akkauntga ulanmagan");
+  const dialogs = await client.getDialogs({ limit: 500 });
+  const d = dialogs.find((x) => {
+    const e = x.entity;
+    if (!e?.bot) return false;
+    return match.test(e.username || "") || match.test(describeEntity(e, "").name);
+  });
+  if (!d) return null;
+  const msgs = await client.getMessages(d.entity, { limit });
+  return {
+    chatId: String(d.entity.id),
+    name: describeEntity(d.entity, "").name,
+    messages: msgs.filter((m) => !m.out).map((m) => botMessageOf(m, d.entity)).reverse(),
+  };
+}
+
 // Kirish oqimi (telegram-login.js) va boshqa modullar uchun
 function clearExpired() { expired = null; lastError = null; }
 
@@ -552,7 +592,7 @@ function clearExpired() { expired = null; lastError = null; }
     listPrivateDialogs: guarded(listPrivateDialogs), getFolderDefs: guarded(getFolderDefs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
     isBotChat: guarded(isBotChat), sendMessage: guarded(sendMessage), sendPhoto: guarded(sendPhoto), sendVideo: guarded(sendVideo),
     sendDocument: guarded(sendDocument), sendVoice: guarded(sendVoice), sendLocation: guarded(sendLocation), sendReaction: guarded(sendReaction),
-    getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames),
+    getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames), fetchBotChat: guarded(fetchBotChat),
     connectFromSettings, disconnect, getStatus, isConnected, setMediaDir, clearExpired, friendlyError, authErrorCode, CLIENT_OPTS,
   };
 }
