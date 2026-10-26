@@ -520,7 +520,14 @@ app.get("/api/telegram-routes", requireAuth, requireAdmin, (req, res) => {
 });
 const paintApi = require("./paint")(app, { getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("paint.edit"), notifyAdmins: (t) => notify("paint", t) });
 // Shaxsiy karta kirim-chiqimi (CardXabar bot xabarlaridan) — faqat rahbar
-const cardFeed = require("./card-feed")(app, { getStmt, upsertStmt, requireAuth, requireAdmin, bots: [{ line: "UVIXPRINT", bot: telegramUserbot }, { line: "UVONYX", bot: tgOnyx }] });
+const tgCard = telegramUserbot.createUserbot(); // karta uchun alohida shaxsiy akkaunt (faqat CardXabar o'qiladi)
+const telegramLoginCard = require("./telegram-login").createLogin();
+const cardFeed = require("./card-feed")(app, {
+  getStmt, upsertStmt, deleteKey: (k) => deleteStmt.run(k), requireAuth, requireAdmin,
+  bots: [{ line: "UVIXPRINT", bot: telegramUserbot }, { line: "UVONYX", bot: tgOnyx }],
+  cardBot: tgCard, cardLogin: telegramLoginCard,
+  readCreds: () => { const st = readSettings(); return { apiId: st.telegramUserApiId || "", apiHash: st.telegramUserApiHash || "" }; },
+});
 const debtsApi = require("./debts")(app, { getStmt, upsertStmt, requireAuth, requireAdmin: requirePerm("custmsg.config"), notifyAdmins: (t) => notify("debts", t) });
 // Mijozga xabarlar (hisob-faktura, to'lov kvitansiyasi, qarz eslatmasi) — sizning Telegram akkauntingiz orqali
 const customerMsg = require("./customer-msg")(app, {
@@ -618,7 +625,7 @@ const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdR
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key === "uvix:cardTx" || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key.startsWith("uvix:card") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -2062,7 +2069,7 @@ function gracefulShutdown(signal) {
   console.log(`${signal} — server to'xtatilmoqda...`);
   const force = setTimeout(() => process.exit(0), 4000);
   force.unref?.();
-  Promise.allSettled([telegramUserbot.disconnect(), tgOnyx.disconnect(), telegramLogin.cancel(), telegramLoginOnyx.cancel()]).finally(() => process.exit(0));
+  Promise.allSettled([telegramUserbot.disconnect(), tgOnyx.disconnect(), tgCard.disconnect(), telegramLogin.cancel(), telegramLoginOnyx.cancel(), telegramLoginCard.cancel()]).finally(() => process.exit(0));
 }
 // Ushlanmagan server xatolari ham «So'nggi xatolar»ga yoziladi va adminga xabar boradi
 app.use((err, req, res, next) => {
@@ -2099,6 +2106,7 @@ app.listen(PORT, () => {
       else console.log("Telegram shaxsiy akkaunt:", r.error);
     });
     connectTelegramUserbot("UVONYX").then((r) => { if (r.ok) console.log("UVONYX Telegram akkaunt: ulandi"); });
+    cardFeed.connectCard().then((r) => { if (r.ok) console.log("Karta uchun Telegram akkaunt: ulandi"); }).catch((e) => console.error("Karta akkaunti:", e.message));
   } catch (e) {
     console.error("Telegram avto-ulanish xatosi:", e.message);
   }

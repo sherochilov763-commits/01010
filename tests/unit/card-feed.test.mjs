@@ -108,3 +108,40 @@ test("belgilash: shaxsiy, rasxod, buyurtma — faqat ruxsat etilgan maydonlar", 
   assert.equal(un.data.item.txId, null);
   assert.equal((await call(app.routes["PATCH /api/card-tx/:id"], { params: { id: "x" }, body: {} })).code, 404);
 });
+
+test("karta uchun shaxsiy akkaunt: kirish → sessiya saqlanadi, faqat botlar o'qiladi; uzish → sessiya o'chadi", async () => {
+  const store = { "uvix:settings": "{}" };
+  const getStmt = { get: (k) => (k in store ? { key: k, value: store[k] } : undefined) };
+  const upsertStmt = { run: (k, v) => { store[k] = v; } };
+  const calls = [];
+  let connected = false;
+  const cardBot = {
+    isConnected: () => connected, getStatus: () => ({ status: connected ? "connected" : "disconnected" }),
+    connectFromSettings: async (settings, onNew, opts) => { calls.push({ settings, opts }); connected = true; return { ok: true }; },
+    disconnect: async () => { connected = false; },
+    fetchBotChat: async () => ({ chatId: "5", name: "CardXabar", messages: [msg(7, PLATEZH)] }),
+  };
+  let onSuccess = null;
+  const cardLogin = { getState: () => ({ stage: "idle" }), startQr: async (a) => { onSuccess = a.onSuccess; return { stage: "qr", apiId: a.apiId }; }, cancel: async () => ({ stage: "idle" }) };
+  const app = fakeApp();
+  const pass = (req, res, next) => next && next();
+  const api = CF(app, { getStmt, upsertStmt, deleteKey: (k) => { delete store[k]; }, requireAuth: pass, requireAdmin: pass, bots: [], cardBot, cardLogin, readCreds: () => ({ apiId: "123", apiHash: "h".repeat(32) }) });
+  assert.equal((await call(app.routes["GET /api/card-tx/account"])).data.status, "disconnected");
+  assert.equal((await call(app.routes["POST /api/card-tx/account/login/qr"])).data.apiId, "123");
+  await onSuccess({ session: "SESS", apiId: 123, apiHash: "h".repeat(32), user: { name: "Sherzod" } });
+  assert.equal(JSON.parse(store["uvix:cardTgSession"]).session, "SESS");
+  assert.equal(calls[0].opts.botsOnly, true);
+  assert.equal(calls[0].opts.session, "SESS");
+  await new Promise((r) => setTimeout(r, 10));
+  const list = await call(app.routes["GET /api/card-tx"]);
+  assert.equal(list.data.items.length, 1);
+  assert.equal(list.data.items[0].line, "CARD");
+  const acc = await call(app.routes["GET /api/card-tx/account"]);
+  assert.equal(acc.data.status, "connected");
+  assert.equal(acc.data.user.name, "Sherzod");
+  await call(app.routes["POST /api/card-tx/account/disconnect"]);
+  assert.equal(store["uvix:cardTgSession"], undefined);
+  assert.equal(connected, false);
+  assert.equal((await call(app.routes["GET /api/card-tx"])).data.items.length, 1); // yozuvlar qoladi
+  assert.equal((await api.connectCard()).ok, false);
+});

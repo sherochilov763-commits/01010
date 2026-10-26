@@ -67,6 +67,19 @@ async def main():
         ok("telefon: gorizontal aylantirish yo'q", await m.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"))
         await m.screenshot(path=OUT + "card_mobile.png", full_page=True)
         await b.close()
+    # CardXabar boshqa (shaxsiy) akkauntda: ulash taklifi va kirish oynasi
+    ok("karta akkaunti: holat (ulanmagan), operatorga yopiq", api("/api/card-tx/account", token=adm).get("status") == "disconnected" and api("/api/card-tx/account", token=op).get("_code") == 403)
+    dbset("uvix:cardTx", {"items": [], "meta": {}})
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        d = await (await b.new_context(viewport={"width": 1280, "height": 900}, timezone_id="Asia/Tashkent")).new_page(); d.on("pageerror", lambda e: errs.append("D2:" + str(e)))
+        await dlogin(d, "Administrator", "0000")
+        await nav(d, "Karta"); await d.wait_for_timeout(1200)
+        ok("ulash taklifi ko'rinadi", await d.locator("[data-testid=card-connect]").count() == 1)
+        await d.screenshot(path=OUT + "card_connect.png")
+        await d.locator("[data-testid=card-connect-btn]").click(); await d.wait_for_timeout(600)
+        ok("kirish oynasi: «Karta uchun Telegram akkaunt»", await d.locator(".uvix-modal-panel", has_text="Karta uchun Telegram akkaunt").count() == 1)
+        await b.close()
     ok("JS xatolar yo'q", not errs, errs)
     finish()
 

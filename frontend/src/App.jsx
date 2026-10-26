@@ -1232,7 +1232,7 @@ function AppInner() {
             )}
             {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
             {view === "card" && isAdmin && (
-              <CardView currentUser={currentUser} orders={activeOrders} categories={categories} employees={employees}
+              <CardView currentUser={currentUser} settings={settings} orders={activeOrders} categories={categories} employees={employees}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} onAddPayment={addPayment} />
             )}
             {view === "kassa" && (isAdmin || C("kassa.view")) && (

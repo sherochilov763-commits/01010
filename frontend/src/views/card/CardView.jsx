@@ -2,10 +2,11 @@
 // Chiqimni rasxodga yozish, kirimni buyurtma to'loviga bog'lash yoki «shaxsiy» deb belgilash mumkin.
 // Faqat rahbar ko'radi (server ham tekshiradi).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, Check, CreditCard, Download, Link2, RefreshCw, Search, User, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Check, CreditCard, Download, Link2, RefreshCw, Search, Send, User, X } from "lucide-react";
 import { Button, Card, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { THEME } from "../../theme.js";
-import { fetchCardTx, markCardTx, syncCardTx } from "../../storage.js";
+import { cardAccountLogin, disconnectCardAccount, fetchCardAccount, fetchCardTx, markCardTx, syncCardTx } from "../../storage.js";
+import { TelegramLoginModal } from "../settings/TelegramAccountSection.jsx";
 import { fmt, localDateStr, money, uid } from "../../lib/format.js";
 import { orderDebt } from "../../lib/finance.js";
 import { exportRows } from "../../lib/excel.js";
@@ -72,7 +73,7 @@ function StatusTag({ t }) {
   return t.dir === "in" ? tag("Buyurtmaga bog'lash", THEME.blueText, THEME.blueBg) : tag("Rasxodga yozish", THEME.amberText, THEME.amberBg);
 }
 
-export function CardView({ currentUser, orders, categories, employees, onAddCategory, onAddSubcategory, onSaveTx, onAddPayment }) {
+export function CardView({ currentUser, settings, orders, categories, employees, onAddCategory, onAddSubcategory, onSaveTx, onAddPayment }) {
   const isMobile = useIsMobile();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
@@ -94,7 +95,12 @@ export function CardView({ currentUser, orders, categories, employees, onAddCate
   }
   const closeAll = () => { setSel(null); setSheet(false); setMode(null); };
 
-  const load = useCallback(() => fetchCardTx().then((d) => { setData(d); setErr(""); }).catch((e) => setErr(e.message)), []);
+  const [account, setAccount] = useState(null); // karta uchun ulangan shaxsiy Telegram
+  const [linking, setLinking] = useState(false);
+  const load = useCallback(() => {
+    fetchCardAccount().then(setAccount).catch(() => {});
+    return fetchCardTx().then((d) => { setData(d); setErr(""); }).catch((e) => setErr(e.message));
+  }, []);
   useEffect(() => {
     load();
     const t = setInterval(load, 30000); // yangi xabarlar har 30 soniyada
@@ -160,14 +166,21 @@ export function CardView({ currentUser, orders, categories, employees, onAddCate
 
       {err && <Card><div style={{ color: THEME.rose, fontSize: 13 }}>{err}</div></Card>}
       {!data && !err && <Card><div style={{ color: THEME.muted, fontSize: 13 }}>Yuklanmoqda…</div></Card>}
-      {data && !found && (
-        <Card>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>{anyConnected ? "Telegram'da CardXabar chati topilmadi" : "CRM'ga Telegram akkaunt ulanmagan"}</div>
-          <div style={{ fontSize: 13, color: THEME.muted, lineHeight: 1.6 }}>
-            {anyConnected
-              ? "CRM'ga ulangan Telegram akkauntda CardXabar boti bo'lishi kerak. Kartangiz CardXabar'ga boshqa (shaxsiy) Telegram'da ulangan bo'lsa — o'sha akkauntda ham @CardXabar botiga kartani qo'shing yoki CRM'ga o'sha akkauntni ulang. Keyin «Yangilash»ni bosing."
-              : "Sozlamalar → Telegram akkaunt bo'limidan akkauntni ulang. CardXabar xabarlari shu akkaunt orqali o'qiladi."}
+      {data && !found && account?.status !== "connected" && (
+        <Card data-testid="card-connect">
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>CardXabar qaysi Telegram'da?</div>
+          <div style={{ fontSize: 13, color: THEME.muted, lineHeight: 1.6, marginBottom: 12 }}>
+            Kartangiz ulangan shaxsiy Telegram akkauntni ulang. Faqat CardXabar chati o'qiladi — boshqa chatlar CRM'ga tushmaydi, xodimlar ko'rmaydi.
           </div>
+          {account?.status === "expired" && <div style={{ fontSize: 12.5, color: THEME.roseText, marginBottom: 10 }}>Oldingi ulanish uzilgan: {account.message || "sessiya tugagan"}. Qayta ulang.</div>}
+          <Button onClick={() => setLinking(true)} data-testid="card-connect-btn" style={{ width: "100%", justifyContent: "center", display: "inline-flex", alignItems: "center", gap: 6 }}><Send size={15} /> Telegram akkauntni ulash</Button>
+          <div style={{ fontSize: 12, color: THEME.muted, marginTop: 8, textAlign: "center" }}>QR kod (kompyuterda) yoki telefon raqam + kod</div>
+        </Card>
+      )}
+      {data && !found && account?.status === "connected" && (
+        <Card>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>Bu akkauntda CardXabar chati topilmadi</div>
+          <div style={{ fontSize: 13, color: THEME.muted, lineHeight: 1.6 }}>Ulangan akkauntda @CardXabar boti bilan suhbat bo'lishi kerak. Botga kartani qo'shib, «Yangilash»ni bosing yoki pastdan boshqa akkauntni ulang.</div>
         </Card>
       )}
 
@@ -223,6 +236,23 @@ export function CardView({ currentUser, orders, categories, employees, onAddCate
             <Button variant="ghost" onClick={exportExcel} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Download size={15} /> Excel</Button>
           </div>
         </>
+      )}
+
+      {data && account?.status === "connected" && (
+        <div data-testid="card-account" style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", border: `1px solid ${THEME.border}`, borderRadius: 12, background: THEME.card }}>
+          <Send size={18} color={THEME.text} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.user?.name || "Telegram"}{account.user?.phone ? ` · +${String(account.user.phone).replace(/^\+/, "").replace(/^(\d{3})\d+(\d{2})$/, "$1 •• ••• $2")}` : ""}</div>
+            <div style={{ fontSize: 12, color: THEME.muted }}>Karta uchun akkaunt · {status.find((x) => x.line === "CARD")?.found ? "CardXabar topildi" : "CardXabar topilmadi"}</div>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600, color: THEME.greenText, background: THEME.greenBg, padding: "3px 8px", borderRadius: 8 }}>Ulangan</span>
+          <Button variant="ghost" onClick={async () => { if (!window.confirm("Karta uchun Telegram akkaunt uzilsinmi? Yozilgan karta yozuvlari qoladi.")) return; setAccount(await disconnectCardAccount().catch(() => account)); load(); }} style={{ padding: "6px 10px", fontSize: 12.5 }}>Uzish</Button>
+        </div>
+      )}
+      {linking && (
+        <TelegramLoginModal settings={{ ...(settings || {}), telegramUserPhone: "" }} loginFn={cardAccountLogin} title="Karta uchun Telegram akkaunt"
+          onClose={() => { setLinking(false); load(); }}
+          onDone={() => { load(); setTimeout(() => { sync(); }, 2500); }} />
       )}
 
       {sel && sheet && <ActionSheet t={sel} onClose={closeAll} onMode={chooseMode} onMark={async (p) => { await mark(sel, p); closeAll(); }} />}

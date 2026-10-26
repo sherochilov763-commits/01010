@@ -16,9 +16,13 @@
 //
 // Saqlash (ichki kalit, KV orqali o'qib/yozib bo'lmaydi):
 //   uvix:cardTx — { items: [...], meta: { [line]: { chatId, name, found, lastSyncAt, error } } }
+//   uvix:cardTgSession — karta uchun alohida ulangan shaxsiy Telegram akkaunt sessiyasi (line = "CARD").
+//     U faqat bot xabarlarini o'qiydi (botsOnly): odamlar bilan yozishmalar CRM'ga tushmaydi.
 // Bu faylda fs yo'q.
 
 const KEY = "uvix:cardTx";
+const SESSION_KEY = "uvix:cardTgSession";
+const CARD = "CARD";
 const MAX_ITEMS = 5000;
 const BOT_MATCH = /card\s*xabar/i;
 
@@ -92,8 +96,10 @@ function parseCardXabar(text) {
 }
 
 // ---------------- Saqlash va API ----------------
-module.exports = function registerCardFeed(app, { getStmt, upsertStmt, requireAuth, requireAdmin, bots }) {
-  // bots: [{ line, bot }] — CRM'ga ulangan Telegram akkauntlar
+module.exports = function registerCardFeed(app, { getStmt, upsertStmt, deleteKey, requireAuth, requireAdmin, bots: crmBots, cardBot, cardLogin, readCreds }) {
+  // crmBots: [{ line, bot }] — CRM chatlari uchun ulangan Telegram akkauntlar (ular orqali ham CardXabar o'qiladi)
+  // cardBot / cardLogin — karta uchun alohida shaxsiy akkaunt (ixtiyoriy)
+  const bots = [...crmBots, ...(cardBot ? [{ line: CARD, bot: cardBot }] : [])];
   function read() {
     try {
       const v = JSON.parse(getStmt.get(KEY)?.value || "{}");
@@ -162,6 +168,71 @@ module.exports = function registerCardFeed(app, { getStmt, upsertStmt, requireAu
   }
   const syncAll = () => Promise.all(bots.map((b) => sync(b.line)));
 
+  // ---------------- Karta uchun shaxsiy Telegram akkaunt ----------------
+  function readSession() {
+    try { return JSON.parse(getStmt.get(SESSION_KEY)?.value || "null"); } catch { return null; }
+  }
+  let cardExpired = null;
+  async function connectCard() {
+    if (!cardBot) return { ok: false, error: "yo'q" };
+    const saved = readSession();
+    const creds = readCreds();
+    if (!saved?.session || !creds.apiId || !creds.apiHash) return { ok: false, error: "Karta uchun akkaunt ulanmagan" };
+    const settings = { telegramUserApiId: saved.apiId || creds.apiId, telegramUserApiHash: saved.apiHash || creds.apiHash };
+    const r = await cardBot.connectFromSettings(settings, () => {}, {
+      session: saved.session,
+      botsOnly: true,
+      onBotMessage: onBotMessage(CARD),
+      onSessionDead: (info) => { cardExpired = info; deleteKey(SESSION_KEY); },
+    });
+    if (r.ok) { cardExpired = null; sync(CARD).catch((e) => console.error("CardXabar (karta akkaunti):", e.message)); }
+    return r;
+  }
+  function accountState() {
+    const saved = readSession();
+    const st = cardBot ? cardBot.getStatus() : { status: "disconnected" };
+    const creds = readCreds();
+    return {
+      status: st.status === "disconnected" && cardExpired ? "expired" : st.status,
+      message: st.message || cardExpired?.message || "",
+      user: saved?.user || null,
+      hasApi: !!(creds.apiId && creds.apiHash),
+      login: cardLogin ? cardLogin.getState() : { stage: "idle" },
+    };
+  }
+  async function onCardLogin({ session, apiId, apiHash, user }) {
+    upsertStmt.run(SESSION_KEY, JSON.stringify({ session, apiId: String(apiId), apiHash, user, savedAt: new Date().toISOString() }));
+    const r = await connectCard();
+    if (!r.ok) throw new Error(r.error || "Ulanib bo'lmadi");
+  }
+  const loginBody = (b) => {
+    const c = readCreds();
+    return { apiId: b?.apiId || c.apiId, apiHash: b?.apiHash || c.apiHash };
+  };
+  const route = (fn) => async (req, res) => {
+    try { res.json(await fn(req)); } catch (e) { res.status(400).json({ error: "login_failed", message: e.message }); }
+  };
+  if (cardBot && cardLogin) {
+    app.get("/api/card-tx/account", requireAuth, requireAdmin, (req, res) => res.json(accountState()));
+    // Kirish oqimi — Sozlamalardagi Telegram ulash bilan bir xil (QR / telefon kodi / 2FA parol)
+    app.get("/api/card-tx/account/login", requireAuth, requireAdmin, (req, res) => res.json(cardLogin.getState()));
+    app.post("/api/card-tx/account/login/qr", requireAuth, requireAdmin, route((req) => cardLogin.startQr({ ...loginBody(req.body), onSuccess: onCardLogin })));
+    app.post("/api/card-tx/account/login/phone", requireAuth, requireAdmin, route((req) => cardLogin.startPhone({ ...loginBody(req.body), phone: req.body?.phone, onSuccess: onCardLogin })));
+    app.post("/api/card-tx/account/login/code", requireAuth, requireAdmin, route((req) => cardLogin.submitCode(req.body?.code)));
+    app.post("/api/card-tx/account/login/password", requireAuth, requireAdmin, route((req) => cardLogin.submitPassword(req.body?.password)));
+    app.post("/api/card-tx/account/login/cancel", requireAuth, requireAdmin, route(() => cardLogin.cancel()));
+    // Uzish: serverdagi sessiya o'chiriladi (yozib olingan karta yozuvlari qoladi)
+    app.post("/api/card-tx/account/disconnect", requireAuth, requireAdmin, route(async () => {
+      await cardLogin.cancel().catch(() => {});
+      await cardBot.disconnect().catch(() => {});
+      deleteKey(SESSION_KEY);
+      cardExpired = null;
+      const state = read();
+      if (state.meta[CARD]) { delete state.meta[CARD]; write(state); }
+      return accountState();
+    }));
+  }
+
   function statusOf(state) {
     return bots.map(({ line, bot }) => ({ line, connected: bot.isConnected(), ...(state.meta[line] || {}) }));
   }
@@ -197,8 +268,9 @@ module.exports = function registerCardFeed(app, { getStmt, upsertStmt, requireAu
     res.json({ item: out });
   });
 
-  return { onBotMessage, sync, syncAll };
+  return { onBotMessage, sync, syncAll, connectCard };
 };
 
 module.exports.parseCardXabar = parseCardXabar;
 module.exports.KEY = KEY;
+module.exports.SESSION_KEY = SESSION_KEY;

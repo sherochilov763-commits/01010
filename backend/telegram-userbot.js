@@ -365,7 +365,7 @@ async function isBotChat(chatId) {
 
 // Sozlamalardan (apiId, apiHash, sessionString) o'qib, ulanishni boshlaydi.
 // onNewMessage(fromUserId, fromName, text, chatId) — yangi xabar kelganda chaqiriladi.
-async function connectFromSettings(settings, onNewMessage, { session: sessionOverride, onSessionDead, onBotMessage } = {}) {
+async function connectFromSettings(settings, onNewMessage, { session: sessionOverride, onSessionDead, onBotMessage, botsOnly = false } = {}) {
   onNewMessageCallback = onNewMessage;
   if (onSessionDead) onSessionDeadCallback = onSessionDead;
   if (onBotMessage) onBotMessageCallback = onBotMessage;
@@ -399,14 +399,16 @@ async function connectFromSettings(settings, onNewMessage, { session: sessionOve
     selfId = String(self?.id ?? "");
     me = { id: selfId, name: [self?.firstName, self?.lastName].filter(Boolean).join(" "), username: self?.username || "", phone: self?.phone || "" };
     // Ulanishi bilan xotirani to'ldiramiz — birinchi xabardanoq ism to'g'ri chiqadi
-    warmEntityCache(200);
+    if (!botsOnly) warmEntityCache(200);
     startWatchdog();
 
     client.updates.on("newMessage", async (update) => {
       try {
         const msg = update.message;
         if (!msg) return;
-        const peer = await humanPeer(msg);
+        // botsOnly — faqat bot xabarlari kerak (masalan karta uchun ulangan shaxsiy akkaunt): odamlar yozgan
+        // xabarlar umuman o'qilmaydi, rasm/fayl yuklab olinmaydi
+        const peer = botsOnly ? null : await humanPeer(msg);
         if (!peer) {
           // Botdan kelgan shaxsiy xabar (masalan CardXabar) — chatlarga tushmaydi, lekin kerakli modulga beriladi
           if (onBotMessageCallback && msg.isPrivate && !msg.out) {

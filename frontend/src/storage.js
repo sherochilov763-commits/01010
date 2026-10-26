@@ -778,3 +778,7 @@ async function cardReq(path, opts = {}) {
 export const fetchCardTx = () => cardReq("");
 export const syncCardTx = () => cardReq("/sync", { method: "POST" });
 export const markCardTx = (id, patch) => cardReq(`/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }).then((d) => d.item);
+// Karta uchun alohida shaxsiy Telegram akkaunt (faqat CardXabar o'qiladi)
+export const fetchCardAccount = () => cardReq("/account");
+export const disconnectCardAccount = () => cardReq("/account/disconnect", { method: "POST" });
+export const cardAccountLogin = (step, body = {}) => (step ? cardReq(`/account/login/${step}`, { method: "POST", body: JSON.stringify(body) }) : cardReq("/account/login"));

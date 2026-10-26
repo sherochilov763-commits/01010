@@ -107,8 +107,9 @@ export function TelegramAccountSection({ settings, onSaveSettings, line }) {
   );
 }
 
-function TelegramLoginModal({ settings, onClose, onDone, line }) {
-  const tLogin = (step, body) => telegramLogin(step, body, line);
+// loginFn — boshqa kirish oqimi uchun (masalan Karta bo'limidagi shaxsiy akkaunt); title — oyna sarlavhasi
+export function TelegramLoginModal({ settings, onClose, onDone, line, loginFn, title }) {
+  const tLogin = (step, body) => (loginFn ? loginFn(step, body) : telegramLogin(step, body, line));
   const [apiId, setApiId] = useState(settings?.telegramUserApiId || "");
   const [apiHash, setApiHash] = useState(settings?.telegramUserApiHash || "");
   const needCreds = !settings?.telegramUserApiId || !settings?.telegramUserApiHash;
@@ -174,7 +175,7 @@ function TelegramLoginModal({ settings, onClose, onDone, line }) {
   );
 
   return (
-    <Modal title="Telegram akkauntni ulash" onClose={close} width={440}>
+    <Modal title={title || "Telegram akkauntni ulash"} onClose={close} width={440}>
       {!credsOk ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ fontSize: 12.5, color: THEME.muted, lineHeight: 1.55 }}>
