@@ -31,6 +31,17 @@ if os.environ.get("FAKETIME"):
         pg.on("close", lambda _: asyncio.ensure_future(ctx.close()))
         return pg
     _Browser.new_page = _new_page_ft
+    # Playwright drayveri (Node) ham libfaketime ostida qolmasin — aks holda ba'zi versiyalarda (1.56) clock.install
+    # vaqtni drayver soatiga nisbatan hisoblab, brauzerga haqiqiy vaqtni beradi. Drayverni soxta vaqtsiz ishga tushiramiz.
+    from playwright.async_api import async_playwright as _async_playwright
+    class _PlaywrightNoFT:
+        def __init__(self): self._cm = _async_playwright()
+        async def __aenter__(self):
+            saved = {k: os.environ.pop(k) for k in _FT_ENV if k in os.environ}
+            try: return await self._cm.__aenter__()
+            finally: os.environ.update(saved)
+        async def __aexit__(self, *a): return await self._cm.__aexit__(*a)
+    async_playwright = _PlaywrightNoFT
 
 B = os.environ.get("E2E_BASE", "http://localhost:4990")
 DB = os.environ.get("E2E_DB", "")
