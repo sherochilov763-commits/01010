@@ -691,6 +691,11 @@ export async function revokeSession(id) {
 export const fetchSystemErrors = () => apiReq("/system/errors");
 export const clearSystemErrors = () => apiReq("/system/errors", "DELETE");
 export const fetchStorageStats = (fresh) => apiReq(`/system/storage${fresh ? "?fresh=1" : ""}`);
+// ---- Chat fayllari (chat-files.js) ----
+export const fetchChatFiles = () => apiReq("/system/chat-files");
+export const saveChatFilesConfig = (config) => apiReq("/system/chat-files/config", "PUT", { config });
+export const cleanChatFiles = (opts) => apiReq("/system/chat-files/clean", "POST", opts);
+export const fetchTgMedia = (chatId, tgId) => apiReq(`/telegram-user/media/${encodeURIComponent(chatId)}/${encodeURIComponent(tgId)}`, "POST", {});
 
 // ---------- Vazifalar (o'lchov, montaj, yetkazish) ----------
 async function jobsCall(path, method = "GET", body) {

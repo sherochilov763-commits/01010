@@ -12,6 +12,7 @@ import { THEME } from "../../theme.js";
 import { SecuritySection } from "./SecuritySection.jsx";
 import { ErrorsSection } from "./ErrorsSection.jsx";
 import { StorageSection } from "./StorageSection.jsx";
+import { ChatFilesSection } from "./ChatFilesSection.jsx";
 import { AppearancePreviewCard, AppearanceSection, CompanyAppearanceCard } from "./AppearanceSection.jsx";
 import { VoiceSettingsCard } from "../../components/VoiceAssistant.jsx";
 import { TrashSection } from "./TrashSection.jsx";
@@ -452,6 +453,7 @@ function useSettingsBody({ onOpenView, categories, notif, bgState, currentUser, 
     bolimlar: isAdmin && <ModulesSection onOpenView={onOpenView} />,
     malumotlar: isAdmin && <>
         <StorageSection />
+        <ChatFilesSection onCleaned={() => window.dispatchEvent(new Event("uvix:storage-refresh"))} />
         <ErrorsSection />
         {isAdmin && (
           <Card data-testid="backup-time-card">

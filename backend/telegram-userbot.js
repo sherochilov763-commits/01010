@@ -95,6 +95,9 @@ function startWatchdog() {
 let onNewMessageCallback = null;
 let onBotMessageCallback = null; // botlardan kelgan shaxsiy xabarlar (CardXabar va h.k.)
 let mediaDir = null; // rasmlar saqlanadigan papka (server.js tomonidan beriladi)
+// lazyDocs — video va hujjatlar serverga oldindan yozilmaydi, ▶ / «Ochish» bosilganda olinadi (chat-files.js sozlamasi)
+let mediaPolicy = { lazyDocs: false };
+function setMediaPolicy(p) { mediaPolicy = { ...mediaPolicy, ...(p || {}) }; }
 const MAX_DOWNLOAD = 50 * 1024 * 1024; // mijozdan kelgan video/hujjatni 50 MB gacha saqlaymiz
 
 function setMediaDir(dir) {
@@ -197,7 +200,8 @@ async function humanPeer(msg) {
 }
 
 // Xabar mazmuni: matn, rasm, video, hujjat, ovoz, joylashuv, javob — real vaqt va tarix uchun umumiy
-async function parseMessageContent(msg, maxDownload) {
+async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
+  let lazy = false;
   let text = msg.message || "";
   let mediaUrl = null, mediaUrlAlt = null, mediaType = null, fileName = null, fileSize = null, lat = null, lng = null;
   const base = mediaBase(selfId, msg.chatId != null ? String(msg.chatId) : null, msg.id);
@@ -235,10 +239,15 @@ async function parseMessageContent(msg, maxDownload) {
           if (isVideo && ![".mp4", ".webm", ".mov"].includes(ext)) ext = ".mp4";
           const filename = `${base || crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`;
           const file = path.join(mediaDir, filename);
-          const buffer = fs.existsSync(file) ? true : await client.downloadMedia(msg, {});
-          if (buffer) {
-            if (buffer !== true) fs.writeFileSync(file, buffer);
-            mediaUrl = `/api/photos/${filename}`;
+          const have = fs.existsSync(file);
+          if (!have && mediaPolicy.lazyDocs && !force) {
+            lazy = true; // ochilganda yuklanadi
+          } else {
+            const buffer = have ? true : await client.downloadMedia(msg, {});
+            if (buffer) {
+              if (buffer !== true) fs.writeFileSync(file, buffer);
+              mediaUrl = `/api/photos/${filename}`;
+            }
           }
         } catch (e) {
           console.error("Faylni yuklab olishda xato:", e.message);
@@ -276,6 +285,7 @@ async function parseMessageContent(msg, maxDownload) {
   if (!text && !mediaUrl && !mediaType) text = "[Bo'sh xabar]";
   return {
     text, mediaUrl, mediaUrlAlt, mediaType, fileName, fileSize, lat, lng,
+    ...(lazy ? { lazy: true } : {}),
     tgId: msg.id,
     replyToTgId: msg.replyTo?.replyToMsgId || null,
     date: new Date((msg.date || Date.now() / 1000) * 1000).toISOString(),
@@ -553,6 +563,15 @@ async function sendReaction(chatId, tgId, emoji) {
   }));
 }
 
+// Bitta xabarning faylini Telegram'dan olish (o'chirilgan yoki oldindan yuklanmagan bo'lsa)
+async function loadMedia(chatId, tgId) {
+  requireConnected();
+  const list = await client.getMessages(peerOf(chatId), { ids: [Number(tgId)] });
+  const m = (list || [])[0];
+  if (!m || !m.media) return null;
+  return parseMessageContent(m, MAX_DOWNLOAD, { force: true });
+}
+
 async function getRecentMessages(chatId, limit = 30) {
   if (!isConnected()) throw new Error("Telegram akkauntga ulanmagan");
   const messages = await client.getMessages(chatId, { limit });
@@ -611,7 +630,7 @@ function clearExpired() { expired = null; lastError = null; }
     listPrivateDialogs: guarded(listPrivateDialogs), getFolderDefs: guarded(getFolderDefs), describeChat: guarded(describeChat), fetchHistory: guarded(fetchHistory),
     isBotChat: guarded(isBotChat), sendMessage: guarded(sendMessage), sendPhoto: guarded(sendPhoto), sendVideo: guarded(sendVideo),
     sendDocument: guarded(sendDocument), sendVoice: guarded(sendVoice), sendLocation: guarded(sendLocation), sendReaction: guarded(sendReaction),
-    getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames), fetchBotChat: guarded(fetchBotChat),
+    getRecentMessages: guarded(getRecentMessages), resolveChatNames: guarded(resolveChatNames), loadMedia: guarded(loadMedia), setMediaPolicy, fetchBotChat: guarded(fetchBotChat),
     connectFromSettings, disconnect, getStatus, isConnected, setMediaDir, clearExpired, friendlyError, authErrorCode, CLIENT_OPTS,
   };
 }

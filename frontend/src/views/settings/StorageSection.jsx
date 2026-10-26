@@ -19,6 +19,8 @@ export function StorageSection() {
   const [busy, setBusy] = useState(false);
   const load = (fresh) => { setBusy(true); fetchStorageStats(fresh).then((x) => { setD(x); setErr(""); }).catch((e) => setErr(e.message || "Yuklab bo'lmadi")).finally(() => setBusy(false)); };
   useEffect(() => { load(false); }, []);
+  // «Chat fayllari»da tozalangach — hajm yangilansin
+  useEffect(() => { const on = () => load(true); window.addEventListener("uvix:storage-refresh", on); return () => window.removeEventListener("uvix:storage-refresh", on); }, []);
   const rows = d ? [
     { k: "db", icon: Database, c: THEME.violet, t: "Baza (buyurtma, to'lov, rasxod, lid)", s: `${d.db.orders} buyurtma · ${d.db.transactions} rasxod · ${d.db.leads} lid`, v: d.db.size },
     { k: "photos", icon: ImageIcon, c: "#DB2777", t: "Buyurtma rasmlari", s: `${d.files.orderPhotos.count} fayl (siqilgan + kichik nusxa)`, v: d.files.orderPhotos.size },

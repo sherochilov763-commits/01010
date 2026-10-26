@@ -461,6 +461,18 @@ require("./auto-reply").registerAutoReply(app, {
 });
 setInterval(() => { autoReply.tick().catch((e) => console.error("Avtojavob tekshiruvi:", e.message)); }, 60 * 1000);
 
+// ==================== Chat fayllari: tozalash, saqlash muddati, ochilganda yuklash — chat-files.js ====================
+const chatFiles = require("./chat-files").createChatFiles({
+  db, getStmt, upsertStmt, uploadsDir: UPLOADS_DIR, dbPath: db.DB_PATH,
+  onPolicy: (p) => { telegramUserbot.setMediaPolicy(p); tgOnyx.setMediaPolicy(p); },
+  loadMedia: (chatId, tgId) => { const t = tgFor(chatId); return t.bot.loadMedia(peerNum(t.id), tgId); },
+  notify: ({ title, body }) => notifications.emit("system", { title, body, view: "settings" }),
+});
+require("./chat-files").registerChatFiles(app, { requireAuth, requireAdmin, requireStaff, upsertStmt, chatFiles, chatAllowed: (req, id) => chatAllowed(req, id) });
+const runChatFilesDaily = () => { try { const r = chatFiles.daily(); if (r.old.count || r.disk.count) console.log(`Chat fayllari: ${r.old.count + r.disk.count} ta eski fayl o'chirildi`); } catch (e) { console.error("Chat fayllari tozalash:", e.message); } };
+setTimeout(runChatFilesDaily, 10 * 60 * 1000);
+setInterval(runChatFilesDaily, 24 * 60 * 60 * 1000);
+
 // Telegram xabarlari — guruh yo'q: har biri shaxsan, xodim o'zi «Telegram'ni ulash»ni bosgan bo'lsa.
 //   admin — faqat admin(lar)ga · staff — admin + operatorlarga · off — yuborilmaydi
 // Pul/baza ma'lumotlari (to'lov, rasxod, hisobot, zaxira) faqat adminga — «staff» ruxsat etilmaydi.
@@ -625,7 +637,7 @@ const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdR
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key.startsWith("uvix:card") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key.startsWith("uvix:card") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:chatFiles" || key === "uvix:chatFilesLog" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -1445,6 +1457,7 @@ function normalizeTgMessage(m, out) {
     fileName: m.fileName || null, fileSize: m.fileSize || null,
     lat: m.lat ?? null, lng: m.lng ?? null,
     tgId: m.tgId ?? null, replyToTgId: m.replyToTgId ?? null,
+    ...(m.lazy ? { lazy: true } : {}),
     out: !!out, date: m.date || new Date().toISOString(),
   };
 }

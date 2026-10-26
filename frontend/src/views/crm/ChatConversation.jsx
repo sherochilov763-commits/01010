@@ -76,7 +76,7 @@ export const chatCss = () => `
 `;
 
 /* ============================ XABARLAR ============================ */
-export function MessageList({ messages, loading, isMobile, customerName, onReply, onReact, onToDesigner, onDeleteNote, myName }) {
+export function MessageList({ messages, loading, isMobile, customerName, onReply, onReact, onToDesigner, onDeleteNote, myName, onFetchMedia }) {
   const [menu, setMenu] = useState(null); // { m, rect }
   const [lightbox, setLightbox] = useState(null);
   const byTgId = useMemo(() => {
@@ -165,7 +165,7 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
                   <Bot size={12} /> Avtojavob · {AUTO_LABEL[m.auto] || "avtomatik"}
                 </div>
               )}
-              <MessageBody m={m} onPhoto={(url, e) => (isMobile ? openMenu(e, m) : setLightbox(url))} />
+              <MessageBody m={m} onFetchMedia={onFetchMedia} onPhoto={(url, e) => (isMobile ? openMenu(e, m) : setLightbox(url))} />
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
               {m.myReaction && (
@@ -205,7 +205,36 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
   );
 }
 
-function MessageBody({ m, onPhoto }) {
+// Fayl serverda yo'q (oldindan yuklanmagan yoki muddati o'tib o'chirilgan) — bosilganda Telegram'dan olinadi (116-eskiz)
+function FetchMedia({ m, onFetchMedia }) {
+  const [st, setSt] = useState({ busy: false, err: "" });
+  const gone = !!m.mediaGone;
+  const label = { video: "🎥 Video", document: `📎 ${m.fileName || "Hujjat"}`, photo: "🖼 Rasm", voice: "🎤 Ovozli xabar" }[m.mediaType] || "📎 Fayl";
+  const go = async (e) => {
+    e.stopPropagation();
+    if (!onFetchMedia || st.busy) return;
+    setSt({ busy: true, err: "" });
+    try { await onFetchMedia(m); setSt({ busy: false, err: "" }); } catch (x) { setSt({ busy: false, err: x?.message || "Yuklab bo'lmadi" }); }
+  };
+  return (
+    <div data-testid="fetch-media" data-gone={gone ? "1" : undefined} style={{ padding: "10px 12px", minWidth: 220, maxWidth: 280, whiteSpace: "normal" }}>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>{label}{m.fileSize ? <span style={{ fontWeight: 400, color: m.out ? C.outMuted : C.muted }}> · {fmtSize(m.fileSize)}</span> : null}</div>
+      <div style={{ fontSize: 12, color: m.out ? C.outMuted : C.muted, marginTop: 2 }}>{gone ? "Muddati o'tgan — serverdan o'chirilgan, Telegram'da bor" : "Ochilganda Telegram'dan yuklanadi"}</div>
+      {m.tgId && onFetchMedia && (
+        <button type="button" onClick={go} disabled={st.busy} data-testid="fetch-media-btn"
+          style={{ marginTop: 8, height: 32, padding: "0 12px", borderRadius: 9, border: `1px solid ${C.link}66`, background: `${C.link}14`, color: C.link, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {st.busy ? <Loader2 size={14} className="uc-spin" /> : null}{gone ? "↻ Qayta yuklash" : m.mediaType === "video" ? "▶ Yuklab ko'rish" : "⬇ Yuklab olish"}
+        </button>
+      )}
+      {st.err && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 6 }}>{st.err}</div>}
+    </div>
+  );
+}
+
+function MessageBody({ m, onPhoto, onFetchMedia }) {
+  if ((m.lazy || m.mediaGone) && !m.mediaUrl && m.mediaType !== "location") {
+    return (<><FetchMedia m={m} onFetchMedia={onFetchMedia} />{m.text && <div style={{ padding: "0 12px 8px", fontSize: 14 }}>{m.text}</div>}</>);
+  }
   if (m.mediaType === "photo" && m.mediaUrl) {
     return (
       <>

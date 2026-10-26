@@ -4,7 +4,7 @@ import { layoutCss, Resizer, useChatLayout } from "./chatLayout.jsx";
 import { C, applyChatPalette } from "./chatPalette.js";
 import { Incremental, useIsMobile } from "../../components/ui.jsx";
 import { useBackToClose } from "../../lib/history.js";
-import { addChatNote, deleteChatNote, fetchChatNotes, searchChatMessages, sendChatTyping, fetchTelegramUserStatus, createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
+import { fetchTgMedia, addChatNote, deleteChatNote, fetchChatNotes, searchChatMessages, sendChatTyping, fetchTelegramUserStatus, createLeadFromChat, fetchOlderTelegramMessages, fetchTelegramThread, reactTelegramMessage, refreshTelegramNames, sendTelegramLocation, sendTelegramMedia } from "../../storage.js";
 import { chatCss, Composer, MessageList } from "./ChatConversation.jsx";
 import { LEAD_STAGES } from "../../constants.js";
 import { uid } from "../../lib/format.js";
@@ -728,6 +728,12 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                 onReact={handleReact}
                 onToDesigner={onAssignTask ? toDesigner : null}
                 onDeleteNote={handleDeleteNote}
+                onFetchMedia={async (m) => {
+                  const chatId = selectedChatId;
+                  const r = await fetchTgMedia(chatId, m.tgId);
+                  if (selectedRef.current === chatId) setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, mediaUrl: r.mediaUrl, mediaUrlAlt: r.mediaUrlAlt, mediaGone: undefined, lazy: undefined } : x)));
+                  return r;
+                }}
               />
               <div ref={bottomRef} />
             </div>
