@@ -9,6 +9,13 @@ const { TelegramClient, Api } = require("teleproto");
 const audio = require("./audio");
 const { StringSession } = require("teleproto/sessions");
 
+// Chat fayli nomi: akkaunt + chat + Telegram xabar ID'sidan — bir xabar uchun doim bir xil nom.
+// Fayl allaqachon bo'lsa qayta yuklanmaydi (avval har sinxronlashda yangi nom bilan qayta saqlanib, disk to'lardi).
+function mediaBase(selfId, chatId, msgId) {
+  if (!selfId || chatId == null || msgId == null) return null;
+  return `tg${crypto.createHash("sha1").update(`${selfId}:${chatId}:${msgId}`).digest("hex").slice(0, 24)}`;
+}
+
 // Bir nechta akkaunt (har yo'nalishga alohida) — har biri o'z holati bilan: createUserbot()
 function createUserbot() {
 let client = null;
@@ -193,6 +200,7 @@ async function humanPeer(msg) {
 async function parseMessageContent(msg, maxDownload) {
   let text = msg.message || "";
   let mediaUrl = null, mediaUrlAlt = null, mediaType = null, fileName = null, fileSize = null, lat = null, lng = null;
+  const base = mediaBase(selfId, msg.chatId != null ? String(msg.chatId) : null, msg.id);
   if (msg.media) {
     const geo = msg.media.geo;
     if (geo && typeof geo.lat === "number") {
@@ -201,10 +209,11 @@ async function parseMessageContent(msg, maxDownload) {
       mediaType = "location";
     } else if (msg.photo && mediaDir) {
       try {
-        const buffer = await client.downloadMedia(msg, {});
+        const filename = `${base || crypto.randomBytes(12).toString("hex")}.jpg`;
+        const file = path.join(mediaDir, filename);
+        const buffer = fs.existsSync(file) ? true : await client.downloadMedia(msg, {});
         if (buffer) {
-          const filename = `${crypto.randomBytes(12).toString("hex")}.jpg`;
-          fs.writeFileSync(path.join(mediaDir, filename), buffer);
+          if (buffer !== true) fs.writeFileSync(file, buffer);
           mediaUrl = `/api/photos/${filename}`;
           mediaType = "photo";
         }
@@ -222,12 +231,13 @@ async function parseMessageContent(msg, maxDownload) {
       mediaType = isVideo ? "video" : "document";
       if (size && size <= maxDownload) {
         try {
-          const buffer = await client.downloadMedia(msg, {});
+          let ext = (path.extname(fileName) || (isVideo ? ".mp4" : "")).toLowerCase().replace(/[^a-z0-9.]/g, "").slice(0, 10);
+          if (isVideo && ![".mp4", ".webm", ".mov"].includes(ext)) ext = ".mp4";
+          const filename = `${base || crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`;
+          const file = path.join(mediaDir, filename);
+          const buffer = fs.existsSync(file) ? true : await client.downloadMedia(msg, {});
           if (buffer) {
-            let ext = (path.extname(fileName) || (isVideo ? ".mp4" : "")).toLowerCase().replace(/[^a-z0-9.]/g, "").slice(0, 10);
-            if (isVideo && ![".mp4", ".webm", ".mov"].includes(ext)) ext = ".mp4";
-            const filename = `${crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`;
-            fs.writeFileSync(path.join(mediaDir, filename), buffer);
+            if (buffer !== true) fs.writeFileSync(file, buffer);
             mediaUrl = `/api/photos/${filename}`;
           }
         } catch (e) {
@@ -236,15 +246,16 @@ async function parseMessageContent(msg, maxDownload) {
       }
     } else if (msg.voice && mediaDir) {
       try {
-        const buffer = await client.downloadMedia(msg, {});
+        const id = base || crypto.randomBytes(12).toString("hex");
+        const oggPath = path.join(mediaDir, `${id}.ogg`);
+        const m4aPath = path.join(mediaDir, `${id}.m4a`);
+        const buffer = fs.existsSync(oggPath) ? true : await client.downloadMedia(msg, {});
         if (buffer) {
-          const id = crypto.randomBytes(12).toString("hex");
-          const oggPath = path.join(mediaDir, `${id}.ogg`);
-          fs.writeFileSync(oggPath, buffer);
+          if (buffer !== true) fs.writeFileSync(oggPath, buffer);
           // Ikki format: M4A (iPhone Safari) va OGG (qolgan brauzerlar) — brauzer o'zi tanlaydi
           mediaUrl = `/api/photos/${id}.ogg`;
           try {
-            if (await audio.toPlayableM4a(oggPath, path.join(mediaDir, `${id}.m4a`))) {
+            if (fs.existsSync(m4aPath) || await audio.toPlayableM4a(oggPath, m4aPath)) {
               mediaUrlAlt = mediaUrl;
               mediaUrl = `/api/photos/${id}.m4a`;
             }
@@ -420,6 +431,12 @@ async function connectFromSettings(settings, onNewMessage, { session: sessionOve
           return; // bot, kanal, guruh yoki xizmat xabari — CRM'ga tushmaydi
         }
         const chatId = String(msg.chatId);
+        if (msg.out) {
+          // O'zingiz yozgan xabar: CRM'dan yuborilgan bo'lsa, u allaqachon saqlangan — faylini qayta yuklamaslik uchun
+          // mazmunni darhol emas, kerak bo'lsagina (server tekshirgach) olamiz
+          if (onNewMessageCallback) onNewMessageCallback({ chatId, out: true, tgId: msg.id, loadContent: () => parseMessageContent(msg, MAX_DOWNLOAD) });
+          return;
+        }
         const content = await parseMessageContent(msg, MAX_DOWNLOAD);
         // Hech narsa aniqlanmasa ham, kamida chatId'ni ko'rsatamiz — "Noma'lum"lar birlashib ketmasin
         const { name: fromName } = describeEntity(peer.entity, chatId);
@@ -599,4 +616,4 @@ function clearExpired() { expired = null; lastError = null; }
   };
 }
 const main = createUserbot();
-module.exports = { ...main, createUserbot };
+module.exports = { ...main, createUserbot, mediaBase };

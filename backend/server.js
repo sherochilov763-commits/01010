@@ -1495,10 +1495,14 @@ function handleIncomingTelegramMessage(data) {
   if (out) {
     // Telefondagi Telegram'dan o'zingiz yozgan xabar. CRM'dan yuborilganlar ham shu yerga keladi —
     // ular avval saqlanib ulgurishi uchun biroz kutamiz, keyin Telegram ID bo'yicha takrorini tashlaymiz.
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
+        // CRM'dan yuborilgan bo'lsa — allaqachon saqlangan: mazmuni (va fayli) qayta yuklanmaydi
+        const stored = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}")[String(chatId)] || [];
+        if (data.tgId != null && stored.some((m) => m.tgId === data.tgId)) return;
+        const content = data.loadContent ? await data.loadContent() : data;
         // Chatlar bo'limi barcha shaxsiy suhbatlarni ko'rsatadi — telefondan yozganingiz ham saqlanadi
-        mergeTgMessages(String(chatId), [{ ...data, out: true }]);
+        mergeTgMessages(String(chatId), [{ ...content, out: true }]);
       } catch (e) {
         console.error("Chiquvchi Telegram xabarini saqlashda xato:", e.message);
       }
