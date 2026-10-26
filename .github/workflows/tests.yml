@@ -44,12 +44,13 @@ jobs:
 
       - name: Playwright (Chromium)
         run: |
-          pip install playwright==1.56.0 pillow
+          pip install playwright==1.56.0 pillow libfaketime
           python -m playwright install --with-deps chromium
 
       - name: E2E testlar (haqiqiy server + brauzer)
         # Testlar Toshkent vaqtida yozilgan (brauzer ham Asia/Tashkent) — UTC'da 19:00–24:00 oralig'ida
         # «bugun» sanasi bir kunga farq qilib, vazifa testlari yiqilardi
+        # Kechasi push qilinganda ham yiqilmasin — run.sh testlarni soxta «bugun 20:00» da ishlatadi (libfaketime)
         env:
           TZ: Asia/Tashkent
         run: npm run test:e2e

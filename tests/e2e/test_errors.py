@@ -1,6 +1,8 @@
 # A3: xatolar ushlanadi va adminga yetadi — haqiqiy backend
 import asyncio, json, time, datetime
 from common import *  # noqa: F401,F403
+import common
+common.FAKE_CLOCK = False  # soxta soat setTimeout ichidagi xatoni ushlab qoladi — bu to'plam vaqtga bog'liq emas
 
 async def main():
     errs = []

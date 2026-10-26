@@ -9,6 +9,22 @@ PORT="${E2E_PORT:-4990}"
 mkdir -p "$OUT"
 export E2E_BASE="http://localhost:$PORT" E2E_OUT="$OUT"
 [ -f "$ROOT/frontend/dist/index.html" ] || { echo "frontend/dist yo'q — avval: npm run build"; exit 1; }
+# Soxta vaqt: testlar «bugun»ga, ish vaqtiga va «bu hafta»ga tayanadi (masalan, ish 23:30 da «Bugun» guruhida bo'lishi kerak).
+# Kechasi (23:00 dan keyin, yarim tun, dushanba 00:xx) ular yolg'on yiqilardi. Shuning uchun server, testlar va brauzer
+# BIR XIL siljish bilan «bugun soat 20:00» da ishlaydi (vaqt oqib boradi; ish vaqtidan keyin, lekin 23:00 dan oldin — testlar shunga yozilgan). libfaketime: pip install libfaketime.
+# O'chirish: E2E_FAKE_TIME=off. Boshqa soat: E2E_FAKE_TIME=10:30.
+FAKE_AT="${E2E_FAKE_TIME:-20:00}"
+if [ "$FAKE_AT" != "off" ]; then
+  FT_LIB="$(python3 -c 'import libfaketime, os; print(os.path.join(os.path.dirname(libfaketime.__file__), "vendor/libfaketime/src/libfaketime.so.1"))' 2>/dev/null || true)"
+  if [ -n "$FT_LIB" ] && [ -f "$FT_LIB" ]; then
+    TARGET=$(TZ=Asia/Tashkent date -d "$(TZ=Asia/Tashkent date +%Y-%m-%d) $FAKE_AT" +%s)
+    OFFSET=$((TARGET - $(date +%s)))
+    export LD_PRELOAD="$FT_LIB${LD_PRELOAD:+:$LD_PRELOAD}" FAKETIME="$( [ $OFFSET -ge 0 ] && echo "+$OFFSET" || echo "$OFFSET" )" DONT_FAKE_MONOTONIC=1 FAKETIME_DONT_FAKE_MONOTONIC=1
+    echo "Soxta vaqt: $(TZ=Asia/Tashkent date '+%Y-%m-%d %H:%M') (Toshkent) — haqiqiy vaqtdan ${OFFSET} s"
+  else
+    echo "Diqqat: libfaketime topilmadi (pip install libfaketime) — testlar haqiqiy vaqtda, kechasi yolg'on yiqilishi mumkin"
+  fi
+fi
 SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_perms test_bigexp test_kassa test_lineprof test_themes test_dash test_visual test_crmcard test_voice test_autoreply}"
 fail=0
 # GitHub Actions'da yiqilgan tekshiruvlar izoh (annotation) sifatida chiqadi — logni ochmasdan ko'rinadi

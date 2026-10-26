@@ -1,6 +1,36 @@
 # Umumiy yordamchilar: haqiqiy backend (E2E_BASE) va Playwright bilan sinov
-import json, os, sqlite3, sys, urllib.request, urllib.error
+import asyncio, json, os, sqlite3, sys, urllib.request, urllib.error
 from playwright.async_api import async_playwright  # noqa: F401 (to'plamlar shu yerdan oladi)
+
+# Soxta vaqt (run.sh, libfaketime): server va Python testlar «bugun 20:00» da ishlaydi. Brauzerni libfaketime ostida
+# ishga tushirib bo'lmaydi (taymerlari buziladi) — uni chiqarib, soatini Playwright orqali shu soxta vaqtga qo'yamiz.
+FAKE_CLOCK = True  # vaqtga bog'liq bo'lmagan va taymerdagi xatoni tekshiradigan to'plam o'chirib qo'yishi mumkin (test_errors)
+if os.environ.get("FAKETIME"):
+    import datetime as _dt
+    from playwright.async_api import Browser as _Browser, BrowserType as _BrowserType
+    _FT_ENV = ("LD_PRELOAD", "FAKETIME", "DONT_FAKE_MONOTONIC", "FAKETIME_DONT_FAKE_MONOTONIC")
+    _launch = _BrowserType.launch
+    async def _launch_real(self, *a, **kw):
+        kw.setdefault("env", {k: v for k, v in os.environ.items() if k not in _FT_ENV})
+        return await _launch(self, *a, **kw)
+    _BrowserType.launch = _launch_real
+    _new_context = _Browser.new_context
+    async def _new_context_ft(self, *a, **kw):
+        ctx = await _new_context(self, *a, **kw)
+        if not sys.modules[__name__].FAKE_CLOCK:
+            return ctx
+        # Soat vositasi `performance`ni almashtiradi — ilova esa «qayta yuklandimi»ni performance.getEntriesByType bilan biladi
+        await ctx.add_init_script("try{window.__uvGE=performance.getEntriesByType.bind(performance)}catch(e){}")
+        await ctx.clock.install(time=_dt.datetime.now(_dt.timezone.utc))  # Python ham soxta vaqtda; install — qayta yuklashda ham uzluksiz
+        await ctx.add_init_script("try{if(window.__uvGE){const p=window.performance;if(p.getEntriesByType!==window.__uvGE)Object.defineProperty(p,'getEntriesByType',{value:window.__uvGE,configurable:true})}}catch(e){}")
+        return ctx
+    _Browser.new_context = _new_context_ft
+    async def _new_page_ft(self, *a, **kw):
+        ctx = await self.new_context(*a, **kw)
+        pg = await ctx.new_page()
+        pg.on("close", lambda _: asyncio.ensure_future(ctx.close()))
+        return pg
+    _Browser.new_page = _new_page_ft
 
 B = os.environ.get("E2E_BASE", "http://localhost:4990")
 DB = os.environ.get("E2E_DB", "")
