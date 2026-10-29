@@ -26,7 +26,7 @@ function noReplyCovers(meta, lastDate) {
 }
 const DEFAULT_CFG = { slaMinutes: 15, workFrom: "09:00", workTo: "19:00", workDays: [1, 2, 3, 4, 5, 6] };
 
-module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, notify, now = () => new Date() }) {
+module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, notify, chatStore, now = () => new Date() }) {
   const read = (k, def) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : def; } catch { return def; } };
   const write = (k, v) => upsertStmt.run(k, JSON.stringify(v));
   const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -71,7 +71,8 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
   function waitingChats() {
     const cfg = config();
     const meta = read(KEY_META, {});
-    const msgs = read("uvix:telegramMessages", {});
+    // Har chatning so'nggi bir nechta xabari yetarli (jadvaldan — butun tarix o'qilmaydi)
+    const msgs = chatStore ? Object.fromEntries([...chatStore.summaries()].map(([id, s]) => [id, s.recent])) : read("uvix:telegramMessages", {});
     const contacts = read("uvix:telegramContacts", {});
     const t = now().getTime();
     const out = [];
@@ -184,16 +185,23 @@ module.exports = function registerChatTools(app, { getStmt, upsertStmt, readEmpl
   app.get("/api/chat-tools/search", requireAuth, staffOnly, (req, res) => {
     const q = String(req.query.q || "").trim().toLowerCase();
     if (q.length < 2) return res.json({ results: [] });
-    const msgs = read("uvix:telegramMessages", {});
     const results = [];
-    for (const [chatId, list] of Object.entries(msgs)) {
-      if (!Array.isArray(list) || !chatOk(req, chatId)) continue;
-      for (let i = list.length - 1; i >= 0; i--) {
-        const m = list[i];
-        const txt = String(m.text || m.fileName || "");
-        if (txt.toLowerCase().includes(q)) { results.push({ chatId, text: txt.slice(0, 160), date: m.date, out: !!m.out }); break; }
+    const seen = new Set();
+    const hit = (chatId, m) => {
+      if (seen.has(chatId) || !chatOk(req, chatId)) return false;
+      const txt = String(m.text || m.fileName || "");
+      if (!txt.toLowerCase().includes(q)) return false;
+      seen.add(chatId);
+      results.push({ chatId, text: txt.slice(0, 160), date: m.date, out: !!m.out });
+      return results.length >= 50;
+    };
+    if (chatStore) chatStore.scanDesc(hit); // eng yangisidan — har chatdan bitta, eng so'nggi mos xabar
+    else {
+      for (const [chatId, list] of Object.entries(read("uvix:telegramMessages", {}))) {
+        if (!Array.isArray(list)) continue;
+        for (let i = list.length - 1; i >= 0; i--) if (seen.has(chatId) || hit(chatId, list[i])) break;
+        if (results.length >= 50) break;
       }
-      if (results.length >= 50) break;
     }
     results.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     res.json({ results });

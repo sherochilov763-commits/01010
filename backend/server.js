@@ -111,6 +111,8 @@ const revStmt = db.prepare("SELECT rev FROM kv_store WHERE key = ?");
 const revOf = (key) => revStmt.get(key)?.rev || 0;
 const deleteStmt = db.prepare("DELETE FROM kv_store WHERE key = ?");
 const settingsLog = require("./settings-log").createSettingsLog({ getStmt, upsertStmt });
+// Chat xabarlari — alohida jadval (chat-store.js); eski KV yozuvi o'zi ko'chiriladi
+const chatStore = require("./chat-store").createChatStore({ db, upsertStmt });
 const listStmt = db.prepare("SELECT key FROM kv_store WHERE key LIKE ?");
 
 function readEmployees() {
@@ -438,7 +440,7 @@ const moneyGuard = require("./money-guard")(app, {
 
 // ==================== Chatlar: mas'ul, izohlar, tayyor javoblar, javobsiz ogohlantirish ====================
 const chatTools = require("./chat-tools")(app, {
-  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin: requirePerm("chats.templates"), requireStaff,
+  getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin: requirePerm("chats.templates"), requireStaff, chatStore,
   notify: ({ chatId, name, mins, to }) => notifications.emit("chats", { title: `Javobsiz: ${name}`, body: `${mins} daqiqadan beri mijozga javob berilmadi`, view: "chats", to: to || null }),
 });
 setInterval(() => { try { chatTools.slaTick(); } catch (e) { console.error("Javobsiz chat tekshiruvi:", e.message); } }, 60 * 1000);
@@ -451,6 +453,7 @@ const autoReply = require("./auto-reply").createAutoReply({
   chatTools,
   send: (chatId, text) => { const t = tgFor(chatId); return t.bot.sendMessage(t.id, text); },
   store: (chatId, msg) => storeOutgoing(String(chatId), msg),
+  recentOut: (chatId, since) => chatStore.recentOut(chatId, since),
   // Yangi mijozmi: Telegram'dagi oxirgi xabarlar soni (ulanmagan bo'lsa — noma'lum)
   historyCount: async (chatId) => { const t = tgFor(chatId); if (!t.bot.isConnected()) return null; return (await t.bot.getRecentMessages(peerNum(t.id), 3)).length; },
 });
@@ -463,7 +466,7 @@ setInterval(() => { autoReply.tick().catch((e) => console.error("Avtojavob teksh
 
 // ==================== Chat fayllari: tozalash, saqlash muddati, ochilganda yuklash — chat-files.js ====================
 const chatFiles = require("./chat-files").createChatFiles({
-  db, getStmt, upsertStmt, uploadsDir: UPLOADS_DIR, dbPath: db.DB_PATH,
+  db, getStmt, upsertStmt, store: chatStore, uploadsDir: UPLOADS_DIR, dbPath: db.DB_PATH,
   onPolicy: (p) => { telegramUserbot.setMediaPolicy(p); tgOnyx.setMediaPolicy(p); },
   loadMedia: (chatId, tgId) => { const t = tgFor(chatId); return t.bot.loadMedia(peerNum(t.id), tgId); },
   notify: ({ title, body }) => notifications.emit("system", { title, body, view: "settings" }),
@@ -472,6 +475,23 @@ require("./chat-files").registerChatFiles(app, { requireAuth, requireAdmin, requ
 const runChatFilesDaily = () => { try { const r = chatFiles.daily(); if (r.old.count || r.disk.count) console.log(`Chat fayllari: ${r.old.count + r.disk.count} ta eski fayl o'chirildi`); } catch (e) { console.error("Chat fayllari tozalash:", e.message); } };
 setTimeout(runChatFilesDaily, 10 * 60 * 1000);
 setInterval(runChatFilesDaily, 24 * 60 * 60 * 1000);
+
+// ==================== Chat tarixi: 30 kun, buyurtmali chatlar to'liq, uzilgan akkaunt — chat-history.js ====================
+const chatHistory = require("./chat-history").createChatHistory({
+  store: chatStore, getStmt, upsertStmt, chatFiles,
+  isConnected: (line) => tgByLine(line).isConnected(),
+  notify: ({ title, body }) => notifications.emit("system", { title, body, view: "settings" }),
+});
+require("./chat-history").registerChatHistory(app, { requireAuth, requireAdmin, upsertStmt, getStmt, history: chatHistory });
+const runChatHistoryHourly = () => {
+  try {
+    const r = chatHistory.hourly();
+    if (r.pruned) console.log(`Chat tarixi: ${r.pruned} ta eski xabar o'chirildi`);
+    for (const l of r.lines) console.log(`Chat tarixi: ${l.line} (uzilgan) — ${l.chats} chat, ${l.count} xabar tozalandi`);
+  } catch (e) { console.error("Chat tarixi tozalash:", e.message); }
+};
+setTimeout(runChatHistoryHourly, 2 * 60 * 1000);
+setInterval(runChatHistoryHourly, 60 * 60 * 1000);
 
 // Telegram xabarlari — guruh yo'q: har biri shaxsan, xodim o'zi «Telegram'ni ulash»ni bosgan bo'lsa.
 //   admin — faqat admin(lar)ga · staff — admin + operatorlarga · off — yuborilmaydi
@@ -637,7 +657,7 @@ const SETTINGS_FIELDS_BY_PERM = { "sys.sales": ["lineProfiles", "usdRate", "usdR
 const USER_WRITABLE_KEYS = new Set(["uvix:orders", "uvix:transactions", "uvix:leads", "uvix:audit", "uvix:customers", "uvix:categories", "uvix:settings", "uvix:employees"]);
 // Hech kim KV orqali o'qiy/yoza olmaydigan ichki kalitlar
 function isInternalKey(key) {
-  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key.startsWith("uvix:card") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:chatFiles" || key === "uvix:chatFilesLog" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
+  return key.startsWith("uvix:pinReset:") || key === "uvix:pinHelp" || key === "uvix:passkeys" || key.startsWith("uvix:dash:") || key.startsWith("uvix:nav:") || key.startsWith("uvix:tgSession") || key.startsWith("uvix:att") || key === "uvix:staffTg" || key === "uvix:tgLinkTokens" || key.startsWith("uvix:worklog") || key.startsWith("uvix:paint") || key.startsWith("uvix:geo") || key.startsWith("uvix:card") || key === "uvix:debtConfig" || key === "uvix:debtSent" || key.startsWith("uvix:custMsg") || key.startsWith("uvix:custRemind") || key.startsWith("uvix:notif") || key === "uvix:pushSubs" || key === "uvix:vapid" || key.startsWith("uvix:bg:") || key.startsWith("uvix:apr:") || key.startsWith("uvix:voicepref:") || key === "uvix:autoReply" || key === "uvix:autoReplyState" || key === "uvix:chatFiles" || key === "uvix:chatFilesLog" || key.startsWith("uvix:telegramMessages") || key === "uvix:chatStoreMeta" || key.startsWith("uvix:chatHistory") || key === "uvix:tgLineDown" || key === "uvix:approvals" || key === "uvix:sessions" || key === "uvix:errors" || ["uvix:chatMeta", "uvix:chatNotes", "uvix:quickReplies", "uvix:chatConfig", "uvix:chatSlaSent", "uvix:sales", "uvix:quoteSeq", "uvix:fx", "uvix:settingsLog", "uvix:tgPrefs", "uvix:taskNotified", "uvix:tgOnboard", "uvix:jobs", "uvix:jobsAutoSeen", "uvix:jobsReminded", "uvix:jobsConfig", "uvix:jobsPrefs", "uvix:roles"].includes(key);
 }
 function sanitizeEmployeesForClient(list, user) {
   // PIN (hatto hash ham) hech qachon brauzerga yuborilmaydi; boshqalarning email'ini faqat admin ko'radi
@@ -1371,6 +1391,9 @@ function readBackupFile(file) {
     if (!hasTable) throw new Error("Faylda UVIX ma'lumotlari topilmadi");
     const rows = src.prepare("SELECT key, value, updated_at FROM kv_store").all();
     if (!rows.some((r) => r.key === "uvix:employees")) throw new Error("Zaxirada xodimlar ro'yxati yo'q — bu to'liq UVIX zaxirasi emas");
+    // Yangi zaxiralarda chat xabarlari alohida jadvalda (eskilarida — uvix:telegramMessages kalitida, o'zi ko'chiriladi)
+    const hasChat = src.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_messages'").get();
+    rows.chat = hasChat ? src.prepare("SELECT chat_id, data FROM chat_messages").all() : null;
     return rows;
   } finally {
     src.close();
@@ -1399,7 +1422,9 @@ app.post("/api/backup/restore", requireAuth, requireAdmin, restoreUpload.single(
       db.prepare("DELETE FROM kv_store").run();
       for (const r of rows) insert.run(r.key, r.value, r.updated_at || new Date().toISOString());
       db.prepare("UPDATE kv_store SET rev = ?").run(maxRev + 1);
+      if (rows.chat) chatStore.replaceAll(rows.chat);
     })();
+    chatStore.sync();
     dialogsCaches.UVIXPRINT = { at: 0, list: [] }; dialogsCaches.UVONYX = { at: 0, list: [] };
     historySyncedAt.clear();
     const auditRow = getStmt.get("uvix:audit");
@@ -1461,35 +1486,9 @@ function normalizeTgMessage(m, out) {
     out: !!out, date: m.date || new Date().toISOString(),
   };
 }
-// Mavjud xabarni topadi: avval Telegram ID bo'yicha, bo'lmasa (ID'siz eski yozuvlar) — matn + yo'nalish + vaqt (±3 daqiqa)
-function findSameMessage(list, m) {
-  if (m.tgId != null) {
-    const byId = list.find((x) => x.tgId === m.tgId);
-    if (byId) return byId;
-  }
-  const t = new Date(m.date).getTime();
-  return list.find((x) => x.tgId == null && !!x.out === !!m.out && (x.text || "") === (m.text || "") && (x.mediaType || null) === (m.mediaType || null)
-    && Math.abs(new Date(x.date).getTime() - t) < 3 * 60 * 1000);
-}
-// Xabarlarni suhbatga qo'shadi; qaytaradi: qo'shilganlar soni
+// Xabarlarni suhbatga qo'shadi (takrorlar — Telegram ID yoki matn+vaqt bo'yicha — tashlanadi); qaytaradi: qo'shilganlar soni
 function mergeTgMessages(chatId, incoming) {
-  const row = getStmt.get("uvix:telegramMessages");
-  const all = row ? JSON.parse(row.value) : {};
-  const list = all[chatId] || (all[chatId] = []);
-  let added = 0;
-  for (const m of incoming) {
-    const same = findSameMessage(list, m);
-    if (same) {
-      if (same.tgId == null && m.tgId != null) same.tgId = m.tgId; // eski yozuvga ID biriktiramiz
-      if (same.replyToTgId == null && m.replyToTgId != null) same.replyToTgId = m.replyToTgId;
-      continue;
-    }
-    list.push(normalizeTgMessage(m, m.out));
-    added++;
-  }
-  list.sort((a, b) => new Date(a.date) - new Date(b.date));
-  upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
-  return added;
+  return chatStore.merge(String(chatId), incoming, (m) => normalizeTgMessage(m, m.out));
 }
 
 // Lidi yo'q suhbatlar uchun ism/username/telefon (Chatlar ro'yxatida ko'rsatish uchun)
@@ -1511,8 +1510,7 @@ function handleIncomingTelegramMessage(data) {
     setTimeout(async () => {
       try {
         // CRM'dan yuborilgan bo'lsa — allaqachon saqlangan: mazmuni (va fayli) qayta yuklanmaydi
-        const stored = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}")[String(chatId)] || [];
-        if (data.tgId != null && stored.some((m) => m.tgId === data.tgId)) return;
+        if (data.tgId != null && chatStore.byTg(String(chatId), data.tgId)) return;
         const content = data.loadContent ? await data.loadContent() : data;
         // Chatlar bo'limi barcha shaxsiy suhbatlarni ko'rsatadi — telefondan yozganingiz ham saqlanadi
         mergeTgMessages(String(chatId), [{ ...content, out: true }]);
@@ -1563,18 +1561,14 @@ function handleIncomingTelegramMessage(data) {
 // Lid faqat avtomatik ochilgan va hech kim tegmagan bo'lsa o'chiriladi.
 async function removeBotChats() {
   if (!telegramUserbot.isConnected() && !tgOnyx.isConnected()) return { removedChats: 0, removedLeads: 0 };
-  const msgs = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
   const leads = JSON.parse(getStmt.get("uvix:leads")?.value || "[]");
-  const ids = new Set([...Object.keys(msgs), ...leads.filter((l) => l.telegramChatId).map((l) => String(l.telegramChatId))]);
+  const ids = new Set([...chatStore.chatIds(), ...leads.filter((l) => l.telegramChatId).map((l) => String(l.telegramChatId))]);
   const bots = new Set();
   for (const id of ids) {
     try { const t = tgFor(id); if (t.bot.isConnected() && (await t.bot.isBotChat(t.id)) === true) bots.add(id); } catch { /* aniqlab bo'lmadi — tegmaymiz */ }
   }
   if (!bots.size) return { removedChats: 0, removedLeads: 0 };
-  const freshMsgs = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
-  let removedChats = 0;
-  for (const id of bots) if (freshMsgs[id]) { delete freshMsgs[id]; removedChats++; }
-  upsertStmt.run("uvix:telegramMessages", JSON.stringify(freshMsgs));
+  const removedChats = chatStore.removeChats((id) => bots.has(id)).chats;
   const freshLeads = JSON.parse(getStmt.get("uvix:leads")?.value || "[]");
   const untouched = (l) => l.createdBy === "Telegram (avtomatik)" && (l.stage || "new") === "new" && !l.orderId && !l.design && !l.print
     && !Number(l.estimatedValue) && !l.manager;
@@ -1760,16 +1754,15 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
   try {
     dialogs = await Promise.race([getAllDialogs(), new Promise((r) => setTimeout(() => r([...dialogsCaches.UVIXPRINT.list, ...dialogsCaches.UVONYX.list]), 8000))]);
   } catch { /* saqlangan xabarlar bilan davom etamiz */ }
-  const allMessages = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}");
+  const summaries = chatStore.summaries();
   const lastSeen = JSON.parse(getStmt.get("uvix:telegramLastSeen")?.value || "{}");
   const contacts = JSON.parse(getStmt.get("uvix:telegramContacts")?.value || "{}");
   const chatMeta = JSON.parse(getStmt.get("uvix:chatMeta")?.value || "{}");
   const byId = new Map();
-  for (const [chatId, msgs] of Object.entries(allMessages)) {
+  for (const [chatId, { recent: msgs, lastIn }] of summaries) {
     if (!msgs.length) continue;
     const last = msgs[msgs.length - 1];
-    const lastIncoming = [...msgs].reverse().find((m) => !m.out);
-    const unread = !!(lastIncoming && (!lastSeen[chatId] || new Date(lastIncoming.date) > new Date(lastSeen[chatId])));
+    const unread = !!(lastIn && (!lastSeen[chatId] || new Date(lastIn) > new Date(lastSeen[chatId])));
     // Avtojavob «javob berildi» deb hisoblanmaydi: holat oxirgi haqiqiy xabardan, matn — «🤖 …»
     const real = require("./auto-reply").lastReal(msgs) || last;
     byId.set(chatId, last?.auto
@@ -1794,7 +1787,7 @@ app.get("/api/telegram-user/chats", requireAuth, requireStaff, async (req, res) 
   const chats = [...byId.values()].map((c) => {
     const info = contacts[c.chatId];
     const out = info ? { ...c, name: info.name, username: info.username || "", phone: info.phone || "" } : c;
-    const withLine = { ...out, line: chatLineOf(c.chatId) };
+    const withLine = { ...out, line: chatLineOf(c.chatId), channel: "telegram" };
     return !out.lastOut && require("./chat-tools").noReplyCovers(chatMeta[c.chatId], out.lastDate) ? { ...withLine, noReply: true } : withLine;
   }).filter((c) => chatAllowed(req, c.chatId));
   chats.sort((a, b) => new Date(b.lastDate || 0) - new Date(a.lastDate || 0));
@@ -1864,19 +1857,29 @@ app.post("/api/telegram-user/disconnect", requireAuth, requireAdmin, async (req,
 
 // Suhbat ochilganda Telegram'dan so'nggi xabarlar tortib olinadi (telefondan yozganlaringiz ham).
 // Bir suhbat uchun daqiqasiga ko'pi bilan bir marta — Telegram cheklovlariga rioya qilish uchun.
+// Saqlash muddatidan (standart 30 kun) eskilari serverga YOZILMAYDI — buyurtmali chat bundan mustasno.
 const historySyncedAt = new Map();
+const PAGE = 50;
+const keepable = (keep) => (m) => keep.linked || String(m.date || "") >= keep.cutoff;
 async function syncChatHistory(chatId) {
   const tg = tgFor(chatId);
   if (!tg.bot.isConnected()) return;
-  const row = getStmt.get("uvix:telegramMessages");
-  const stored = (row ? JSON.parse(row.value) : {})[chatId] || [];
+  const known = chatStore.tgIds(chatId);
   const last = historySyncedAt.get(chatId) || 0;
   // Saqlangan xabar yo'q bo'lsa (yangi suhbat) — kutmasdan darhol olamiz
-  if (stored.length && Date.now() - last < 60 * 1000) return;
+  if (known.size && Date.now() - last < 60 * 1000) return;
   historySyncedAt.set(chatId, Date.now());
-  const known = new Set(stored.map((m) => m.tgId).filter((x) => x != null));
   const { messages } = await tg.bot.fetchHistory(tg.id, { limit: 50, knownTgIds: known });
-  if (messages.length) mergeTgMessages(chatId, messages);
+  const fresh = messages.filter(keepable(chatHistory.keepInfo(chatId)));
+  if (fresh.length) mergeTgMessages(chatId, fresh);
+}
+// Chat ochilganda: so'nggi 50 ta xabar (butun tarix emas). hasOlder — serverda yana bor (yoki buyurtmali chat: Telegram'dan
+// olib saqlanadi); peek — serverdagisi tugadi, eskisini Telegram'dan faqat KO'RISH mumkin («↑ Eskisini ko'rish»).
+const canPeek = (chatId) => tgFor(chatId).bot.isConnected() && !noOlder.has(chatId);
+function pageFlags(chatId, first, keep) {
+  const more = first ? chatStore.countBefore(chatId, first) > 0 : false;
+  const tg = canPeek(chatId) && (!first || !Number.isInteger(first.tgId) || first.tgId > 1);
+  return { hasOlder: more || (keep.linked && tg), peek: !more && !keep.linked && tg };
 }
 app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, async (req, res) => {
   const chatId = String(req.params.chatId).slice(0, 64);
@@ -1886,38 +1889,47 @@ app.get("/api/telegram-user/messages/:chatId", requireAuth, requireStaff, async 
   } catch (e) {
     console.error("Suhbat tarixini olishda xato:", e.message);
   }
-  const row = getStmt.get("uvix:telegramMessages");
-  const allMessages = row ? JSON.parse(row.value) : {};
-  const list = allMessages[chatId] || [];
-  // Eski tarixni yuklash mumkinmi: Telegram ulangan va eng eski xabar 1-xabar emas
-  const hasOlder = tgFor(chatId).bot.isConnected() && !noOlder.has(chatId) && list.some((m) => Number.isInteger(m.tgId) && m.tgId > 1);
-  res.json({ messages: list, hasOlder });
+  const keep = chatHistory.keepInfo(chatId);
+  const list = chatStore.list(chatId, { limit: PAGE });
+  res.json({ messages: list, ...pageFlags(chatId, list[0], keep), keep });
 });
 
-// Yuqoriga aylantirganda — eskiroq xabarlar (Telegram'dan sahifama-sahifa)
+// Yuqoriga aylantirganda — eskiroq xabarlar: avval serverdagisi (50 tadan), tugasa — Telegram'dan.
+// Telegram'dagi muddatdan eski xabarlar faqat ko'rsatiladi (peek: true, fayllari bosilganda olinadi), saqlanmaydi.
+// Javob — FAQAT yangi bo'lak (eskisi birinchi); brauzer uni ro'yxat boshiga qo'shadi.
 const olderInFlight = new Map();
 const noOlder = new Set(); // boshigacha yuklangan suhbatlar
 app.get("/api/telegram-user/messages/:chatId/older", requireAuth, requireStaff, async (req, res) => {
   const chatId = String(req.params.chatId).slice(0, 64);
   const limit = Math.min(60, Math.max(10, parseInt(req.query.limit, 10) || 40));
   if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
+  const keep = chatHistory.keepInfo(chatId);
+  const cursor = req.query.beforeDate ? { date: String(req.query.beforeDate), id: String(req.query.beforeId || "") } : null;
+  if (cursor && req.query.src !== "tg") {
+    const chunk = chatStore.list(chatId, { limit, before: cursor });
+    if (chunk.length) { const f = pageFlags(chatId, chunk[0], keep); return res.json({ messages: chunk, hasMore: f.hasOlder, peek: f.peek }); }
+  }
   const tg = tgFor(chatId);
-  if (!tg.bot.isConnected()) return res.status(409).json({ error: "not_connected", message: "Telegram akkauntga ulanmagan" });
-  const stored = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}")[chatId] || [];
-  // Eng eski ma'lum xabar ID'sidan boshlab eskiroqlarini so'raymiz
-  const ids = stored.map((m) => m.tgId).filter((x) => Number.isInteger(x) && x > 0);
-  const before = parseInt(req.query.before, 10) || (ids.length ? Math.min(...ids) : 0);
-  if (!before) return res.json({ messages: stored, hasMore: false, added: 0 });
-  const key = `${chatId}:${before}`;
+  if (!tg.bot.isConnected()) return res.json({ messages: [], hasMore: false, peek: false });
+  const ids = chatStore.tgIds(chatId);
+  const known = [...ids].filter((x) => Number.isInteger(x) && x > 0);
+  const before = parseInt(req.query.beforeTg, 10) || (known.length ? Math.min(...known) : 0);
+  if (before === 1) { noOlder.add(chatId); return res.json({ messages: [], hasMore: false, peek: false }); }
+  const key = `${chatId}:${before}:${keep.linked ? 1 : 0}`;
   try {
     if (!olderInFlight.has(key)) {
-      olderInFlight.set(key, tg.bot.fetchHistory(tg.id, { limit, offsetId: before, knownTgIds: new Set(ids) }).finally(() => olderInFlight.delete(key)));
+      olderInFlight.set(key, tg.bot.fetchHistory(tg.id, { limit, offsetId: before, knownTgIds: ids, noDownload: !keep.linked }).finally(() => olderInFlight.delete(key)));
     }
     const { messages, hasMore } = await olderInFlight.get(key);
-    const added = messages.length ? mergeTgMessages(chatId, messages) : 0;
     if (!hasMore) noOlder.add(chatId);
-    const all = JSON.parse(getStmt.get("uvix:telegramMessages")?.value || "{}")[chatId] || [];
-    res.json({ messages: all, hasMore, added });
+    const ok = keepable(keep);
+    const out = messages.map((m) => {
+      const n = normalizeTgMessage(m, m.out);
+      return ok(n) ? n : { ...n, id: `peek-${n.tgId ?? n.id}`, peek: true };
+    });
+    const save = out.filter((m) => !m.peek);
+    if (save.length) chatStore.merge(chatId, save);
+    res.json({ messages: out, hasMore: keep.linked && hasMore, peek: !keep.linked && hasMore });
   } catch (e) {
     res.status(500).json({ error: "history_failed", message: e.message });
   }
@@ -1935,20 +1947,10 @@ function previewText(m) {
   return m.text || "";
 }
 function storeOutgoing(chatId, msg) {
-  const row = getStmt.get("uvix:telegramMessages");
-  const all = row ? JSON.parse(row.value) : {};
-  if (!all[chatId]) all[chatId] = [];
   // Telegram shu xabarni "yangi xabar" sifatida ham yuborgan bo'lishi mumkin — takrorlamaymiz
-  const existing = msg.tgId != null ? all[chatId].find((x) => x.tgId === msg.tgId) : null;
-  if (existing) {
-    Object.assign(existing, msg, { out: true });
-    upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
-    return existing;
-  }
-  const full = { id: crypto.randomUUID(), out: true, date: new Date().toISOString(), text: "", mediaUrl: null, mediaType: null, ...msg };
-  all[chatId].push(full);
-  upsertStmt.run("uvix:telegramMessages", JSON.stringify(all));
-  return full;
+  const existing = msg.tgId != null ? chatStore.byTg(chatId, msg.tgId) : null;
+  if (existing) return chatStore.update(chatId, existing.id, (m) => { Object.assign(m, msg, { id: existing.id, out: true }); });
+  return chatStore.insert(chatId, { id: crypto.randomUUID(), out: true, date: new Date().toISOString(), text: "", mediaUrl: null, mediaType: null, ...msg });
 }
 const validChatId = (v) => typeof v === "string" || typeof v === "number" ? String(v).length > 0 && String(v).length < 64 : false;
 const replyOpt = (v) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : undefined);
@@ -2059,18 +2061,13 @@ app.post("/api/telegram-user/react", requireAuth, requireStaff, requirePerm("cha
   const { chatId, messageId, emoji } = req.body || {};
   if (!validChatId(chatId) || !messageId || (emoji && !ALLOWED_REACTIONS.has(emoji))) return res.status(400).json({ error: "bad_request" });
   if (!chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found", message: "Suhbat topilmadi" });
-  const row = getStmt.get("uvix:telegramMessages");
-  const all = row ? JSON.parse(row.value) : {};
-  const msg = (all[chatId] || []).find((m) => m.id === messageId);
+  const msg = chatStore.get(chatId, messageId);
   if (!msg) return res.status(404).json({ error: "not_found" });
   if (!msg.tgId) return res.status(409).json({ error: "no_tg_id", message: "Bu eski xabarga reaksiya qo'yib bo'lmaydi" });
   try {
     await tgFor(chatId).bot.sendReaction(tgFor(chatId).id, msg.tgId, emoji || null);
     // Yangidan o'qib yozamiz (oraliqda yangi xabar kelgan bo'lishi mumkin)
-    const fresh = JSON.parse(getStmt.get("uvix:telegramMessages").value);
-    const target = (fresh[chatId] || []).find((m) => m.id === messageId);
-    if (target) target.myReaction = emoji || null;
-    upsertStmt.run("uvix:telegramMessages", JSON.stringify(fresh));
+    chatStore.update(chatId, messageId, (m) => { m.myReaction = emoji || null; });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: "react_failed", message: e.message });

@@ -374,17 +374,24 @@ export async function reactTelegramMessage(chatId, messageId, emoji) {
   return tgJson(res, "Reaksiya qo'yib bo'lmadi");
 }
 
-// Suhbat + eski tarix bormi (yuqoriga aylantirganda yuklash uchun)
+// Suhbat: so'nggi 50 ta xabar. hasOlder — serverda yana bor; peek — eskisini Telegram'dan faqat ko'rish mumkin;
+// keep — { keepDays, linked, reason }: buyurtmali chat tarixi to'liq saqlanadi
 export async function fetchTelegramThread(chatId) {
   const res = await fetch(`${API_BASE}/telegram-user/messages/${encodeURIComponent(chatId)}`, { headers: authHeaders() });
   const data = await tgJson(res, "Xabarlarni yuklab bo'lmadi");
-  return { messages: data.messages || [], hasOlder: !!data.hasOlder };
+  return { messages: data.messages || [], hasOlder: !!data.hasOlder, peek: !!data.peek, keep: data.keep || null };
 }
-export async function fetchOlderTelegramMessages(chatId, beforeTgId) {
-  const q = beforeTgId ? `?before=${encodeURIComponent(beforeTgId)}` : "";
+// Eskiroq bo'lak (faqat yangi qism, eskisi birinchi). src="tg" — Telegram'dan ko'rish («↑ Eskisini ko'rish»)
+export async function fetchOlderTelegramMessages(chatId, { beforeDate, beforeId, beforeTg, src } = {}) {
+  const p = new URLSearchParams();
+  if (beforeDate) p.set("beforeDate", beforeDate);
+  if (beforeId) p.set("beforeId", beforeId);
+  if (beforeTg) p.set("beforeTg", String(beforeTg));
+  if (src) p.set("src", src);
+  const q = p.toString() ? `?${p}` : "";
   const res = await fetch(`${API_BASE}/telegram-user/messages/${encodeURIComponent(chatId)}/older${q}`, { headers: authHeaders() });
   const data = await tgJson(res, "Eski xabarlarni yuklab bo'lmadi");
-  return { messages: data.messages || [], hasMore: !!data.hasMore };
+  return { messages: data.messages || [], hasMore: !!data.hasMore, peek: !!data.peek };
 }
 export async function createLeadFromChat(chatId) {
   const res = await fetch(`${API_BASE}/telegram-user/create-lead`, {
@@ -695,7 +702,13 @@ export const fetchStorageStats = (fresh) => apiReq(`/system/storage${fresh ? "?f
 export const fetchChatFiles = () => apiReq("/system/chat-files");
 export const saveChatFilesConfig = (config) => apiReq("/system/chat-files/config", "PUT", { config });
 export const cleanChatFiles = (opts) => apiReq("/system/chat-files/clean", "POST", opts);
-export const fetchTgMedia = (chatId, tgId) => apiReq(`/telegram-user/media/${encodeURIComponent(chatId)}/${encodeURIComponent(tgId)}`, "POST", {});
+export const fetchTgMedia = (chatId, tgId, peek = false) => apiReq(`/telegram-user/media/${encodeURIComponent(chatId)}/${encodeURIComponent(tgId)}${peek ? "?peek=1" : ""}`, "POST", {});
+// Chat tarixi (118-eskiz): saqlash muddati, tozalash; uzilgan akkaunt ma'lumotlari
+export const fetchChatHistory = () => apiReq("/system/chat-history");
+export const saveChatHistoryConfig = (config) => apiReq("/system/chat-history/config", "PUT", { config });
+export const pruneChatHistory = () => apiReq("/system/chat-history/prune", "POST", {});
+export const fetchLineData = (line) => apiReq(`/telegram-user/line-data?line=${encodeURIComponent(line || "UVIXPRINT")}`);
+export const purgeLineData = (line) => apiReq(`/telegram-user/line-data/purge?line=${encodeURIComponent(line || "UVIXPRINT")}`, "POST", { confirm: true });
 
 // ---------- Vazifalar (o'lchov, montaj, yetkazish) ----------
 async function jobsCall(path, method = "GET", body) {

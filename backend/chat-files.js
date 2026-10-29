@@ -13,7 +13,9 @@ const path = require("path");
 
 const KEY_CFG = "uvix:chatFiles";
 const KEY_LOG = "uvix:chatFilesLog";
-const KEY_MSGS = "uvix:telegramMessages";
+const KEY_MSGS = "uvix:telegramMessages"; // eski KV yozuvi (chat-store.js uni jadvalga ko'chiradi)
+const KEY_MSGS_BAK = "uvix:telegramMessagesBak";
+const MSG_TABLE = "chat_messages";
 const DEFAULTS = { lazyDocs: true, keepDays: 60, autoClean: true };
 const KEEP_CHOICES = [0, 30, 60, 90]; // 0 — cheksiz
 const DAY = 24 * 60 * 60 * 1000;
@@ -61,7 +63,7 @@ function classify({ files, otherText, msgs, keepDays, now }) {
 }
 const sum = (list) => ({ count: list.length, size: list.reduce((s, f) => s + f.size, 0) });
 
-function createChatFiles({ db, getStmt, upsertStmt, uploadsDir, dbPath, now = () => Date.now(), onPolicy, loadMedia, notify }) {
+function createChatFiles({ db, getStmt, upsertStmt, store, uploadsDir, dbPath, now = () => Date.now(), onPolicy, loadMedia, notify }) {
   const read = (k, d) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : d; } catch { return d; } };
   const config = () => cleanConfig(read(KEY_CFG, null));
   const listFiles = () => {
@@ -75,9 +77,10 @@ function createChatFiles({ db, getStmt, upsertStmt, uploadsDir, dbPath, now = ()
   function otherText() {
     const parts = [];
     for (const { name } of db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()) {
+      if (name === MSG_TABLE) continue; // chat xabarlari — alohida hisoblanadi
       try {
         for (const row of db.prepare(`SELECT * FROM "${name.replace(/"/g, "")}"`).iterate()) {
-          if (name === "kv_store" && row.key === KEY_MSGS) continue;
+          if (name === "kv_store" && (row.key === KEY_MSGS || row.key === KEY_MSGS_BAK)) continue;
           parts.push(JSON.stringify(row));
         }
       } catch { /* o'qib bo'lmadi — xavfsizlik uchun keyingi jadval */ }
@@ -85,7 +88,7 @@ function createChatFiles({ db, getStmt, upsertStmt, uploadsDir, dbPath, now = ()
     return parts.join("\n");
   }
   function analyze(keepDays = config().keepDays) {
-    const g = classify({ files: listFiles(), otherText: otherText(), msgs: read(KEY_MSGS, {}), keepDays, now: now() });
+    const g = classify({ files: listFiles(), otherText: otherText(), msgs: store.all(), keepDays, now: now() });
     return { groups: g, summary: { orphan: sum(g.orphan), old: sum(g.old), attached: sum(g.attached), recent: sum(g.recent) } };
   }
   function disk() {
@@ -103,16 +106,7 @@ function createChatFiles({ db, getStmt, upsertStmt, uploadsDir, dbPath, now = ()
       try { fs.unlinkSync(path.join(uploadsDir, f.name)); gone.add(f.name); size += f.size; } catch { /* allaqachon yo'q */ }
     }
     if (gone.size) {
-      const all = read(KEY_MSGS, {});
-      let changed = false;
-      for (const msgs of Object.values(all)) for (const m of Array.isArray(msgs) ? msgs : []) {
-        const a = photoName(m.mediaUrl), b = photoName(m.mediaUrlAlt);
-        if ((a && gone.has(a)) || (b && gone.has(b))) {
-          if (a && !gone.has(a) && b && gone.has(b)) { m.mediaUrlAlt = null; changed = true; continue; } // faqat zaxira format o'chdi
-          m.mediaUrl = null; m.mediaUrlAlt = null; m.mediaGone = true; changed = true;
-        }
-      }
-      if (changed) upsertStmt.run(KEY_MSGS, JSON.stringify(all));
+      store.markGone(gone);
       log({ reason, who: who || "Tizim", count: gone.size, size });
     }
     return { count: gone.size, size };
@@ -131,11 +125,10 @@ function createChatFiles({ db, getStmt, upsertStmt, uploadsDir, dbPath, now = ()
     const d = disk();
     if (cfg.autoClean && d && d.total && (d.total - d.free) / d.total > DISK_HIGH) {
       const need = (d.total - d.free) - d.total * DISK_TARGET;
-      const msgs = read(KEY_MSGS, {});
       const { groups } = analyze(0);
       // Eng eski xabardagi fayllardan boshlab (recent — chat fayllari; biriktirilganlarga tegilmaydi)
       const dateOf = new Map();
-      for (const list of Object.values(msgs)) for (const m of list || []) for (const u of [m.mediaUrl, m.mediaUrlAlt]) { const n = photoName(u); if (n) dateOf.set(n, Math.max(dateOf.get(n) || 0, Date.parse(m.date) || 0)); }
+      store.eachMedia((_, m) => { for (const u of [m.mediaUrl, m.mediaUrlAlt]) { const n = photoName(u); if (n) dateOf.set(n, Math.max(dateOf.get(n) || 0, Date.parse(m.date) || 0)); } });
       const cand = groups.recent.filter((f) => dateOf.has(f.name)).sort((a, b) => dateOf.get(a.name) - dateOf.get(b.name));
       const pick = []; let acc = 0;
       for (const f of cand) { if (acc >= need) break; pick.push(f); acc += f.size; }
@@ -145,20 +138,40 @@ function createChatFiles({ db, getStmt, upsertStmt, uploadsDir, dbPath, now = ()
     return res;
   }
   // O'chirilgan yoki oldindan yuklanmagan faylni Telegram'dan qayta olish
-  async function fetchMedia(chatId, tgId) {
-    const all = read(KEY_MSGS, {});
-    const m = (all[chatId] || []).find((x) => x.tgId === tgId);
-    if (!m) { const e = new Error("Xabar topilmadi"); e.status = 404; throw e; }
+  // peek — saqlanmagan (30 kundan eski, «Eskisini ko'rish») xabar: fayl beriladi, xabar yozilmaydi
+  // (fayl hech qayerga bog'lanmaydi — 24 soatdan keyin «yetim» bo'ladi va tozalanadi)
+  async function fetchMedia(chatId, tgId, { peek = false } = {}) {
+    const m = store.byTg(chatId, tgId);
+    if (!m && !peek) { const e = new Error("Xabar topilmadi"); e.status = 404; throw e; }
     const c = await loadMedia(chatId, tgId);
     if (!c || !c.mediaUrl) { const e = new Error("Telegram'dan olib bo'lmadi — xabar o'chirilgan bo'lishi mumkin"); e.status = 410; throw e; }
-    const fresh = read(KEY_MSGS, {});
-    const t = (fresh[chatId] || []).find((x) => x.tgId === tgId);
-    if (t) { t.mediaUrl = c.mediaUrl; t.mediaUrlAlt = c.mediaUrlAlt || null; delete t.mediaGone; delete t.lazy; if (c.fileSize) t.fileSize = c.fileSize; upsertStmt.run(KEY_MSGS, JSON.stringify(fresh)); }
+    if (m) store.updateByTg(chatId, tgId, (t) => { t.mediaUrl = c.mediaUrl; t.mediaUrlAlt = c.mediaUrlAlt || null; delete t.mediaGone; delete t.lazy; if (c.fileSize) t.fileSize = c.fileSize; });
     return { mediaUrl: c.mediaUrl, mediaUrlAlt: c.mediaUrlAlt || null };
+  }
+  // O'chirilgan xabarlarning fayllari: boshqa joyda (buyurtma, vazifa, qolgan xabarlar) ishlatilmasa — o'chiriladi
+  function dropFiles(names, { reason, who } = {}) {
+    if (!names || !names.size) return { count: 0, size: 0 };
+    const other = new Set(otherText().match(NAME_RE) || []);
+    const still = new Set();
+    store.eachMedia((_, m) => { for (const u of [m.mediaUrl, m.mediaUrlAlt]) { const n = photoName(u); if (n) still.add(n); } });
+    let count = 0, size = 0;
+    for (const n of names) {
+      if (other.has(n) || still.has(n) || n.includes("/") || n.includes("..")) continue;
+      const p = path.join(uploadsDir, n);
+      try { const st = fs.statSync(p); fs.unlinkSync(p); count++; size += st.size; } catch { /* yo'q */ }
+    }
+    if (count) log({ reason: reason || "chat tarixi tozalandi", who: who || "Tizim", count, size });
+    return { count, size };
+  }
+  // Berilgan fayllar diskda qancha joy egallaydi (bor bo'lganlari)
+  function sizeOf(names) {
+    let count = 0, size = 0;
+    for (const n of names || []) { try { size += fs.statSync(path.join(uploadsDir, n)).size; count++; } catch { /* yo'q */ } }
+    return { count, size };
   }
   const applyPolicy = () => onPolicy?.({ lazyDocs: config().lazyDocs });
   applyPolicy();
-  return { config, analyze, clean, daily, fetchMedia, applyPolicy, disk };
+  return { config, analyze, clean, daily, fetchMedia, dropFiles, sizeOf, applyPolicy, disk };
 }
 
 function registerChatFiles(app, { requireAuth, requireAdmin, requireStaff, upsertStmt, chatFiles, chatAllowed }) {
@@ -179,9 +192,9 @@ function registerChatFiles(app, { requireAuth, requireAdmin, requireStaff, upser
     const chatId = String(req.params.chatId).slice(0, 64), tgId = parseInt(req.params.tgId, 10);
     if (!Number.isInteger(tgId) || tgId <= 0) return res.status(400).json({ error: "bad_id" });
     if (chatAllowed && !chatAllowed(req, chatId)) return res.status(404).json({ error: "not_found" });
-    try { res.json(await chatFiles.fetchMedia(chatId, tgId)); }
+    try { res.json(await chatFiles.fetchMedia(chatId, tgId, { peek: req.query.peek === "1" })); }
     catch (e) { res.status(e.status || 502).json({ error: "media_failed", message: e.message }); }
   });
 }
 
-module.exports = { createChatFiles, registerChatFiles, classify, cleanConfig, DEFAULTS, KEY_CFG, KEY_LOG };
+module.exports = { createChatFiles, registerChatFiles, classify, cleanConfig, photoName, DEFAULTS, KEY_CFG, KEY_LOG };

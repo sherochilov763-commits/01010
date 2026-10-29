@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Loader2, MessageCircle, QrCode, RefreshCw,
 import { Badge, Button, Card, Field, Modal, getInputStyle } from "../../components/ui.jsx";
 import { connectTelegramUser, disconnectTelegramUser, fetchTelegramUserStatus, telegramLogin } from "../../storage.js";
 import { THEME } from "../../theme.js";
+import { LineDataBox } from "./ChatHistorySection.jsx";
 
 function StatusBadge({ status }) {
   const s = status?.status;
@@ -69,6 +70,7 @@ export function TelegramAccountSection({ settings, onSaveSettings, line }) {
         </div>
       )}
       {s === "error" && status.message && <div style={{ fontSize: 12, color: THEME.rose, marginBottom: 10 }}>{status.message}</div>}
+      {status && s !== "connecting" && <LineDataBox line={line || "UVIXPRINT"} connected={s === "connected"} />}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {s !== "connected" && (

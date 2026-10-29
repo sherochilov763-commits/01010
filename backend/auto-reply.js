@@ -66,7 +66,7 @@ function lastReal(list) {
  *         send(chatId, text) → Promise<{ tgId }>, store(chatId, msg) → msg, historyCount(chatId) → Promise<number|null> }
  */
 function createAutoReply(deps) {
-  const { read, write, now = () => new Date(), chatTools, send, store, historyCount } = deps;
+  const { read, write, now = () => new Date(), chatTools, send, store, historyCount, recentOut } = deps;
   const config = () => cleanConfig(read(KEY_CFG, null));
   const state = () => {
     const s = read(KEY_STATE, null) || {};
@@ -86,8 +86,9 @@ function createAutoReply(deps) {
   // Menejer yaqinda (10 daqiqa ichida) shu chatda yozganmi yoki hozir yozyaptimi
   function managerActive(chatId) {
     if (chatTools.typingActive?.(chatId)) return true;
-    const list = read("uvix:telegramMessages", {})?.[chatId] || [];
     const t = now().getTime();
+    if (recentOut) return recentOut(chatId, new Date(t - MANAGER_QUIET_MS).toISOString());
+    const list = read("uvix:telegramMessages", {})?.[chatId] || [];
     return list.some((m) => m.out && !m.auto && t - new Date(m.date).getTime() < MANAGER_QUIET_MS);
   }
   function countToday(st, chatId) {

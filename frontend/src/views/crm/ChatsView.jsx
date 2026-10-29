@@ -48,6 +48,34 @@ function listTime(iso) {
   return d.getFullYear() === now.getFullYear() ? `${dd}.${mm}` : `${dd}.${mm}.${String(d.getFullYear()).slice(2)}`;
 }
 const lastKey = (list) => (list.length ? `${list[list.length - 1].id}|${list.length}` : "");
+// Har 5 soniyadagi yangilanish faqat so'nggi 50 tani beradi: yuqoriga yuklangan eskilarini saqlab, oxirini almashtiramiz
+function mergeTail(prev, tail) {
+  if (!tail.length) return prev;
+  const ids = new Set(tail.map((m) => m.id));
+  const first = tail[0].date;
+  const head = prev.filter((m) => !ids.has(m.id) && String(m.date) < String(first));
+  const next = [...head, ...tail];
+  return next.length === prev.length && next.every((m, i) => m === prev[i] || JSON.stringify(m) === JSON.stringify(prev[i])) ? prev : next;
+}
+const withOlder = (chunk, prev) => { const ids = new Set(prev.map((m) => m.id)); return [...chunk.filter((m) => !ids.has(m.id)), ...prev]; };
+
+// Kichik segment tugmalar (yo'nalish / kanal) — 118-eskiz
+function Seg({ items, value, onChange, isMobile, testid }) {
+  return (
+    <div role="group" data-testid={testid} style={{ display: "inline-flex", background: C.hover, borderRadius: 14, padding: 2, flexShrink: 0 }}>
+      {items.map(([k, l, dot]) => {
+        const on = value === k;
+        return (
+          <button key={k} type="button" aria-pressed={on} data-v={k} onClick={() => onChange(k)}
+            style={{ height: isMobile ? 28 : 24, padding: "0 9px", border: 0, borderRadius: 12, cursor: "pointer", fontFamily: "inherit", fontSize: isMobile ? 12.5 : 11.5, fontWeight: 600, whiteSpace: "nowrap",
+              display: "inline-flex", alignItems: "center", gap: 5, background: on ? C.panel : "transparent", color: on ? C.text : C.muted, boxShadow: on ? "0 1px 2px rgba(0,0,0,.12)" : "none" }}>
+            {dot && <span style={{ width: 8, height: 8, borderRadius: k === "instagram" ? 3 : "50%", background: dot }} />}{l}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMoveLead, onLeadCreated, initialChatId, onInitialChatHandled, isAdmin, onOpenSettings, currentUser, employees, orders, allOrders, transactions, customerProfiles, onCreateOrderFromLead, onAssignTask, onAddPayment, onDeletePayment, onServerChange }) {
   const showLineTag = useLine().line === "all";
@@ -77,12 +105,15 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
   const bottomRef = useRef(null);
   const scrollRef = useRef(null);
   const [hasOlder, setHasOlder] = useState(false);
+  const [peek, setPeek] = useState(false); // serverdagisi tugadi — eskisini Telegram'dan ko'rish mumkin
+  const [keep, setKeep] = useState(null); // { keepDays, linked, reason }
   const [loadingOlder, setLoadingOlder] = useState(false);
   const olderReq = useRef(null); // { chatId, prevHeight, prevTop } — eski xabarlar qo'shilganda joyni saqlash
   const [addingLead, setAddingLead] = useState(false);
   const [justAdded, setJustAdded] = useState(null);
   const ct = useChatTools(selectedChatId);
   const [filter, setFilter] = useState("all"); // all | unread | waiting | mine | nocrm | archive
+  const [chanF, setChanF] = useState("all"); // kanal: all | telegram | instagram
   const [rowMenu, setRowMenu] = useState(null); // { chatId, x, y }
   const [notes, setNotes] = useState([]);
   const [insert, setInsert] = useState(null); // { text, n } — kalkulyatordan javobga
@@ -162,11 +193,13 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     olderReq.current = null;
     setMessages([]);
     setHasOlder(false);
+    setPeek(false);
+    setKeep(null);
     setLoadingOlder(false);
     setLoadingMessages(true);
     const chatId = selectedChatId;
     fetchTelegramThread(chatId)
-      .then((r) => { if (selectedRef.current !== chatId) return; setMessages(r.messages); setHasOlder(r.hasOlder); })
+      .then((r) => { if (selectedRef.current !== chatId) return; setMessages(r.messages); setHasOlder(r.hasOlder); setPeek(r.peek); setKeep(r.keep); })
       .catch(() => selectedRef.current === chatId && setMessages([]))
       .finally(() => selectedRef.current === chatId && setLoadingMessages(false));
     // Ochiq suhbatni har 5 soniyada yangilaymiz — mijozning javobi sahifani yangilamasdan chiqadi
@@ -174,7 +207,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
       if (document.visibilityState !== "visible" || olderReq.current) return;
       fetchTelegramThread(chatId).then((r) => {
         if (selectedRef.current !== chatId || olderReq.current) return;
-        setMessages((prev) => (prev.length > r.messages.length || JSON.stringify(prev) === JSON.stringify(r.messages) ? prev : r.messages));
+        setMessages((prev) => mergeTail(prev, r.messages));
       }).catch(() => {});
     }, 5000);
     if (onMarkRead) {
@@ -198,25 +231,32 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     lastMsgRef.current = lastKey(messages);
   }, [messages]);
 
-  async function loadOlder() {
+  // src="tg" — «↑ Eskisini ko'rish»: Telegram'dan, serverga yozilmaydi
+  async function loadOlder(src) {
     const el = scrollRef.current;
     const chatId = selectedChatId;
-    if (!el || !chatId || !hasOlder || loadingOlder || olderReq.current) return;
+    const viaTg = src === "tg";
+    if (!el || !chatId || (viaTg ? !peek : !hasOlder) || loadingOlder || olderReq.current) return;
     olderReq.current = { chatId, prevHeight: el.scrollHeight, prevTop: el.scrollTop, done: false };
     setLoadingOlder(true);
     try {
-      const oldest = messages.map((m) => m.tgId).filter((x) => Number.isInteger(x) && x > 0);
-      const r = await fetchOlderTelegramMessages(chatId, oldest.length ? Math.min(...oldest) : undefined);
+      const stored = messages.filter((m) => !m.peek);
+      const first = stored[0];
+      const tgIds = messages.map((m) => m.tgId).filter((x) => Number.isInteger(x) && x > 0);
+      const r = await fetchOlderTelegramMessages(chatId, {
+        beforeDate: first?.date, beforeId: first?.id, beforeTg: tgIds.length ? Math.min(...tgIds) : undefined, src: viaTg ? "tg" : undefined,
+      });
       if (selectedRef.current !== chatId) return;
       setHasOlder(r.hasMore);
-      if (r.messages.length > messages.length) {
+      setPeek(r.peek);
+      if (r.messages.length) {
         const cur = scrollRef.current;
         olderReq.current = { ...olderReq.current, prevHeight: cur.scrollHeight, prevTop: cur.scrollTop, done: true };
-        setMessages(r.messages);
+        setMessages((prev) => withOlder(r.messages, prev));
         return;
       }
     } catch (e) {
-      if (selectedRef.current === chatId) { setHasOlder(false); setError(e.message); }
+      if (selectedRef.current === chatId) { setHasOlder(false); setPeek(false); setError(e.message); }
     } finally {
       if (selectedRef.current === chatId) setLoadingOlder(false);
       if (olderReq.current && !olderReq.current.done) olderReq.current = null;
@@ -232,6 +272,11 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     if (el.scrollHeight <= el.clientHeight + 150) loadOlder();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, hasOlder, loadingMessages, loadingOlder]);
+  // Serverda bu chat xabari umuman yo'q (hammasi muddatdan eski) — Telegram'dan o'zi ko'rsatamiz (saqlanmaydi)
+  useEffect(() => {
+    if (!loadingMessages && !loadingOlder && peek && !hasOlder && messages.length === 0) loadOlder("tg");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadingMessages, peek, hasOlder, messages.length]);
 
   async function addToCrm() {
     if (!selectedChatId || addingLead) return;
@@ -289,6 +334,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
       const meta = ct.meta[c.chatId] || {};
       if (filter === "archive" ? !meta.archived : meta.archived) return false;
       if (!tgf.inFolder(c.chatId)) return false;
+      if (chanF !== "all" && (c.channel || "telegram") !== chanF) return false;
       if (filter === "unread" && !c.unread) return false;
       if (filter === "waiting" && !waitingMinutes(c, sla, nowMs, meta)) return false;
       if (filter === "mine" && meta.assignee !== me) return false;
@@ -301,7 +347,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
     const pinned = list.filter((c) => ct.meta[c.chatId]?.pinned).sort((a, b) => String(ct.meta[a.chatId].pinned).localeCompare(String(ct.meta[b.chatId].pinned)));
     const rest = list.filter((c) => !ct.meta[c.chatId]?.pinned);
     return filter === "archive" ? list : [...pinned.map((c) => ({ ...c, pinned: true })), ...rest];
-  }, [chats, search, leads, msgHits, ct.meta, filter, sla, nowMs, me, tgf.active, tgf.folders]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chats, search, leads, msgHits, ct.meta, filter, sla, nowMs, me, tgf.active, tgf.folders, chanF]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ochiq suhbatning ichki izohlari
   const noteCount = selectedChatId ? ct.noteCount?.[selectedChatId] || 0 : 0;
@@ -561,6 +607,10 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
               style={{ width: "100%", background: TG_DARK_HOVER, border: "none", borderRadius: 20, padding: isMobile ? "10px 12px 10px 32px" : "8px 12px 8px 30px", fontSize: isMobile ? 16 : 12.5, color: TG_DARK_TEXT, outline: "none" }}
             />
           </div>
+          <div role="group" aria-label="Kanal" data-testid="chan-filters" className={isMobile ? "uvix-noscrollbar" : undefined}
+            style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: isMobile ? "nowrap" : "wrap", overflowX: isMobile ? "auto" : "visible", alignItems: "center" }}>
+            <Seg testid="chan-seg" value={chanF} onChange={setChanF} isMobile={isMobile} items={[["all", "Barcha kanal"], ["telegram", "Telegram", "#229ED9"], ["instagram", "Instagram", "linear-gradient(45deg,#F59E0B,#DB2777,#7C3AED)"]]} />
+          </div>
           <div role="group" aria-label="Filtr" className={isMobile ? "uvix-noscrollbar" : undefined}
             style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: isMobile ? "nowrap" : "wrap", overflowX: isMobile ? "auto" : "visible" }}>
             {[["all", "Hammasi"], ["waiting", "Javob kutmoqda"], ["unread", "O'qilmagan"], ["mine", "Meniki"], ["nocrm", "CRM'siz"], ["archive", "Arxiv"]].map(([k, l]) => {
@@ -583,7 +633,8 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             <div style={{ textAlign: "center", color: TG_DARK_MUTED, fontSize: 12.5, marginTop: 30 }}>Yuklanmoqda...</div>
           ) : filteredChats.length === 0 ? (
             <div style={{ textAlign: "center", color: TG_DARK_MUTED, fontSize: 12.5, marginTop: 30, padding: "0 20px" }}>
-              {chats.length === 0 ? "Suhbatlar yo'q. Sozlamalarda Telegram akkaunt ulanganini tekshiring." : "Hech narsa topilmadi"}
+              {chanF === "instagram" && !chats.some((c) => c.channel === "instagram") ? "Instagram hali ulanmagan — ulanganda yozishmalar shu ro'yxatga tushadi."
+                : chats.length === 0 ? "Suhbatlar yo'q. Sozlamalarda Telegram akkaunt ulanganini tekshiring." : "Hech narsa topilmadi"}
             </div>
           ) : (
             <Incremental list={filteredChats} step={40} render={(chat, idx) => {
@@ -615,8 +666,9 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                     boxShadow: wait ? `inset 3px 0 0 ${C.red}` : "none",
                   }}
                 >
-                  <div style={{ width: 44, height: 44, borderRadius: "50%", background: avatarColor(name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 600, flexShrink: 0 }}>
+                  <div style={{ position: "relative", width: 44, height: 44, borderRadius: "50%", background: avatarColor(name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 600, flexShrink: 0 }}>
                     {name.slice(0, 1).toUpperCase()}
+                    <span data-chan={chat.channel || "telegram"} title={chat.channel === "instagram" ? "Instagram" : "Telegram"} style={{ position: "absolute", right: -1, bottom: -1, width: 14, height: 14, borderRadius: chat.channel === "instagram" ? 5 : "50%", background: chat.channel === "instagram" ? "linear-gradient(45deg,#F59E0B,#DB2777,#7C3AED)" : "#229ED9", border: `2px solid ${isSelected ? TG_DARK_SELECTED : C.panel}` }} />
                   </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -712,11 +764,31 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
             </div>
             <style>{chatCss()}</style>
             <div ref={scrollRef} onScroll={onMessagesScroll} style={{ flex: 1, overflowY: "auto", overflowAnchor: "none", padding: isMobile ? "14px 10px" : 18, display: "flex", flexDirection: "column", gap: 8 }}>
-              {!loadingMessages && messages.length > 0 && (
-                <div aria-live="polite" style={{ alignSelf: "center", fontSize: 12, color: TG_DARK_MUTED, padding: "4px 12px", minHeight: 22, display: "flex", alignItems: "center", gap: 6 }}>
-                  {loadingOlder ? (<><Loader2 size={14} className="uc-spin" /> Eski xabarlar yuklanmoqda…</>)
-                    : hasOlder ? (<button type="button" onClick={loadOlder} style={{ border: 0, background: C.overlay, color: C.muted, borderRadius: 12, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Eski xabarlarni yuklash</button>)
-                    : <span>Suhbat boshi</span>}
+              {keep?.linked && (
+                <div data-testid="keep-banner" title="Muddatdan qat'i nazar saqlanadi" style={{ flexShrink: 0, alignSelf: isMobile ? "stretch" : "center", fontSize: 12, color: C.keepText, background: C.keepBg, borderRadius: 10, padding: "7px 10px", lineHeight: 1.35 }}>
+                  📌 {keep.reason} bog'langan — bu chat tarixi <b>to'liq saqlanadi</b>
+                </div>
+              )}
+              {!loadingMessages && (messages.length > 0 || peek || loadingOlder) && (
+                <div aria-live="polite" data-testid="older-bar" style={{ flexShrink: 0, alignSelf: "stretch", fontSize: 12, color: TG_DARK_MUTED, padding: "4px 12px", minHeight: 22, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                  {loadingOlder ? (<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Loader2 size={14} className="uc-spin" /> Eski xabarlar yuklanmoqda…</span>)
+                    : hasOlder ? (<button type="button" onClick={() => loadOlder()} style={{ border: 0, background: C.overlay, color: C.muted, borderRadius: 12, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Eski xabarlarni yuklash</button>)
+                    : peek ? (<>
+                      {!messages.some((m) => m.peek) && (
+                        <div style={{ alignSelf: "stretch", display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ flex: 1, borderTop: `1px dashed ${C.border}` }} />
+                          <span>{keep?.keepDays || 30} kundan eskisi — Telegram'da</span>
+                          <span style={{ flex: 1, borderTop: `1px dashed ${C.border}` }} />
+                        </div>
+                      )}
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                        <button type="button" data-testid="peek-btn" onClick={() => loadOlder("tg")} style={{ border: `1px solid ${C.border}`, background: C.panel, color: C.link, borderRadius: 14, padding: "5px 13px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                          ↑ {messages.some((m) => m.peek) ? "Yana eskisini ko'rish" : "Eskisini ko'rish"}
+                        </button>
+                        <span style={{ fontSize: 11, opacity: 0.8 }}>ko'rsatiladi, serverga yozilmaydi</span>
+                      </span>
+                    </>)
+                    : <span>{messages.some((m) => m.peek) ? "Telegram'dagi suhbat boshi" : "Suhbat boshi"}</span>}
                 </div>
               )}
               <MessageList
@@ -728,9 +800,10 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
                 onReact={handleReact}
                 onToDesigner={onAssignTask ? toDesigner : null}
                 onDeleteNote={handleDeleteNote}
+                peekLabel={`${keep?.keepDays || 30} kundan eskisi yuqorida — Telegram'dan ko'rsatildi`}
                 onFetchMedia={async (m) => {
                   const chatId = selectedChatId;
-                  const r = await fetchTgMedia(chatId, m.tgId);
+                  const r = await fetchTgMedia(chatId, m.tgId, !!m.peek);
                   if (selectedRef.current === chatId) setMessages((list) => list.map((x) => (x.id === m.id ? { ...x, mediaUrl: r.mediaUrl, mediaUrlAlt: r.mediaUrlAlt, mediaGone: undefined, lazy: undefined } : x)));
                   return r;
                 }}

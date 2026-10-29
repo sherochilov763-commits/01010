@@ -200,7 +200,8 @@ async function humanPeer(msg) {
 }
 
 // Xabar mazmuni: matn, rasm, video, hujjat, ovoz, joylashuv, javob — real vaqt va tarix uchun umumiy
-async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
+// noDownload — hech narsa yuklanmaydi (saqlanmaydigan, «Eskisini ko'rish» xabarlari): fayl bosilganda olinadi
+async function parseMessageContent(msg, maxDownload, { force = false, noDownload = false } = {}) {
   let lazy = false;
   let text = msg.message || "";
   let mediaUrl = null, mediaUrlAlt = null, mediaType = null, fileName = null, fileSize = null, lat = null, lng = null;
@@ -215,6 +216,7 @@ async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
       try {
         const filename = `${base || crypto.randomBytes(12).toString("hex")}.jpg`;
         const file = path.join(mediaDir, filename);
+        if (noDownload && !fs.existsSync(file)) { lazy = true; mediaType = "photo"; throw null; } // eslint-disable-line no-throw-literal
         const buffer = fs.existsSync(file) ? true : await client.downloadMedia(msg, {});
         if (buffer) {
           if (buffer !== true) fs.writeFileSync(file, buffer);
@@ -222,7 +224,7 @@ async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
           mediaType = "photo";
         }
       } catch (e) {
-        console.error("Rasmni yuklab olishda xato:", e.message);
+        if (e) console.error("Rasmni yuklab olishda xato:", e.message);
       }
     } else if ((msg.video || msg.videoNote || msg.gif || (msg.document && !msg.voice && !msg.sticker)) && mediaDir) {
       // Video yoki hujjat — chegaragacha yuklab olamiz, kattasi faqat nomi bilan ko'rsatiladi
@@ -240,7 +242,7 @@ async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
           const filename = `${base || crypto.randomBytes(12).toString("hex")}${ext || ".bin"}`;
           const file = path.join(mediaDir, filename);
           const have = fs.existsSync(file);
-          if (!have && mediaPolicy.lazyDocs && !force) {
+          if (!have && ((mediaPolicy.lazyDocs && !force) || noDownload)) {
             lazy = true; // ochilganda yuklanadi
           } else {
             const buffer = have ? true : await client.downloadMedia(msg, {});
@@ -258,6 +260,7 @@ async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
         const id = base || crypto.randomBytes(12).toString("hex");
         const oggPath = path.join(mediaDir, `${id}.ogg`);
         const m4aPath = path.join(mediaDir, `${id}.m4a`);
+        if (noDownload && !fs.existsSync(oggPath)) { lazy = true; mediaType = "voice"; throw null; } // eslint-disable-line no-throw-literal
         const buffer = fs.existsSync(oggPath) ? true : await client.downloadMedia(msg, {});
         if (buffer) {
           if (buffer !== true) fs.writeFileSync(oggPath, buffer);
@@ -274,7 +277,7 @@ async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
           mediaType = "voice";
         }
       } catch (e) {
-        console.error("Ovozli xabarni yuklab olishda xato:", e.message);
+        if (e) console.error("Ovozli xabarni yuklab olishda xato:", e.message);
       }
     }
     if (!mediaType) {
@@ -293,7 +296,7 @@ async function parseMessageContent(msg, maxDownload, { force = false } = {}) {
 }
 
 // Suhbat tarixi (o'zingiz va mijoz yozganlari). knownTgIds — allaqachon saqlanganlar (qayta yuklanmaydi)
-async function fetchHistory(chatId, { limit = 50, knownTgIds = new Set(), offsetId = 0 } = {}) {
+async function fetchHistory(chatId, { limit = 50, knownTgIds = new Set(), offsetId = 0, noDownload = false } = {}) {
   requireConnected();
   const peer = peerOf(chatId);
   const entity = await resolveUser(peer);
@@ -305,7 +308,7 @@ async function fetchHistory(chatId, { limit = 50, knownTgIds = new Set(), offset
   for (const m of list) {
     if (!m || m.className === "MessageService" || knownTgIds.has(m.id)) continue;
     // Tarix uchun yengilroq chegara: 10 MB dan katta video/hujjat faqat nomi bilan
-    out.push({ out: !!m.out, ...(await parseMessageContent(m, 10 * 1024 * 1024)) });
+    out.push({ out: !!m.out, ...(await parseMessageContent(m, 10 * 1024 * 1024, { noDownload })) });
   }
   return { messages: out.reverse(), isBot: false, hasMore };
 }

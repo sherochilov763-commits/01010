@@ -61,6 +61,21 @@ def api(path, body=None, token=None, method=None, raw=False):
 def dbset(key, val):
     c = sqlite3.connect(DB); c.execute("insert or replace into kv_store(key,value) values(?,?)", (key, json.dumps(val))); c.commit(); c.close()
 
+# Chat xabarlari — alohida jadvalda (backend/chat-store.js). dbset("uvix:telegramMessages", {...}) baribir ishlaydi:
+# server keyingi so'rovda uni jadvalga to'liq ko'chiradi. O'qish — shu yerdan: {chatId: [xabar, ...]} (eskisi birinchi)
+def dbmsgs():
+    c = sqlite3.connect(DB)
+    try:
+        rows = c.execute("select chat_id, data from chat_messages order by chat_id, date, id").fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    legacy = c.execute("select value from kv_store where key='uvix:telegramMessages'").fetchone()
+    c.close()
+    if legacy: return json.loads(legacy[0])
+    out = {}
+    for cid, d in rows: out.setdefault(cid, []).append(json.loads(d))
+    return out
+
 OK = []
 def ok(name, cond, info=""):
     OK.append((name, bool(cond))); print(("PASS " if cond else "FAIL ") + name, "" if cond else info, flush=True)

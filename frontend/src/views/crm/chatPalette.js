@@ -9,6 +9,7 @@ const DARK = {
   red: "#F26464", redText: "#FCA5A5", green: "#3FB97A", greenSolid: "#15803D", dayBg: "rgba(28,28,31,0.92)", overlay: "rgba(255,255,255,0.07)", overlay2: "rgba(255,255,255,0.14)",
   outMuted: "rgba(255,255,255,0.72)", shadow: "0 16px 40px rgba(0,0,0,0.55)", tg: "#5EB8F0", tgSolid: "#176FA3",
   noteBg: "rgba(224,162,58,0.12)", noteBorder: "rgba(224,162,58,0.45)", noteText: "#F3D9A8", noteHead: "#E0A23A",
+  keepBg: "rgba(245,158,11,0.14)", keepText: "#FCD58A",
 };
 const LIGHT = {
   bg: "#F1F1F3", panel: "#FFFFFF", hover: "#F4F4F5", border: "#E7E7EA", text: "#18181B", muted: "#62626B", soft: "#3F3F46",
@@ -16,6 +17,7 @@ const LIGHT = {
   red: "#DC2626", redText: "#991B1B", green: "#15803D", greenSolid: "#15803D", dayBg: "rgba(255,255,255,0.92)", overlay: "rgba(24,24,27,0.05)", overlay2: "rgba(24,24,27,0.09)",
   outMuted: "rgba(24,24,27,0.6)", shadow: "0 12px 32px rgba(16,16,20,0.14)", tg: "#176FA3", tgSolid: "#176FA3",
   noteBg: "#FFF7E6", noteBorder: "#E8C27A", noteText: "#7A4B00", noteHead: "#9A6200",
+  keepBg: "#FEF3C7", keepText: "#92400E",
 };
 export const C = { ...DARK };
 

@@ -75,7 +75,7 @@ async def main():
         ok("natija: «… bo'shatildi»", "bo'shatildi" in await sh.locator("[data-testid=cf-done]").inner_text())
         ex = lambda n: os.path.exists(os.path.join(UP, n))
         ok("diskda: yetim va 90 kunlik o'chdi; buyurtma rasmi va yangi chat fayli qoldi", not ex("cfdupe1234.jpg") and not ex("tgcfold90.mp4") and ex("cforder1.jpg") and ex("tgcfnew2.jpg"))
-        c = sqlite_get("uvix:telegramMessages")["777001"]
+        c = dbmsgs()["777001"]
         ok("xabarda «mediaGone», yangisi o'zgarmadi", c[0].get("mediaGone") is True and c[0].get("mediaUrl") is None and c[1]["mediaUrl"] == "/api/photos/tgcfnew2.jpg", c[:2])
         await sh.locator("text=Yopish").last.click(); await pg.wait_for_timeout(300)
         # ---------- chatda: muddati o'tgan fayl ----------

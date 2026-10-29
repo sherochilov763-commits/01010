@@ -10,6 +10,7 @@ import os from "node:os";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const breq = createRequire(path.resolve(here, "../../backend/package.json"));
 const CF = breq("./chat-files.js");
+const { createChatStore } = breq("./chat-store.js");
 const Database = breq("better-sqlite3");
 
 const DAY = 86400000;
@@ -62,7 +63,8 @@ test("clean: yetim va eski o'chadi, xabarda «mediaGone», buyurtma rasmi qoladi
     { id: "b", tgId: 2, mediaType: "photo", mediaUrl: "/api/photos/tgnew.jpg", date: iso(1) },
   ] }));
   let policy = null;
-  const cf = CF.createChatFiles({ db, getStmt, upsertStmt, uploadsDir: up, dbPath: path.join(dir, "u.db"), now: () => NOW, onPolicy: (p) => { policy = p; } });
+  const store = createChatStore({ db, upsertStmt, now: () => NOW });
+  const cf = CF.createChatFiles({ db, getStmt, upsertStmt, store, uploadsDir: up, dbPath: path.join(dir, "u.db"), now: () => NOW, onPolicy: (p) => { policy = p; } });
   assert.deepEqual(policy, { lazyDocs: true }, "ishga tushganda siyosat beriladi");
   const s = cf.analyze().summary;
   assert.equal(s.orphan.count, 1); assert.equal(s.old.count, 1); assert.equal(s.attached.count, 1); assert.equal(s.recent.count, 1);
@@ -71,7 +73,8 @@ test("clean: yetim va eski o'chadi, xabarda «mediaGone», buyurtma rasmi qoladi
   assert.ok(fs.existsSync(path.join(up, "order1.jpg")), "buyurtma rasmi qoldi");
   assert.ok(fs.existsSync(path.join(up, "tgnew.jpg")), "yangi chat fayli qoldi");
   assert.ok(!fs.existsSync(path.join(up, "tgold.mp4")) && !fs.existsSync(path.join(up, "dup123.jpg")));
-  const msgs = JSON.parse(getStmt.get("uvix:telegramMessages").value)[7];
+  assert.equal(getStmt.get("uvix:telegramMessages"), undefined, "eski KV yozuvi jadvalga ko'chdi");
+  const msgs = store.list("7");
   assert.equal(msgs[0].mediaUrl, null); assert.equal(msgs[0].mediaGone, true);
   assert.equal(msgs[1].mediaUrl, "/api/photos/tgnew.jpg");
   const log = JSON.parse(getStmt.get(CF.KEY_LOG).value);
@@ -85,10 +88,15 @@ test("fetchMedia: o'chirilgan fayl Telegram'dan qayta olinadi, belgi olib tashla
   const getStmt = db.prepare("SELECT value FROM kv_store WHERE key = ?");
   const upsertStmt = db.prepare("INSERT INTO kv_store (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
   upsertStmt.run("uvix:telegramMessages", JSON.stringify({ 7: [{ id: "a", tgId: 1, mediaType: "video", mediaUrl: null, mediaGone: true, date: iso(90) }] }));
-  const cf = CF.createChatFiles({ db, getStmt, upsertStmt, uploadsDir: dir, dbPath: path.join(dir, "u.db"), now: () => NOW, loadMedia: async () => ({ mediaUrl: "/api/photos/tgabc.mp4", fileSize: 99 }) });
+  const store = createChatStore({ db, upsertStmt, now: () => NOW });
+  const cf = CF.createChatFiles({ db, getStmt, upsertStmt, store, uploadsDir: dir, dbPath: path.join(dir, "u.db"), now: () => NOW, loadMedia: async () => ({ mediaUrl: "/api/photos/tgabc.mp4", fileSize: 99 }) });
   const r = await cf.fetchMedia("7", 1);
   assert.equal(r.mediaUrl, "/api/photos/tgabc.mp4");
-  const m = JSON.parse(getStmt.get("uvix:telegramMessages").value)[7][0];
+  const m = store.list("7")[0];
   assert.equal(m.mediaGone, undefined); assert.equal(m.mediaUrl, "/api/photos/tgabc.mp4");
   await assert.rejects(() => cf.fetchMedia("7", 99), /topilmadi/);
+  // «Eskisini ko'rish» xabari — saqlanmagan: fayl beriladi, jadvalga hech narsa yozilmaydi
+  const p = await cf.fetchMedia("7", 99, { peek: true });
+  assert.equal(p.mediaUrl, "/api/photos/tgabc.mp4");
+  assert.equal(store.count("7"), 1);
 });

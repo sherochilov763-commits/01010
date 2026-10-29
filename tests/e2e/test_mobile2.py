@@ -142,7 +142,7 @@ async def main():
         await m.locator("[data-testid=attn-toggle]").click(); await m.wait_for_timeout(500)
         t = await m.locator("[data-attn=chats]").inner_text()
         ok("«Diqqat»: endi 1 ta javobsiz chat", "1 ta chat javobsiz" in t and "Malika" not in t, t)
-        msgs = json.loads(sqlite3.connect(DB).execute("select value from kv_store where key='uvix:telegramMessages'").fetchone()[0])
+        msgs = dbmsgs()
         msgs["777001"].append({"id": "m9", "tgId": 9, "text": "Yana bir savol bor edi", "out": False, "date": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")})
         dbset("uvix:telegramMessages", msgs)
         ch = {c["chatId"]: c for c in api("/api/telegram-user/chats", token=az)["chats"]}

@@ -10,7 +10,7 @@ import { fmtBytes } from "./StorageSection.jsx";
 
 const KEEP = [[30, "30 kun"], [60, "60 kun"], [90, "90 kun"], [0, "Cheksiz"]];
 
-function Switch({ on, onChange, label, testid, disabled }) {
+export function Switch({ on, onChange, label, testid, disabled }) {
   return (
     <button type="button" role="switch" aria-checked={!!on} aria-label={label} data-testid={testid} disabled={disabled} onClick={() => onChange(!on)}
       style={{ width: 44, height: 26, borderRadius: 13, border: 0, position: "relative", cursor: "pointer", flexShrink: 0, padding: 0, background: on ? THEME.green : THEME.border2 }}>

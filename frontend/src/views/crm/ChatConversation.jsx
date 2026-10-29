@@ -76,7 +76,7 @@ export const chatCss = () => `
 `;
 
 /* ============================ XABARLAR ============================ */
-export function MessageList({ messages, loading, isMobile, customerName, onReply, onReact, onToDesigner, onDeleteNote, myName, onFetchMedia }) {
+export function MessageList({ messages, loading, isMobile, customerName, onReply, onReact, onToDesigner, onDeleteNote, myName, onFetchMedia, peekLabel }) {
   const [menu, setMenu] = useState(null); // { m, rect }
   const [lightbox, setLightbox] = useState(null);
   const byTgId = useMemo(() => {
@@ -121,15 +121,22 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
         }
         const quoted = m.replyToTgId ? byTgId.get(m.replyToTgId) : null;
         const bubbleBg = m.out ? C.outBubble : C.inBubble;
-        const canAct = !!m.tgId;
+        const canAct = !!m.tgId && !m.peek;
+        // Telegram'dan ko'rsatilgan (saqlanmagan) eski xabarlar tugadi — serverdagilari boshlanadi
+        const peekEnd = i > 0 && !m.peek && messages[i - 1].peek;
         return (
           <Fragment key={m.id}>
+          {peekEnd && (
+            <div data-testid="peek-divider" style={{ alignSelf: "stretch", display: "flex", alignItems: "center", gap: 8, margin: "6px 0", fontSize: 11.5, color: C.muted }}>
+              <span style={{ flex: 1, borderTop: `1px dashed ${C.border}` }} />{peekLabel || "Yuqorisi — Telegram'dan ko'rsatildi"}<span style={{ flex: 1, borderTop: `1px dashed ${C.border}` }} />
+            </div>
+          )}
           {newDay && (
             <div style={{ alignSelf: "center", margin: "8px 0 4px", padding: "4px 12px", borderRadius: 12, background: C.dayBg, color: C.muted, fontSize: 12.5, fontWeight: 600 }}>
               {dayTitle(m.date)}
             </div>
           )}
-          <div className="uc-row" style={{ alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: isMobile ? "84%" : "62%", display: "flex", flexDirection: "column", alignItems: m.out ? "flex-end" : "flex-start" }}>
+          <div className="uc-row" data-peek={m.peek ? "1" : undefined} style={{ opacity: m.peek ? 0.88 : 1, alignSelf: m.out ? "flex-end" : "flex-start", maxWidth: isMobile ? "84%" : "62%", display: "flex", flexDirection: "column", alignItems: m.out ? "flex-end" : "flex-start" }}>
             {!isMobile && canAct && (
               <div className="uc-quick" style={m.out ? { right: "calc(100% + 6px)" } : { left: "calc(100% + 6px)" }}>
                 <button type="button" aria-label="Javob berish" title="Javob berish" onClick={() => onReply(m)}><Reply size={15} /></button>
@@ -143,8 +150,8 @@ export function MessageList({ messages, loading, isMobile, customerName, onReply
               role="button"
               tabIndex={0}
               aria-label="Xabar amallari"
-              onClick={(e) => openMenu(e, m)}
-              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openMenu(e, m))}
+              onClick={(e) => !m.peek && openMenu(e, m)}
+              onKeyDown={(e) => !m.peek && (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openMenu(e, m))}
               style={{
                 background: m.mediaType === "photo" && !m.text && !quoted ? "transparent" : bubbleBg,
                 color: C.text, borderRadius: 14, overflow: "hidden",
@@ -223,7 +230,7 @@ function FetchMedia({ m, onFetchMedia }) {
       {m.tgId && onFetchMedia && (
         <button type="button" onClick={go} disabled={st.busy} data-testid="fetch-media-btn"
           style={{ marginTop: 8, height: 32, padding: "0 12px", borderRadius: 9, border: `1px solid ${C.link}66`, background: `${C.link}14`, color: C.link, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {st.busy ? <Loader2 size={14} className="uc-spin" /> : null}{gone ? "↻ Qayta yuklash" : m.mediaType === "video" ? "▶ Yuklab ko'rish" : "⬇ Yuklab olish"}
+          {st.busy ? <Loader2 size={14} className="uc-spin" /> : null}{gone ? "↻ Qayta yuklash" : m.mediaType === "video" ? "▶ Yuklab ko'rish" : m.mediaType === "photo" ? "🖼 Ko'rish" : m.mediaType === "voice" ? "▶ Tinglash" : "⬇ Yuklab olish"}
         </button>
       )}
       {st.err && <div role="alert" style={{ fontSize: 12, color: C.red, marginTop: 6 }}>{st.err}</div>}
