@@ -239,3 +239,35 @@ test("AI xizmatlari: Gemini, ChatGPT, Claude so'rovlari to'g'ri yuboriladi", asy
   const bad = createAi({ env: { OPENAI_API_KEY: "O" }, fetchImpl: async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "kechirasiz" } }] }) }) });
   await assert.rejects(bad.extract("s", "u"), /o'qib bo'lmadi/);
 });
+
+test("kechki kunlik otchyot 22:00 da bir marta: xulosa, ertangi ishlar va Excel; bo'sh kunda eslatma", async () => {
+  let t = new Date("2026-10-23T16:30:00Z"); // 21:30
+  const s = setup({ now: () => t });
+  s.kv.set(VL.KEY, JSON.stringify([
+    { id: "a", empId: "boss", date: "2026-10-23", work: "Viveska o'rnatildi", status: "done", amount: 500000, currency: "UZS" },
+    { id: "b", empId: "boss", date: "2026-10-23", work: "Lazer kesish", status: "todo", due: "2026-10-24" },
+    { id: "c", empId: "boss", date: "2026-10-01", work: "Eski ish", status: "done" },
+    { id: "d", empId: "op", date: "2026-10-23", work: "Boshqa xodim", status: "done" },
+  ]));
+  const rep = () => s.calls.filter((c) => c.method === "toEmp" && /Kunlik otchyot/.test(c.text));
+  await s.api.tick();
+  assert.equal(rep().length, 0);
+  t = new Date("2026-10-23T17:01:00Z"); // 22:01
+  await s.api.tick(); await s.api.tick();
+  assert.equal(rep().length, 1);
+  const txt = rep()[0].text;
+  assert.match(txt, /Bajarildi: 1 · ⏳ Ochiq: 1/);
+  assert.match(txt, /500 000 so'm/);
+  assert.match(txt, /Ertaga/);
+  assert.doesNotMatch(txt, /Eski ish|Boshqa xodim/);
+  const docs = s.calls.filter((c) => c.method === "doc");
+  assert.equal(docs.length, 1);
+  assert.equal(docs[0].name, "kunlik-otchyot_2026-10.xlsx");
+
+  const empty = setup({ now: () => t });
+  await empty.api.tick();
+  const e = empty.calls.filter((c) => c.method === "toEmp");
+  assert.equal(e.length, 1);
+  assert.match(e[0].text, /hech narsa yozilmadi/);
+  assert.equal(empty.calls.filter((c) => c.method === "doc").length, 0);
+});
