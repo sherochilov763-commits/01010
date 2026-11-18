@@ -1,5 +1,5 @@
 // chatExtras.jsx — Chatlar bo'limining qo'shimcha qismlari:
-// holat (mas'ul, mahkamlash, arxiv, tayyor javoblar), mijoz kartasi, menejer tanlash. Smeta — ../quotes/ChatQuote.jsx
+// holat (mas'ul, mahkamlash, arxiv, tayyor javoblar), mijoz kartasi, menejer tanlash. Smeta — ../quotes/QuoteSheet.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCheck, Archive, ArchiveRestore, Check, FileText, Package, Palette, Pin, PinOff, UserRound, Wallet } from "lucide-react";
 import { C } from "./chatPalette.js";

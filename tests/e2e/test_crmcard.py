@@ -91,6 +91,10 @@ async def main():
         mp = m.locator("[data-testid=lead-panel]")
         bb = await mp.bounding_box() if await mp.count() else None
         ok("telefon: panel pastdan (to'liq kenglik)", bb and bb["width"] >= 389 and bb["y"] >= 8, bb)
+        ok("telefon (135-A): tepada «Vazifa» yo'q, tugmalar bitta qatorda", await mp.locator("[data-testid=lead-panel-actions] [data-act=job]").count() == 0)
+        await mp.locator("[data-testid=lead-panel-tabs] [data-tab=tasks]").click(); await m.wait_for_timeout(400)
+        ok("telefon: «Vazifa» tabida «+ Vazifa»", await mp.locator("[data-testid=side-add-job]").count() == 1)
+        await mp.locator("[data-testid=lead-panel-tabs] [data-tab=info]").click(); await m.wait_for_timeout(300)
         await m.screenshot(path=OUT + "crmcard_phone.png")
         await m.go_back(); await m.wait_for_timeout(500)
         ok("telefon: «orqaga» — panel yopildi", await m.locator("[data-testid=lead-panel]").count() == 0)

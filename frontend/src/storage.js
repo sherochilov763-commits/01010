@@ -648,6 +648,10 @@ export const saveSalesConfig = (cfg) => apiReq("/sales/config", "PUT", cfg).then
 export const saveQuote = (leadId, body) => apiReq(`/quotes/${encodeURIComponent(leadId)}`, "PUT", body);
 export const createQuote = (body) => apiReq("/quotes", "POST", body);
 export const convertQuote = (body) => apiReq("/quotes/convert", "POST", body);
+// Avans kam — rahbarga so'rov (Telegram'da tasdiqlanadi)
+export const requestQuoteOrder = (body) => apiReq("/quotes/request", "POST", body);
+export const fetchQuoteRequests = () => apiReq("/quotes/requests");
+export const decideQuoteRequest = (id, action) => apiReq(`/quotes/requests/${encodeURIComponent(id)}/${action}`, "POST", {});
 export const payOrdersBatch = (body) => apiReq("/orders/pay-batch", "POST", body);
 export const setOrderStage = (id, stage) => apiReq(`/orders/${encodeURIComponent(id)}/stage`, "POST", { stage });
 export const assignOrderTask = (id, body) => apiReq(`/orders/${encodeURIComponent(id)}/task`, "POST", body);

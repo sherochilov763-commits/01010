@@ -7,7 +7,7 @@ import { JobsView } from "./views/jobs/JobsView.jsx";
 import { GeoTracker } from "./views/jobs/GeoTracker.jsx";
 import { PermsContext, usePermsState } from "./lib/perms.jsx";
 import { ViewAsBanner } from "./components/ViewAsBanner.jsx";
-import { exitViewAs, sendTeamChat, viewAsActive } from "./storage.js";
+import { exitViewAs, markCardTx, sendTeamChat, viewAsActive } from "./storage.js";
 import { LineChip, LineSelector, LineStrip } from "./components/LineSelector.jsx";
 import { LineContext, WorkStatsContext, applyLineProfiles, scopeByLine, useLineState } from "./lib/lines.js";
 import { ExpenseRulesContext, rulesFrom } from "./lib/expenseRules.js";
@@ -49,7 +49,8 @@ import { resumePending, storageGet, storageRefresh, storageSet, subscribeRemote 
 import { SaveStatus } from "./components/SaveStatus.jsx";
 import { VoiceAssistant, VoiceHeaderButton, VOICE_CSS } from "./components/VoiceAssistant.jsx";
 import { FeedbackButton, FEEDBACK_CSS } from "./components/FeedbackButton.jsx";
-import { canonicalCustomer, expensePreset, jobPreset, leadPrefill, paymentPrefill, quoteItems } from "./lib/voice.js";
+import { canonicalCustomer, expensePreset, jobPreset, leadPrefill, paymentPrefill } from "./lib/voice.js";
+import { voiceItemsToRows } from "./lib/quoteLegacy.js";
 import { useBackToClose, useHistoryView } from "./lib/history.js";
 import { DEFAULT_APPEARANCE, THEME, setTheme, buildTheme, migrateAppearance, withAlpha, resolveAppearance, effectiveAppearance as effectiveOf, personalPart } from "./theme.js";
 import { useAutoNight } from "./lib/autoNight.js";
@@ -77,6 +78,8 @@ const AttendanceView = lazy(() => import("./views/attendance/AttendanceView.jsx"
 const CustomersView = lazy(() => import("./views/customers/CustomersView.jsx").then((m) => ({ default: m.CustomersView })));
 const PaintView = lazy(() => import("./views/paint/PaintView.jsx").then((m) => ({ default: m.PaintView })));
 const CardView = lazy(() => import("./views/card/CardView.jsx").then((m) => ({ default: m.CardView })));
+const CardPrompt = lazy(() => import("./views/card/CardPrompt.jsx").then((m) => ({ default: m.CardPrompt })));
+const QuoteSheet = lazy(() => import("./views/quotes/QuoteSheet.jsx").then((m) => ({ default: m.QuoteSheet })));
 const VIEW_PRELOADERS = [() => import("./views/customers/CustomersView.jsx"), () => import("./views/attendance/AttendanceView.jsx"), () => import("./views/paint/PaintView.jsx"), () => import("./views/CategoriesView.jsx"), () => import("./views/EmployeesView.jsx"), () => import("./views/OperationsView.jsx"), () => import("./views/ReportView.jsx"), () => import("./views/crm/CRMView.jsx"), () => import("./views/crm/ChatsView.jsx"), () => import("./views/expenses/ExpenseView.jsx"), () => import("./views/orders/OrdersView.jsx"), () => import("./views/settings/SettingsView.jsx")];
 function ViewFallback() {
   // Bo'lim yuklanayotganda — sahifa skeleti (asboblar qatori + jadval qatorlari)
@@ -111,7 +114,6 @@ function AppInner() {
   const [orders, setOrders] = useState([]); // buyurtmalar (har birida payments[])
   const [leads, setLeads] = useState([]); // CRM — savdo voronkasi lidlari
   const [customers, setCustomers] = useState([]); // Mijozlar bazasi — qo'lda kiritilgan ma'lumotlar (telefon, izoh, birlashtirish)
-  const [pendingLeadForOrder, setPendingLeadForOrder] = useState(null);
   const [employees, setEmployees] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -154,7 +156,10 @@ function AppInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useBackToClose(sidebarOpen, () => setSidebarOpen(false));
   const [openChatId, setOpenChatId] = useState(null); // CRM → Chatlar: ochiladigan suhbat
+  const [cardAction, setCardAction] = useState(null); // 137-eskiz: «Kartaga pul tushdi» oynasidan — {id, mode, n}
   const [quickAdd, setQuickAdd] = useState(null); // {kind: "order"|"expense", n} — pastki "+" tugmasidan
+  // «Smeta / Buyurtma» oynasi (138–140-eskiz): { lead?, prefill?, payment?, cardTx? } — istalgan bo'limdan ochiladi
+  const [quoteSheet, setQuoteSheet] = useState(null);
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const openCmdk = useCallback(() => setCmdkOpen(true), []);
   useCommandHotkey(openCmdk, !!currentUser && !isWorkerRole(currentUser.role));
@@ -214,7 +219,7 @@ function AppInner() {
     if (action === "payment" && extra.order) return navigateWithFilter("orders", { payId: extra.order.id, pay: paymentPrefill(data), n });
     if (action === "search") return navigateWithFilter("orders", { search: data.search || "", n });
     setNavFilter(null);
-    if (action === "order") { setView("orders"); setQuickAdd({ kind: "order", n, prefill: { customer: canonicalCustomer(data.customer, custNames()), phone: data.phone || "", items: quoteItems(data.items) } }); }
+    if (action === "order") { setQuoteSheet({ prefill: { customer: canonicalCustomer(data.customer, custNames()), phone: data.phone || "", rows: voiceItemsToRows(data.items) } }); }
     else if (action === "expense") { setView("expense"); setQuickAdd({ kind: "expense", n, prefill: expensePreset(data, employees) }); }
     else if (action === "job") { setView("jobs"); setQuickAdd({ kind: "job", n, prefill: jobPreset(data, employees) }); }
     else if (action === "lead") { setView("crm"); setQuickAdd({ kind: "lead", n, prefill: leadPrefill(data, custNames()) }); }
@@ -493,6 +498,14 @@ function AppInner() {
   }
   function saveTransaction(tx, isEdit) {
     let next;
+    if (Array.isArray(tx)) {
+      // Material bir nechta buyurtmaga bo'lib yozildi — bir nechta rasxod bitta saqlashda
+      next = [...tx, ...transactions];
+      addLog(`Rasxod qo'shildi: ${money(tx.reduce((s, t) => s + (t.amount || 0), 0))} (${tx.length} qism, ${tx[0]?.date || ""})`);
+      persistTx(next);
+      showToast("Qo‘shildi");
+      return;
+    }
     if (isEdit) {
       next = transactions.map((t) => (t.id === tx.id ? tx : t));
       addLog(`Rasxod tahrirlandi: ${money(tx.amount)} (${tx.date})`);
@@ -700,8 +713,7 @@ function AppInner() {
     }
   }
   function createOrderFromLead(lead) {
-    setPendingLeadForOrder(lead);
-    setView("orders");
+    setQuoteSheet({ lead: leads.find((l) => l.id === lead?.id) || lead || null });
   }
   function permanentlyDeleteOrder(order) {
     const next = orders.filter((o) => o.id !== order.id);
@@ -1106,7 +1118,8 @@ function AppInner() {
                 if (k === "feedback") return window.dispatchEvent(new Event("uvix:feedback-open"));
                 if (k === "pay") return navigateWithFilter("orders", { onlyDebt: true, n: Date.now() });
                 if (k === "scan") return openScanner("order");
-                setNavFilter(null); setView(k === "order" ? "orders" : k === "lead" ? "crm" : "expense"); setQuickAdd({ kind: k, n: Date.now() });
+                if (k === "order") return setQuoteSheet({});
+                setNavFilter(null); setView(k === "lead" ? "crm" : "expense"); setQuickAdd({ kind: k, n: Date.now() });
               }} /></>} />
           {isAdmin && <StorageWarning onOpenSettings={view === "settings" ? null : () => setView("settings")} />}
           <div key={navView} className="uvix-view-enter uvix-main-pad" style={{ padding: "20px 28px 40px" }}>
@@ -1123,9 +1136,7 @@ function AppInner() {
             ) : null} orders={lOrders} expenses={scope.txStats} kassaOrders={activeOrders} kassaTx={activeTransactions} isAdmin={isAdmin} perm={meEmp?.perm} onMarkBigSeen={markBigSeen} allExpenses={scope.txList} onNavigate={navigateWithFilter} settings={settings} onSaveSettings={persistSettings} employees={employees} leads={leads} stageOf={stageOfOrder} categories={categories} onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id })} />}
             {view === "orders" && (
               <OrdersView
-                quickAddNonce={quickAdd?.kind === "order" ? quickAdd.n : 0}
-                quickAddPrefill={quickAdd?.kind === "order" ? quickAdd.prefill : null}
-                onQuickAddHandled={() => setQuickAdd(null)}
+                onNewOrder={() => setQuoteSheet({})}
                 orders={lOrders}
                 allOrders={orders}
                 transactions={scope.txList}
@@ -1143,11 +1154,9 @@ function AppInner() {
                 onDeletePayment={deletePayment}
                 onUploadPhotos={uploadPhotos}
                 onDeletePhoto={deletePhoto}
-                pendingLead={pendingLeadForOrder}
                 leads={leads}
                 customerProfiles={customers}
                 onOpenChat={(lead) => { setOpenChatId(lead.telegramChatId); setView("chats"); }}
-                onPendingLeadHandled={() => setPendingLeadForOrder(null)}
                 onServerChange={onServerChange}
                 showToast={showToast}
               />
@@ -1278,7 +1287,7 @@ function AppInner() {
             )}
             {view === "report" && reportScope && <ReportView orders={reportScope.orders} transactions={reportScope.txStats} categories={categories} />}
             {view === "card" && isAdmin && (
-              <CardView currentUser={currentUser} settings={settings} orders={activeOrders} categories={categories} employees={employees}
+              <CardView currentUser={currentUser} settings={settings} orders={activeOrders} categories={categories} employees={employees} action={cardAction} onNewOrder={(t) => setQuoteSheet({ payment: { amount: Math.round(t.amount), paymentType: "karta", locked: true }, cardTx: t })}
                 onAddCategory={addCategory} onAddSubcategory={addSubcategory} onSaveTx={saveTransaction} onAddPayment={addPayment} />
             )}
             {view === "categories" && (
@@ -1388,11 +1397,28 @@ function AppInner() {
         }}
         onSearchOrders={(q) => navigateWithFilter("orders", { search: q })}
         onOpenOrder={(o) => navigateWithFilter("orders", { openId: o.id, n: Date.now() })}
-        onQuickAdd={(kind) => { setNavFilter(null); setView(kind === "order" ? "orders" : "expense"); setQuickAdd({ kind, n: Date.now() }); }}
+        onQuickAdd={(kind) => { if (kind === "order") return setQuoteSheet({}); setNavFilter(null); setView("expense"); setQuickAdd({ kind, n: Date.now() }); }}
         onNewLead={visibleNav.some((n) => n.key === "crm") ? () => { setNavFilter(null); setView("crm"); setQuickAdd({ kind: "lead", n: Date.now() }); } : null}
       />
       <SaveStatus />
       {!permsCtx.viewAs && <VoiceAssistant orders={orders} onAction={onVoiceAction} />}
+      {quoteSheet && (
+        <Suspense fallback={null}>
+          <QuoteSheet key={quoteSheet.lead?.id || "new"} lead={quoteSheet.lead || null} prefill={quoteSheet.prefill || null} payment={quoteSheet.payment || null}
+            currentUser={currentUser} isAdmin={isAdmin} customers={buildCustomers(orders, leads, customers)}
+            onClose={() => setQuoteSheet(null)}
+            onSaved={(lead) => { if (lead) { onServerChange({ lead }); showToast(`Smeta ${lead.quote?.no || ""} saqlandi — CRM'da «${lead.customer}»`); } }}
+            onRequested={(lead) => { onServerChange({ lead }); showToast("So'rov rahbarga yuborildi — Telegram'da tasdiqlaydi"); }}
+            onConverted={(r) => {
+              const o = r.order || r.orders?.[0];
+              onServerChange({ lead: r.lead, orders: o ? [o] : [] });
+              const tx = quoteSheet.cardTx;
+              if (tx && o) markCardTx(tx.id, { orderId: o.id, paymentId: o.payments?.[0]?.id || null, label: `${o.orderNumber} · ${o.customer}`, personal: false }).then(() => setCardAction({ refresh: true, n: Date.now() })).catch(() => {});
+              showToast(o ? `Buyurtma ${o.orderNumber} yaratildi` : "Buyurtma yaratildi");
+            }} />
+        </Suspense>
+      )}
+      {isAdmin && !permsCtx.viewAs && <Suspense fallback={null}><CardPrompt hidden={view === "card"} onAction={(a) => { setCardAction(a); goView("card"); }} /></Suspense>}
       <QrApproveHost />
       <BottomNav
         view={view}

@@ -17,7 +17,10 @@ FAKE_AT="${E2E_FAKE_TIME:-20:00}"
 if [ "$FAKE_AT" != "off" ]; then
   FT_LIB="$(python3 -c 'import libfaketime, os; print(os.path.join(os.path.dirname(libfaketime.__file__), "vendor/libfaketime/src/libfaketime.so.1"))' 2>/dev/null || true)"
   if [ -n "$FT_LIB" ] && [ -f "$FT_LIB" ]; then
-    TARGET=$(TZ=Asia/Tashkent date -d "$(TZ=Asia/Tashkent date +%Y-%m-%d) $FAKE_AT" +%s)
+    # Sana ham qat'iy: ma'lumot (seed) 2026-oktabr oyiga yozilgan — Buyurtmalar «joriy oy» bilan ochiladi, oy almashsa testlar yolg'on yiqilardi.
+    # Boshqa sana: E2E_FAKE_DATE=YYYY-MM-DD; bugungi sana bilan: E2E_FAKE_DATE=today.
+    FAKE_DATE="${E2E_FAKE_DATE:-2026-10-31}"; [ "$FAKE_DATE" = "today" ] && FAKE_DATE="$(TZ=Asia/Tashkent date +%Y-%m-%d)"
+    TARGET=$(TZ=Asia/Tashkent date -d "$FAKE_DATE $FAKE_AT" +%s)
     OFFSET=$((TARGET - $(date +%s)))
     export LD_PRELOAD="$FT_LIB${LD_PRELOAD:+:$LD_PRELOAD}" FAKETIME="$( [ $OFFSET -ge 0 ] && echo "+$OFFSET" || echo "$OFFSET" )" DONT_FAKE_MONOTONIC=1 FAKETIME_DONT_FAKE_MONOTONIC=1
     echo "Soxta vaqt: $(TZ=Asia/Tashkent date '+%Y-%m-%d %H:%M') (Toshkent) — haqiqiy vaqtdan ${OFFSET} s"
@@ -25,7 +28,7 @@ if [ "$FAKE_AT" != "off" ]; then
     echo "Diqqat: libfaketime topilmadi (pip install libfaketime) — testlar haqiqiy vaqtda, kechasi yolg'on yiqilishi mumkin"
   fi
 fi
-SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_perms test_bigexp test_kassa test_lineprof test_themes test_dash test_visual test_crmcard test_voice test_autoreply test_card test_chatfiles test_chathistory test_teamchat test_feedback}"
+SUITES="${*:-test_money test_session test_errors test_mobile test_mobile2 test_lines test_jobs test_jobs2 test_jobs3 test_jobs4 test_geo test_tg_lines test_stages test_roles test_perms test_bigexp test_kassa test_lineprof test_themes test_dash test_visual test_crmcard test_voice test_autoreply test_card test_card2 test_quote2 test_chatfiles test_chathistory test_teamchat test_feedback}"
 fail=0
 # GitHub Actions'da yiqilgan tekshiruvlar izoh (annotation) sifatida chiqadi — logni ochmasdan ko'rinadi
 gh_err() { [ -n "${GITHUB_ACTIONS:-}" ] && printf '::error title=%s::%s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ' | cut -c1-900)"; return 0; }

@@ -123,7 +123,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
   const matExpAmountNum = parseInt(matExpAmountStr.replace(/\s/g, ""), 10) || 0;
   const materialSumForCalc = matExpAmountNum;
   const brakSumForCalc = isEdit ? orderBrakSum(initial, transactions) : 0;
-  const addedValueUzs = agreementUzs - kraskaSumTotal - materialSumForCalc - brakSumForCalc;
+  const addedValueUzs = agreementUzs - materialSumForCalc - brakSumForCalc;
   const initPaymentNum = initPaymentLines.reduce((s, l) => s + (parseInt((l.amountStr || "").replace(/\s/g, ""), 10) || 0), 0);
   const alreadyPaidUzs = isEdit ? orderTotalPaid(initial) : (addInitialPayment ? initPaymentNum : 0);
   const debtUzs = Math.max(0, agreementUzs - alreadyPaidUzs);
@@ -187,8 +187,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
     if (!date) return setError("Sanani tanlang");
     if (!customer.trim()) return setError("Mijoz nomini kiriting");
     if (!agreementUzs || agreementUzs <= 0) return setError("Umumiy buyurtma summasini kiriting");
-    if (totalUsdNum > 0 && (!exchangeRateNum || exchangeRateNum <= 0)) return setError("Kraska hisob-kitobida $ narx kiritilgan bo'lsa, USD kursini ham kiriting");
-    if (addMaterialExpense && (!matExpAmountNum || matExpAmountNum <= 0)) return setError("Material xarajati summasini kiriting");
+        if (addMaterialExpense && (!matExpAmountNum || matExpAmountNum <= 0)) return setError("Material xarajati summasini kiriting");
     if (addInitialPayment && (!initPaymentNum || initPaymentNum <= 0)) return setError("Boshlang'ich to'lov summasini kiriting");
     if (totalDecrease && totalReason.trim().length < 3) return setError("Summani kamaytirish sababini yozing — admin tasdiqlaydi");
 
@@ -202,15 +201,16 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
       title: title.trim(),
       place: place.trim(),
       subcategory: bizLine,
-      materialType: materialLinesComputed.map((l) => l.materialType).filter(Boolean).join(", "),
-      materialLines: materialLinesComputed.map((l) => ({ materialType: l.materialType, area: l.area, priceUsd: l.price, totalUsd: l.lineTotalUsd })),
+      // Smeta qatorlari, maydon, $ va eski bo'yoq summasi formada o'zgartirilmaydi (bo'yoq — hisobotda «Kraska» rasxodlaridan)
+      materialType: initial?.materialType || "",
+      materialLines: initial?.materialLines || [],
       manager,
-      area: totalArea,
-      exchangeRate: exchangeRateNum,
-      agreementUsd: totalUsdNum,
+      area: initial?.area || 0,
+      exchangeRate: initial?.exchangeRate || 0,
+      agreementUsd: initial?.agreementUsd || 0,
       agreementUzs,
-      kraskaLines: kraskaSumTotal > 0 ? [{ amount: kraskaSumTotal }] : [],
-      kraskaSum: kraskaSumTotal,
+      kraskaLines: initial?.kraskaLines || [],
+      kraskaSum: initial?.kraskaSum || 0,
       materialSum: matExpAmountNum,
       payments: initial?.payments || [],
       note: note.trim(),
@@ -392,110 +392,6 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
           </div>
         )}
 
-        {/* Qo'shimcha $ hisob-kitobi (ixtiyoriy) — Kraska hisob-kitobiga asos bo'ladi */}
-        <div style={{ borderTop: `1px dashed ${THEME.border}`, paddingTop: 12, marginTop: 2 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: THEME.mutedDark, marginBottom: 8 }}>Qo'shimcha $ hisob-kitobi (ixtiyoriy) — Material turlari va kv/m</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {materialLinesComputed.map((line) => (
-              <div key={line.id} style={{ padding: 10, background: THEME.surface, borderRadius: 11 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1.2fr 0.8fr 0.8fr auto", gap: 8, alignItems: "start" }}>
-                  <div>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <select value={line.materialType} onChange={(e) => updateMaterialLine(line.id, "materialType", e.target.value)} style={{ ...getInputStyle(), background: THEME.card }}>
-                        {materialOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                      <button type="button" onClick={() => setNewMatLineOpen(newMatLineOpen === line.id ? null : line.id)} title="Yangi material turi" style={{ ...getIconBtn(), flexShrink: 0, padding: "0 10px", background: THEME.card }}>
-                        <Plus size={14} />
-                      </button>
-                    </div>
-                    {newMatLineOpen === line.id && (
-                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                        <input
-                          autoFocus
-                          value={newMatLineName}
-                          onChange={(e) => setNewMatLineName(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), submitNewMaterialLine(line.id))}
-                          placeholder="Yangi material turi nomi"
-                          style={{ ...getInputStyle(), fontSize: 12.5, background: THEME.card }}
-                        />
-                        <Button type="button" onClick={() => submitNewMaterialLine(line.id)} style={{ padding: "8px 12px", fontSize: 12 }}>Qo'shish</Button>
-                      </div>
-                    )}
-                  </div>
-                  <input
-                    value={line.areaStr}
-                    onChange={(e) => updateMaterialLine(line.id, "areaStr", sanitizeDecimal(e.target.value))}
-                    placeholder="Kv/m"
-                    inputMode="decimal"
-                    style={{ ...getInputStyle(), background: THEME.card }}
-                  />
-                  <input
-                    value={line.priceStr}
-                    onChange={(e) => updateMaterialLine(line.id, "priceStr", sanitizeDecimal(e.target.value))}
-                    placeholder="$ / m²"
-                    inputMode="decimal"
-                    style={{ ...getInputStyle(), background: THEME.card }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeMaterialLine(line.id)}
-                    disabled={materialLines.length <= 1}
-                    className="uvix-iconbtn"
-                    style={{ ...getIconBtn(), background: THEME.card, opacity: materialLines.length <= 1 ? 0.35 : 1, marginTop: 0 }}
-                  >
-                    <X size={14} color={THEME.rose} />
-                  </button>
-                </div>
-                {line.lineTotalUsd > 0 && (
-                  <div style={{ fontSize: 11, color: THEME.muted, marginTop: 6, textAlign: "right" }}>
-                    {line.area} m² × {usd(line.price)} = <b style={{ color: THEME.text }}>{usd(line.lineTotalUsd)}</b>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={addMaterialLine} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, background: "none", border: "none", color: THEME.violet, fontSize: 12.5, fontWeight: 700, cursor: "pointer", padding: 0 }}>
-            <Plus size={14} /> Yana material turi qo'shish
-          </button>
-          {totalUsdNum > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <Field label="USD kursi (1 $ = ? so'm)">
-                <input
-                  value={exchangeRateStr}
-                  onChange={handleExchangeRateChange}
-                  placeholder="12 700"
-                  inputMode="numeric"
-                  style={{ ...getInputStyle(), fontSize: 15, fontWeight: 700 }}
-                />
-              </Field>
-              <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>
-                Jami: {usd(totalUsdNum)}{exchangeRateNum > 0 ? ` ≈ ${money(autoTotalUzs)}` : ""}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* KRASKA HISOB-KITOBI — yuqoridagi $ hisob-kitobi jamisidan avtomatik olinadi */}
-        <Field label="Kraska hisob-kitobi (so'm)">
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              value={kraskaStr}
-              onChange={handleKraskaChange}
-              placeholder="0"
-              inputMode="numeric"
-              style={{ ...getInputStyle(), fontSize: 16, fontWeight: 700 }}
-            />
-            {kraskaTouched && autoTotalUzs > 0 && (
-              <button type="button" onClick={resetKraska} title="Avtomatik hisoblanganga qaytarish" style={{ ...getIconBtn(), flexShrink: 0, padding: "0 10px" }}>
-                <ChevronDown size={14} style={{ transform: "rotate(90deg)" }} />
-              </button>
-            )}
-          </div>
-          <div style={{ fontSize: 11.5, color: THEME.muted, marginTop: 4 }}>
-            {kraskaTouched ? "Qo'lda kiritilgan qiymat" : "Qo'shimcha $ hisob-kitobi jamisidan avtomatik olinadi — kerak bo'lsa qo'lda o'zgartirishingiz mumkin"}
-          </div>
-        </Field>
-
         {/* 4) QARZDORLIK */}
         <Field label="Qarzdorlik">
           <div style={{
@@ -522,7 +418,7 @@ export function OrderForm({ initial, currentUser, categories, employees, setting
             {money(addedValueUzs)}
           </div>
           <div style={{ fontSize: 11, color: THEME.muted, marginTop: 4 }}>
-            Umumiy buyurtma − Kraska summasi − Material xarajati{brakSumForCalc > 0 ? ` − Brak (${money(brakSumForCalc)})` : ""}
+            Umumiy buyurtma − Material xarajati{brakSumForCalc > 0 ? ` − Brak (${money(brakSumForCalc)})` : ""}
           </div>
         </Field>
 

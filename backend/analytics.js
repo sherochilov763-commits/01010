@@ -3,7 +3,8 @@
 //
 // Hisoblash qoidalari:
 //   Tushum            = davrdagi buyurtmalar summasi (buyurtma sanasi bo'yicha — hisoblangan usul)
-//   Tannarx           = buyurtmalardagi kraska + material summasi + davrdagi «Brak» rasxodlari
+//   Tannarx           = davrdagi «Kraska» rasxodlari + material summasi + davrdagi «Brak» rasxodlari
+//                       (bo'yoq buyurtmaga yozilmaydi — qatlamlar har xil; haqiqiy xarid summasi olinadi)
 //   Qo'shilgan qiymat = Tushum − Tannarx
 //   Operatsion rasxod = davrdagi rasxodlar, Material/Kraska/Brak (tannarxda hisoblangan) va «Shaxsiy»dan tashqari
 //   Sof foyda         = Qo'shilgan qiymat − Operatsion rasxod; «Shaxsiy» alohida ko'rsatiladi (foydadan olingan pul)
@@ -63,7 +64,7 @@ function computeCore(data, from, to) {
   const orders = data.orders.filter((o) => inR(o.date, from, to));
   const txs = data.transactions.filter((t) => t.type === "chiqim" && inR(t.date, from, to));
   const revenue = orders.reduce((s, o) => s + (o.agreementUzs || 0), 0);
-  const kraska = orders.reduce((s, o) => s + (o.kraskaSum || 0), 0);
+  const kraska = txs.filter((t) => t.category === "Kraska").reduce((s, t) => s + (t.amount || 0), 0);
   // Material: buyurtmaga bog'langan «Material» rasxodi (bo'lmasa — buyurtmadagi summa) + buyurtmaga bog'lanmagan material xaridlari (davrda)
   const allTx = data.transactions.filter((t) => t.type === "chiqim");
   const linkedMat = new Map();

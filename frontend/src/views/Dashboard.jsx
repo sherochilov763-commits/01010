@@ -383,7 +383,7 @@ export function Dashboard({ orders: ordersIn, expenses: expensesIn, isAdmin, onN
       />
     ),
     m_materialExpense: () => <MetricCard label="Material xarajati" value={money(stats.materialExpense)} accent={THEME.amber} bg={THEME.amberBg} icon={Wallet} onClick={() => go("operations", { typeFilter: "chiqim", catFilter: "Material" })} />,
-    m_kraska: () => <MetricCard label="Kraska hisob-kitobi" value={money(stats.totalKraska)} accent={THEME.amber} bg={THEME.amberBg} icon={Wallet} onClick={() => go("orders", {})} />,
+    m_kraska: () => <MetricCard label="Bo'yoq (Kraska rasxodi)" value={money(stats.totalKraska)} accent={THEME.amber} bg={THEME.amberBg} icon={Wallet} onClick={() => go("orders", {})} />,
     m_totalMoney: () => <MetricCard label="Jami pul (kassalar)" value={money(cashNow)} accent={cashNow >= 0 ? THEME.green : THEME.rose} bg={cashNow >= 0 ? THEME.greenBg : THEME.roseBg} icon={Landmark} onClick={() => go("kassa", {})} />,
     m_topDebtors: () => (
       <Card className="uvix-dash-card" style={{ padding: 0 }}>

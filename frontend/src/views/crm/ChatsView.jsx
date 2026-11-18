@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Calculator, Check, ChevronDown, ChevronUp, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Calculator, Check, FileText, ChevronDown, ChevronUp, Info, Loader2, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Search, UserPlus, X } from "lucide-react";
 import { layoutCss, Resizer, useChatLayout } from "./chatLayout.jsx";
 import { C, applyChatPalette } from "./chatPalette.js";
 import { Incremental, useIsMobile } from "../../components/ui.jsx";
@@ -11,10 +11,7 @@ import { uid } from "../../lib/format.js";
 import { useLine } from "../../lib/lines.js";
 import { THEME } from "../../theme.js";
 import { AssigneePicker, CustomerBox, RowMenu, avatarColor, useChatCustomer, useChatTools, waitLabel, waitingMinutes } from "./chatExtras.jsx";
-import { ChatQuote } from "../quotes/ChatQuote.jsx";
 import { FolderRail, FolderTabs, useTgFolders } from "./TgFolders.jsx";
-import { ConvertModal } from "../quotes/ConvertPanel.jsx";
-import { useSales } from "../quotes/useSales.js";
 import { PROD_LABEL, prodColors } from "../../lib/production.js";
 import { initials } from "../../components/ui.jsx";
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
@@ -119,10 +116,6 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
   const [insert, setInsert] = useState(null); // { text, n } — kalkulyatordan javobga
   const [invoiceFor, setInvoiceFor] = useState(null);
   const [paymentsFor, setPaymentsFor] = useState(null);
-  const [convertFor, setConvertFor] = useState(null); // { lead, items }
-  const [okMsg, setOkMsg] = useState("");
-  const quoteRef = useRef(null);
-  const sales = useSales();
   const [msgHits, setMsgHits] = useState([]); // xabarlar ichidan qidiruv natijalari
   const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNowMs(Date.now()), 30000); return () => clearInterval(t); }, []);
@@ -393,12 +386,9 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
       onAssignTask?.(lead, "design", att);
     } catch (e) { setError(e.message); }
   }
-  // «Buyurtma» — smeta bo'lsa to'lov oynasi, bo'lmasa kalkulyatorga o'tamiz (buyurtma faqat smeta orqali yaratiladi)
+  // «Smeta / Buyurtma» — umumiy oyna (lid bo'lmasa — avval CRM'ga qo'shiladi)
   async function newOrder() {
-    const its = quoteRef.current?.items || [];
-    if (its.length) { try { const lead = await ensureLead(); if (lead) setConvertFor({ lead, items: its }); } catch (e) { setError(e.message); } return; }
-    openTool("calc");
-    setTimeout(() => quoteRef.current?.focus(), 150);
+    try { const lead = await ensureLead(); if (lead) onCreateOrderFromLead?.(lead); } catch (e) { setError(e.message); }
   }
 
   // Yuborilgan xabarni ro'yxatga va suhbatlar ro'yxatidagi oxirgi matnga qo'shamiz
@@ -491,7 +481,6 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
   const openAutoSettings = onOpenSettings ? () => { onOpenSettings(); setTimeout(() => openSettingsSection("savdo", "auto-replies"), 60); } : null;
   // Vosita ichi — kompyuterda o'ng panelda, telefonda pastdagi varaqda bir xil
   function toolBody(t) {
-    const isQuote = t === "quote" || t === "calc";
     return (<>
       {t === "client" && (<>
         <div style={{ textAlign: "center", marginBottom: 14 }}>
@@ -546,18 +535,7 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
         <ChatAutoReply chatId={selectedChatId} messages={messages} onOpenSettings={openAutoSettings} />
         <AiTool />
       </div>)}
-      {/* Smeta va Kalkulyator — bitta nusxa (pozitsiyalar va tahrirlash holati vositalar orasida saqlanadi) */}
-      <div style={{ display: isQuote ? undefined : "none" }}>
-        <ChatQuote ref={quoteRef} chatId={selectedChatId} lead={selectedLead} ensureLead={ensureLead}
-          view={t === "calc" ? "calc" : "quote"} onView={isMobile ? setSheetTool : (v) => update({ tool: v })}
-          onLeadSaved={(l) => onServerChange?.({ lead: l })}
-          onConvert={(l, items) => setConvertFor({ lead: l, items })}
-          customerName={selectedName || "Mijoz"}
-          customerSub={`Telegram${selectedUsername ? ` · @${selectedUsername}` : ""}`}
-          onSendDirect={handleSendText}
-          onSendText={(text) => { setInsert({ text, n: Date.now() }); if (isMobile) setQuoteSheet(null); }} />
-        {okMsg && <div role="status" data-testid="convert-ok" style={{ display: "flex", alignItems: "center", gap: 6, color: C.green, fontSize: 12.5, marginTop: 10 }}><Check size={15} /> {okMsg}</div>}
-      </div>
+      {t === "quote" && <ChatQuoteSummary lead={selectedLead} onOpen={() => { newOrder(); if (isMobile) setQuoteSheet(null); }} />}
     </>);
   }
 
@@ -884,11 +862,6 @@ export function ChatsView({ leads, onFetchChats, onSendMessage, onMarkRead, onMo
           onArchive={() => { const arch = !ct.meta[rowMenu.chatId]?.archived; ct.setMeta(rowMenu.chatId, { archived: arch }); if (arch && rowMenu.chatId === selectedChatId) closeChat(); setRowMenu(null); }} />
       )}
       {invoiceFor && <InvoiceModal order={invoiceFor} customer={customer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}
-      {convertFor && (
-        <ConvertModal lead={convertFor.lead} items={convertFor.items} salesCfg={sales} employees={employees} allOrders={allOrders || orders} currentUser={currentUser} isAdmin={isAdmin}
-          onCancel={() => setConvertFor(null)}
-          onDone={(r) => { setConvertFor(null); quoteRef.current?.clear(); onServerChange?.({ lead: r.lead, orders: r.orders }); setOkMsg(`${r.orders.length} ta buyurtma yaratildi: ${r.orders.map((o) => o.orderNumber).join(", ")}`); setTimeout(() => setOkMsg(""), 8000); }} />
-      )}
       {paymentsFor && (
         <PaymentsModal order={(orders || []).find((o) => o.id === paymentsFor.id) || paymentsFor} transactions={transactions || []} currentUser={currentUser} isAdmin={isAdmin}
           onClose={() => setPaymentsFor(null)} onAddPayment={onAddPayment} onDeletePayment={onDeletePayment} />
@@ -910,3 +883,28 @@ const addCss = () => `
   .uc-spin { animation: uc-spin 0.9s linear infinite; }
   @keyframes uc-spin { to { transform: rotate(360deg); } }
 `;
+
+// Chat yon panelidagi «Smeta»: lidning smetasi qisqacha + «Smeta / Buyurtma» oynasini ochish (138-eskiz, C varianti)
+function ChatQuoteSummary({ lead, onOpen }) {
+  const q = lead?.quote || null;
+  const open = q?.status === "open";
+  const fmtN = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU").replace(/[\u00a0,]/g, " ");
+  return (
+    <div data-testid="chat-quote" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {q ? (
+        <div style={{ background: TG_DARK_HOVER, borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13, color: TG_DARK_MUTED }}>
+            <span>Smeta {q.no}</span><span>{open ? (q.request?.status === "pending" ? "tasdiq kutmoqda" : "ochiq") : "buyurtma bo'lgan"}</span>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: TG_DARK_TEXT }}>{fmtN(q.total)} so'm</div>
+          <div style={{ fontSize: 12.5, color: TG_DARK_MUTED }}>{(q.items || []).length} ta pozitsiya</div>
+        </div>
+      ) : <div style={{ fontSize: 13, color: TG_DARK_MUTED, lineHeight: 1.45 }}>Bu mijozga hali smeta yo'q.</div>}
+      <button type="button" onClick={onOpen} data-testid="chat-quote-open"
+        style={{ height: 42, border: 0, borderRadius: 10, background: C.blue, color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+        <FileText size={16} />{open ? "Smetani ochish" : "Smeta / Buyurtma"}
+      </button>
+      <div style={{ fontSize: 12, color: TG_DARK_MUTED, lineHeight: 1.45 }}>Pozitsiyalar, o'lchamlar, $ kurs, avans — bitta oynada. Mijozga hech narsa ketmaydi.</div>
+    </div>
+  );
+}

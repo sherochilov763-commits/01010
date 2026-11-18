@@ -149,7 +149,6 @@ export function LeadPanel({ lead, sig = {}, stages, orders, jobs, phone, onClose
         {linked
           ? <button type="button" style={actBtn} onClick={() => onOpenOrder?.(linked)} data-act="order"><Package size={14} />Buyurtma</button>
           : lead.quote?.status === "open" && <button type="button" style={actBtn} onClick={onCreateOrder} data-act="order"><Check size={14} />Buyurtma</button>}
-        {phone && <button type="button" style={actBtn} onClick={onJob} data-act="job"><CalendarClock size={14} />Vazifa</button>}
       </div>
     </div>
   );
@@ -168,8 +167,8 @@ export function LeadPanel({ lead, sig = {}, stages, orders, jobs, phone, onClose
     <div data-testid="lead-panel-side" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <span style={secLbl}>VAZIFALAR</span>
-        {/* kompyuterda vazifa qo'shish faqat shu yerda (tepadagi tugma olib tashlangan) */}
-        {!phone && <button type="button" onClick={onJob} data-act="job" data-testid="side-add-job" title="O'lchov, montaj yoki boshqa vazifa" style={{ ...linkBtn, fontSize: 13, height: 28, padding: "0 10px", borderRadius: 8, background: `${THEME.blue}12` }}><Plus size={14} />Vazifa</button>}
+        {/* vazifa qo'shish faqat shu yerda — kompyuter va telefonda bir xil (135-eskiz, A) */}
+        <button type="button" onClick={onJob} data-act="job" data-testid="side-add-job" title="O'lchov, montaj yoki boshqa vazifa" style={{ ...linkBtn, fontSize: 13, height: 28, padding: "0 10px", borderRadius: 8, background: `${THEME.blue}12` }}><Plus size={14} />Vazifa</button>
       </div>
       {tasks.map((t) => <TaskCards key={t.kind} t={t} />)}
       {jobsOpen.length > 0 && (
@@ -345,7 +344,7 @@ const LEAD_PANEL_CSS = () => `
   .uvix-lp-x { position: fixed; z-index: 202; left: 14px; top: 34px; width: 38px; height: 38px; border-radius: 50%; border: 0; background: ${THEME.blue}; color: #fff; cursor: pointer;
     display: grid; place-items: center; box-shadow: 0 4px 14px rgba(0,0,0,.25); opacity: 0; transition: opacity .2s; }
   .uvix-lp-x.is-in { opacity: 1; }
-  .uvix-lp.is-phone .uvix-lp-acts { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .uvix-lp.is-phone .uvix-lp-acts { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .uvix-lp.is-phone .uvix-lp-acts > * { justify-content: center; height: 40px !important; }
   .uvix-lp-ic { width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: ${THEME.muted}; display: grid; place-items: center; cursor: pointer; }
   .uvix-lp-ic:hover { background: ${THEME.hover}; color: ${THEME.text}; }

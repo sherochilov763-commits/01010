@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Droplet, Plus, Search, X } from "lucide-react";
 import { guessPaintItem, loadPaintItems } from "../../lib/paintStore.js";
 import { Button, Field, Modal, PaymentTypeSelector, getIconBtn, getInputStyle } from "../../components/ui.jsx";
@@ -8,7 +8,7 @@ import { LINE_META, lineColor, useLine } from "../../lib/lines.js";
 import { useExpenseRules } from "../../lib/expenseRules.js";
 
 /* ---------------- RASXOD FORMASI (faqat chiqim uchun) ---------------- */
-export function TransactionForm({ initial, preset, currentUser, categories, orders, employees, onAddCategory, onAddSubcategory, onClose, onSave }) {
+export function TransactionForm({ initial, preset, currentUser, categories, orders, employees, onAddCategory, onAddSubcategory, onClose, onSave, allowSplit = false }) {
   const catNames = categories ? Object.keys(categories) : [];
   // preset — boshqa joydan ochilganda boshlang'ich qiymatlar (bo'yoq ombori, ovozli yordamchi)
   const [date, setDate] = useState(initial?.date || preset?.date || todayStr());
@@ -41,6 +41,12 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
   const [showOrderSuggestions, setShowOrderSuggestions] = useState(false);
 
   const isBrak = category === "Brak";
+  // 137-eskiz: «Material» — qaysi buyurtma(lar) uchun (ixtiyoriy). Bo'lib yozilsa — har buyurtmaga alohida rasxod,
+  // qolgan qismi — umumiy (zaxiraga). Faqat yangi rasxodda (tahrirda — bitta yozuv).
+  const isMaterial = category === "Material";
+  const splitOn = allowSplit && !initial && isMaterial;
+  const [alloc, setAlloc] = useState([]); // [{ key, orderId, amountStr }]
+  const openOrders = useMemo(() => (orders || []).filter((o) => o && !o.deletedAt).slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 300), [orders]);
   const isPaint = category === "Kraska";
   // Oylik/avans: qaysi xodimniki. Xodim yo'nalishi rasxodga o'tadi; «Umumiy» xodim — bajargan ishi bo'yicha bo'linadi.
   const isStaff = category === "Xodimlar";
@@ -147,6 +153,22 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
       employeeId: isStaff && employeeId ? employeeId : undefined,
       ...(cleanPaint.length ? { paintLines: cleanPaint } : {}),
     };
+    if (splitOn) {
+      const parts = alloc.map((a) => ({ orderId: a.orderId, amount: parseInt(String(a.amountStr || "").replace(/\s/g, ""), 10) || 0 })).filter((a) => a.orderId || a.amount);
+      if (parts.length) {
+        if (parts.some((a) => !a.orderId)) return setError("Har qatorda buyurtmani tanlang");
+        if (parts.some((a) => a.amount <= 0)) return setError("Har buyurtmaga summani kiriting");
+        if (new Set(parts.map((a) => a.orderId)).size !== parts.length) return setError("Bitta buyurtma ikki marta tanlangan");
+        const used = parts.reduce((s2, a) => s2 + a.amount, 0);
+        if (used > amount) return setError(`Taqsimlangan summa (${fmt(used)}) jami summadan (${fmt(amount)}) ko'p`);
+        const list = parts.map((a) => {
+          const o = openOrders.find((x) => x.id === a.orderId);
+          return { ...tx, id: uid(), amount: a.amount, relatedOrderId: a.orderId, line: undefined, paidFrom: undefined, note: [tx.note, o ? `Buyurtma ${o.orderNumber}` : ""].filter(Boolean).join(" · ") };
+        });
+        if (amount - used > 0) list.push({ ...tx, id: uid(), amount: amount - used, note: [tx.note, "umumiy (zaxiraga)"].filter(Boolean).join(" · ") });
+        return onSave(list);
+      }
+    }
     onSave(tx);
   }
 
@@ -242,6 +264,38 @@ export function TransactionForm({ initial, preset, currentUser, categories, orde
             )}
           </Field>
         </div>
+        {splitOn && (() => {
+          const total = parseInt(String(amountStr || "").replace(/\s/g, ""), 10) || 0;
+          const used = alloc.reduce((s2, a) => s2 + (parseInt(String(a.amountStr || "").replace(/\s/g, ""), 10) || 0), 0);
+          const setRow = (key, patch) => setAlloc((cur) => cur.map((a) => (a.key === key ? { ...a, ...patch } : a)));
+          return (
+            <Field label="Qaysi buyurtma uchun? (ixtiyoriy)">
+              <div data-testid="tx-split" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {alloc.map((a) => (
+                  <div key={a.key} data-split-row="" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <select value={a.orderId} onChange={(e) => setRow(a.key, { orderId: e.target.value })} style={{ ...getInputStyle(), flex: 1, minWidth: 0 }} data-testid="split-order">
+                      <option value="">— Buyurtma tanlang</option>
+                      {openOrders.map((o) => <option key={o.id} value={o.id}>{o.orderNumber} · {o.customer}{o.title ? ` · ${o.title}` : ""}</option>)}
+                    </select>
+                    <input value={a.amountStr ? fmt(parseInt(String(a.amountStr).replace(/\s/g, ""), 10) || 0) : ""} inputMode="numeric" placeholder="Summa" data-testid="split-amount"
+                      onChange={(e) => setRow(a.key, { amountStr: e.target.value.replace(/[^\d]/g, "") })} style={{ ...getInputStyle(), width: 130, textAlign: "right" }} />
+                    <button type="button" aria-label="Olib tashlash" onClick={() => setAlloc((cur) => cur.filter((x) => x.key !== a.key))} style={{ ...getIconBtn(), flexShrink: 0 }}><X size={14} /></button>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" data-testid="split-add" onClick={() => setAlloc((cur) => [...cur, { key: uid(), orderId: "", amountStr: cur.length ? "" : String(Math.max(0, total - used) || "") }])}
+                    style={{ border: 0, background: "none", color: THEME.blue, fontWeight: 600, fontSize: 13, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "inherit" }}><Plus size={14} />{alloc.length ? "Yana buyurtma" : "Buyurtmaga bog'lash"}</button>
+                  {alloc.length > 0 && (
+                    <span data-testid="split-sum" style={{ fontSize: 12.5, fontWeight: 600, color: used > total ? THEME.rose : used === total ? THEME.green : THEME.muted }}>
+                      Taqsimlandi: {fmt(used)} / {fmt(total)}{used < total ? ` · qolgani ${fmt(total - used)} — umumiy` : ""}
+                    </span>
+                  )}
+                </div>
+                {alloc.length === 0 && <div style={{ fontSize: 12, color: THEME.muted }}>Bog'lanmasa — umumiy (zaxiraga) yoziladi. Bir nechta buyurtmaga bo'lib yozish mumkin.</div>}
+              </div>
+            </Field>
+          );
+        })()}
         {isBrak && (
           <Field label="Qaysi buyurtmaga tegishli?">
             <div style={{ position: "relative" }}>

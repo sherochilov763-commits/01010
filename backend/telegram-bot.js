@@ -49,13 +49,15 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
   let offset = 0, polling = false, stopped = false, lastToken = null;
   let health = { ok: null, problem: "", at: 0 }; // bot xabarlarni qabul qila olyaptimi (/start ishlashi uchun)
   let locHandler = null; // jonli lokatsiya (geo.js) — ish vaqtidagi kuzatuv
-  let msgHandler = null; // ovozli ish jurnali (voice-log.js): ovoz, matn va tugmalar
+  // Xabar/tugma ishlovchilari (ketma-ket; birinchi «true» qaytargani oladi): smeta tasdig'i (quotes.js), ovozli ish jurnali (voice-log.js)
+  const msgHandlers = [];
+  const runHandlers = async (m) => { for (const h of msgHandlers) { try { if (await h(m)) return true; } catch (e) { console.error("Bot ishlovchisi:", e.message); } } return false; };
   const empOfChat = (chatId) => { const all = links(); return Object.keys(all).find((k) => all[k].chatId === String(chatId)) || null; };
   async function handleUpdate(u) {
     if (u.callback_query) {
       const cq = u.callback_query;
       const chatId = String(cq.message?.chat?.id || cq.from?.id || "");
-      if (msgHandler && chatId && (await msgHandler({ empId: empOfChat(chatId), chatId, callback: cq }))) return;
+      if (chatId && (await runHandlers({ empId: empOfChat(chatId), chatId, callback: cq }))) return;
       await api("answerCallbackQuery", { callback_query_id: cq.id }).catch(() => {});
       return;
     }
@@ -78,7 +80,7 @@ module.exports = function registerStaffBot(app, { getStmt, upsertStmt, readEmplo
     if (!u.message) return;
     const text = String(msg.text || "").trim();
     const chatId = String(msg.chat.id);
-    if (msgHandler && !/^\/(start|stop)\b/.test(text) && (await msgHandler({ empId: empOfChat(chatId), chatId, message: msg }))) return;
+    if (!/^\/(start|stop)\b/.test(text) && (await runHandlers({ empId: empOfChat(chatId), chatId, message: msg }))) return;
     if (text.startsWith("/start")) {
       const code = text.split(/\s+/)[1] || "";
       const tokens = readJson("uvix:tgLinkTokens", {});
@@ -224,7 +226,7 @@ Bu siz bo'lmasangiz — darhol administratorga xabar bering.` }).catch(() => {})
     if (!r.ok) throw new Error(`Telegram fayl ${r.status}`);
     return Buffer.from(await r.arrayBuffer());
   }
-  return { onLocation: (fn) => { locHandler = fn; }, onMessage: (fn) => { msgHandler = fn; }, api: (method, body) => api(method, body), downloadFile, sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], health: () => (token() ? health : { ok: null, problem: "", at: 0 }), stop: () => { stopped = true; } };
+  return { onLocation: (fn) => { locHandler = fn; }, onMessage: (fn, first = false) => { if (first) msgHandlers.unshift(fn); else msgHandlers.push(fn); }, api: (method, body) => api(method, body), downloadFile, sendToEmployee, sendDocumentToEmployee, isLinked: (empId) => !!links()[empId], health: () => (token() ? health : { ok: null, problem: "", at: 0 }), stop: () => { stopped = true; } };
 };
 
 // Birinchi kirishda «Telegram'ni ulang» oynasi ko'rsatilsinmi.

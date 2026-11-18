@@ -1,7 +1,6 @@
 // voice.js — ovozli yordamchi javobini (server: /api/voice/command) CRM formalariga moslash.
 // Bu yerda faqat sof funksiyalar (testlanadi): mijoz/xodim/buyurtmani topish va formaga beriladigan boshlang'ich qiymatlar.
 import { custKey } from "./customers.js";
-import { computeItem } from "./production.js";
 import { orderDebt } from "./finance.js";
 
 const rid = () => Math.random().toString(36).slice(2, 10);
@@ -44,22 +43,7 @@ export function canonicalCustomer(said, customers) {
   return m.length === 1 && m[0].score >= 2 ? m[0].item.name : said || "";
 }
 
-// ---- Buyurtma (smeta) ----
-export function quoteItems(items) {
-  return (items || []).map((it) => {
-    const unit = it.unit === "m2" || it.unit === "pcs" ? it.unit : "lump";
-    const qty = unit === "lump" ? 1 : Math.max(1, Math.round(it.qty || 1));
-    const area = unit === "m2" ? (it.w || 0) * (it.h || 0) * qty : 0;
-    const units = unit === "m2" ? area : qty;
-    // Narx aytilmasa, lekin jami aytilsa — narxni jamidan chiqaramiz (qo'lda summa sifatida)
-    let price = it.price || 0;
-    let manual = false;
-    if (!price && it.total) { price = units > 0 ? Math.round(it.total / units) : it.total; manual = unit !== "lump" && Math.round(price * units) !== it.total; }
-    const base = { id: rid(), title: it.title || "", material: it.material || "", priceId: null, unit, w: unit === "m2" ? it.w : 0, h: unit === "m2" ? it.h : 0, du: "mm", qty, price, minArea: 0, cur: "uzs" };
-    const c = computeItem(manual ? { ...base, manualTotal: true, manualValue: it.total } : base);
-    return c.total > 0 ? c : null;
-  }).filter(Boolean);
-}
+// ---- Buyurtma (smeta) — lib/quoteLegacy.js: voiceItemsToRows ----
 
 // ---- To'lov: qaysi buyurtmaga ----
 // Natija: { orders: [...], exact } — bitta bo'lsa to'g'ridan-to'g'ri ochiladi, ko'p bo'lsa tanlash

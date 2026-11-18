@@ -117,19 +117,24 @@ test("brauzer: to'lov uchun buyurtma — raqam, yagona qarzdor, summa qarzga ten
   assert.deepEqual(V.findPaymentOrders({ customer: "Noma'lum" }, orders), { orders: [], exact: false });
 });
 
-test("brauzer: smeta pozitsiyalari — kalkulyator bilan bir xil hisob", () => {
-  const items = V.quoteItems([
+test("brauzer: ovozdan smeta qatorlari — Smeta / Buyurtma hisobi bilan bir xil", async () => {
+  const { voiceItemsToRows } = await import("../../frontend/src/lib/quoteLegacy.js");
+  const { computeQuote } = await import("../../frontend/src/lib/quoteCalc.js");
+  const rows = voiceItemsToRows([
     { title: "Banner", unit: "m2", w: 2, h: 1, qty: 1, price: 80000 },
     { title: "Banner 2", unit: "m2", w: 3, h: 1, qty: 1, total: 250000 },
     { title: "Vizitka", unit: "pcs", qty: 500, price: 300 },
     { title: "Montaj", unit: "lump", qty: 1, total: 150000 },
     { title: "Narxsiz", unit: "pcs", qty: 2 },
   ]);
-  assert.equal(items.length, 4, "summasiz pozitsiya qo'shilmaydi");
-  assert.deepEqual(items.map((i) => i.total), [160000, 250000, 150000, 150000]);
-  assert.equal(items[0].area, 2);
-  assert.equal(items[1].manualTotal, true, "jami narxga bo'linmasa — «qo'lda» summa");
-  assert.equal(items[3].unit, "lump");
+  assert.equal(rows.length, 4, "summasiz pozitsiya qo'shilmaydi");
+  const r = computeQuote(rows, 0);
+  assert.equal(r.error, undefined);
+  assert.deepEqual(r.items.map((i) => i.total), [160000, 250000, 150000, 150000]);
+  assert.equal(r.items[0].area, 2);
+  assert.deepEqual(rows[0].parts, [{ w: "2000", h: "1000", n: "1" }]);
+  assert.equal(rows[1].calc, "lump", "jami aytilgan bo'lsa — kelishilgan summa");
+  assert.equal(rows[3].calc, "lump");
 });
 
 test("brauzer: rasxod, vazifa va lid formalariga boshlang'ich qiymatlar", () => {

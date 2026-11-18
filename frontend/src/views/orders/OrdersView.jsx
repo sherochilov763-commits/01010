@@ -17,7 +17,6 @@ import { ApprovalRequestModal } from "../../components/ApprovalRequestModal.jsx"
 import { InvoiceModal } from "../../components/InvoiceModal.jsx";
 import { OrderPanel } from "./OrderPanel.jsx";
 import { Avatar } from "../../components/ui.jsx";
-import { QuoteModal } from "../quotes/QuoteModal.jsx";
 import { BatchPayModal } from "./BatchPayModal.jsx";
 import { PROD_LABEL, PROD_STAGES, legacyLeadIndex, orderStage, prodColors, stageHint } from "../../lib/production.js";
 import { assignOrderTask, setOrderStage } from "../../storage.js";
@@ -108,7 +107,7 @@ function PayBar({ pct, left, wide }) {
 /* ---------------- ORDERS VIEW ---------------- */
 const LabelModal = lazy(() => import("./LabelModal.jsx"));
 
-export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, pendingLead, onPendingLeadHandled, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
+export function OrdersView({ onNewOrder, orders, allOrders, transactions, currentUser, isAdmin, categories, employees, settings, initialFilter, onAddSubcategory, onSaveOrder, onImportOrders, onDeleteOrder, onAddPayment, onDeletePayment, onUploadPhotos, onDeletePhoto, onServerChange, showToast, leads, customerProfiles, onOpenChat }) {
   // Rollar va huquqlar: o'chirish — «Ha» (so'rovsiz) / «So'rov» (rahbar tasdiqlaydi) / «Yo'q»
   const { can, scope } = usePerms();
   const directDel = isAdmin || can("orders.delete", "direct");
@@ -116,7 +115,6 @@ export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, 
   const canDel = (o) => !!o && (isAdmin || (can("orders.delete") && (scope("orders.edit") === "all" || scope("orders.edit") === "line" || (scope("orders.edit") === "own" && o.createdBy === currentUser.name))));
   const isMobile = useIsMobile();
   const [modal, setModal] = useState(null); // {edit} — faqat tahrirlash (yangi buyurtma smeta orqali)
-  const [quote, setQuote] = useState(null); // {lead?} — «Yangi buyurtma» (smeta → to'lov → buyurtmalar)
   const [viewMode, setViewModeState] = useState(readView);
   const setViewMode = (v) => setViewModeState(v);
   const [stageF, setStageF] = useState(null);
@@ -148,13 +146,6 @@ export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, 
   const legacyIdx = useMemo(() => legacyLeadIndex(leads), [leads]);
   const empById = useMemo(() => new Map((employees || []).map((e) => [e.id, e])), [employees]);
   const stageOf = (o) => orderStage(o, legacyIdx);
-  // Pastki menyudagi "+" tugmasidan kelinganda — formani darhol ochamiz
-  useEffect(() => {
-    if (!quickAddNonce) return;
-    setQuote(quickAddPrefill ? { prefill: quickAddPrefill } : {});
-    onQuickAddHandled?.();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quickAddNonce]);
   const [confirmDel, setConfirmDel] = useState(null);
   const [paymentsFor, setPaymentsFor] = useState(null); // order object
   const [labelFor, setLabelFor] = useState(null); // QR yorliq oynasi
@@ -180,9 +171,6 @@ export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, 
     }
   }, [initialFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (pendingLead) setQuote({ lead: pendingLead });
-  }, [pendingLead]);
   const [onlyDebt, setOnlyDebt] = useState(!!initialFilter?.onlyDebt);
   // 126-eskiz: Buyurtmalar — oyma-oy jadval. null = barcha oylar (boshqa bo'limdan filtr bilan kelganda ham)
   const curMonth = todayStr().slice(0, 7);
@@ -603,7 +591,7 @@ export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {viewToggle}
             <div style={{ flex: 1 }} />
-            <Button onClick={() => setQuote({})} data-testid="new-order"><Plus size={15} /> Yangi</Button>
+            <Button onClick={() => onNewOrder?.()} data-testid="new-order"><Plus size={15} /> Yangi</Button>
           </div>
           {toolsOpen && (
             <Card style={{ padding: 8, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -634,7 +622,7 @@ export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, 
           <Button variant="ghost" onClick={downloadImportTemplate} title="Excel namunasini yuklab olish"><FileBarChart2 size={14} /> Namuna</Button>
           <Button variant="ghost" onClick={() => fileInputRef.current?.click()}><Upload size={14} /> Excel yuklash</Button>
           <ExportMenu onExport={exportExcel} disabled={list.length === 0} />
-          {(isAdmin || can("orders.create")) && <Button onClick={() => setQuote({})} data-testid="new-order"><Plus size={15} /> Yangi buyurtma</Button>}
+          {(isAdmin || can("orders.create")) && <Button onClick={() => onNewOrder?.()} data-testid="new-order"><Plus size={15} /> Yangi buyurtma</Button>}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }} role="group" aria-label="Filtrlar">
           {statusChips.map((c) => chip(c.on, c.set, <>{c.l} <b style={{ fontWeight: 600, opacity: 0.75 }}>{c.n}</b></>, c.k))}
@@ -856,18 +844,6 @@ export function OrdersView({ quickAddNonce, quickAddPrefill, onQuickAddHandled, 
         />
       )}
       {invoiceFor && <InvoiceModal order={invoiceFor} customer={invoiceCustomer} isAdmin={isAdmin} onClose={() => setInvoiceFor(null)} />}
-      {quote && (
-        <QuoteModal lead={quote.lead || null} prefill={quote.prefill || null} customers={customerList} employees={employees} allOrders={allOrders || orders} currentUser={currentUser} isAdmin={isAdmin}
-          onClose={() => { setQuote(null); if (quote.lead) onPendingLeadHandled?.(); }}
-          onSaved={(lead) => { setQuote(null); if (quote.lead) onPendingLeadHandled?.(); onServerChange?.({ lead }); showToast?.(`Smeta ${lead.quote?.no || ""} saqlandi — CRM'da «${lead.customer}»`); }}
-          onConverted={(r) => {
-            setQuote(null); if (quote.lead) onPendingLeadHandled?.();
-            onServerChange?.({ lead: r.lead, orders: r.orders });
-            setStageF(null); setOnlyDebt(false); setOnlyPaid(false); setSearch("");
-            if (!isMobile && r.orders[0]) setSelectedId(r.orders[0].id);
-            showToast?.(`${r.orders.length} ta buyurtma yaratildi: ${r.orders.map((o) => o.orderNumber).join(", ")}`);
-          }} />
-      )}
       {batchFor && (
         <BatchPayModal customerName={batchFor.name} orders={batchFor.orders} onClose={() => setBatchFor(null)}
           onDone={(r) => { setBatchFor(null); onServerChange?.({ orders: r.orders }); showToast?.(`To'lov ${r.orders.length} ta buyurtmaga taqsimlandi`); }} />

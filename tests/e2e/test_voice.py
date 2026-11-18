@@ -122,7 +122,7 @@ async def main():
         tot = await pg.locator("[data-testid=quote-total]").inner_text() if await pg.locator("[data-testid=quote-total]").count() else ""
         ok("buyurtma: jami 310 000", "310 000" in tot, tot)
         await pg.screenshot(path=S + "voice_order.png")
-        await close_modal(pg)
+        await pg.locator("[data-testid=qs-close]").first.click(); await pg.wait_for_timeout(500)
 
         # 6) rasxod → forma: Material / Plastik, 1 200 000, izoh
         await open_text(pg); await say(pg, "rasxod plyonkaga 1,2 million kartadan")

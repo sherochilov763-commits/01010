@@ -1,18 +1,23 @@
-// quotes.js — Smeta (hisob-kitob) → to'lov → buyurtmalar.
+// quotes.js — Smeta / Buyurtma (138–140-eskizlar): bitta oyna, bitta buyurtma.
 //
-//  • Narxlar ro'yxati va avans foizi: uvix:sales = { advancePct, prices: [{ id, material, unit, price, minArea, inkUsd }] }
-//  • Smeta lid ichida saqlanadi: lead.quote = { no: "S-014", items, status: "open"|"converted", total, ... }
-//    Lid smetasi buyurtmaga aylangan bo'lsa, yangi smeta shu mijoz uchun YANGI bitim (lid) bo'lib ochiladi.
-//  • «Buyurtmaga aylantirish» — bitta amalda: har pozitsiya alohida buyurtma (raqamlar ketma-ket, bitta guruh),
-//    to'lov ular orasida taqsimlanadi, dizayner/pechatchi vazifalari yoziladi, lid bosqichi yangilanadi.
-//  • Buyurtma holati (Navbatda / Dizaynda / Pechatda / Tayyor / Topshirildi) va vazifa tayinlash.
-//  • Umumiy to'lov — bitta to'lov mijozning bir nechta buyurtmasiga bo'linadi.
+//  • Hisob — quote-calc.js (brauzerdagi frontend/src/lib/quoteCalc.js bilan aynan bir xil): pozitsiyalar
+//    Material · Pechat · Ish · Montaj · Dizayn; m² (detallar mm da) · dona · kelishilgan summa; narx so'm yoki $.
+//    Summa serverda qayta hisoblanadi — brauzer yuborgan summaga ishonilmaydi.
+//  • Smeta lid ichida: lead.quote = { v: 2, no: "S-014", items, total, totalUsd, rate, rateSrc, subcategory, status }.
+//    Buyurtmaga aylangan lidda yangi smeta — shu mijoz uchun YANGI bitim (lid).
+//  • «Buyurtma yaratish» — smeta BITTA buyurtma bo'ladi (pozitsiyalar uning ichida, order.items).
+//    Avans kamida Sozlamalardagi foiz; kam bo'lsa — rahbar o'zi ochadi (force), xodim esa rahbarga so'rov yuboradi
+//    (uvix:orderRequests, Telegram'da «Tasdiqlash / Rad etish» tugmalari) — tasdiqlansa buyurtma o'zi ochiladi.
+//  • Bo'yoq tannarxi buyurtmaga yozilmaydi (qatlamlar har xil) — hisobotda davrdagi «Kraska» rasxodlari olinadi.
+//  • Buyurtma holati (Navbatda / Dizaynda / Pechatda / Tayyor / Topshirildi), vazifa tayinlash, umumiy to'lov.
 // Hammasi serverda bajariladi: yarim-yorti saqlanib qolmaydi, raqamlar takrorlanmaydi.
 const { PROD_STAGES, PROD_LABEL, setStage, syncLeadStage, allocate } = require("./production");
+const QC = require("./quote-calc");
 
 const KEY_CFG = "uvix:sales";
 const KEY_SEQ = "uvix:quoteSeq";
-const DEFAULT_SALES = { advancePct: 50, prices: [] };
+const KEY_REQ = "uvix:orderRequests";
+const DEFAULT_SALES = { advancePct: 50 };
 const PAY_TYPES = ["naqd", "karta", "bank"];
 const TZ = "Asia/Tashkent";
 
@@ -21,16 +26,7 @@ const str = (v, n) => (typeof v === "string" ? v.trim().slice(0, n) : "");
 const num = (v) => { const n = Number(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) ? n : NaN; };
 const round2 = (n) => Math.round(n * 100) / 100;
 const money = (n) => `${Math.round(n || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} so'm`;
-const dec = (n) => String(round2(n)).replace(".", ",");
-const round3 = (n) => Math.round(n * 1000) / 1000;
-const DIM_UNITS = ["mm", "sm", "m"];
-// O'lcham pozitsiya birligida: 2000×1600 mm · 200×160 sm · 2×1,6 m (eski pozitsiyalar — m)
-function sizeText(it) {
-  if (!(it.w && it.h)) return "";
-  const du = DIM_UNITS.includes(it.du) ? it.du : "m";
-  const f = (v) => (du === "mm" ? String(Math.round(v * 1000)) : du === "sm" ? String(Math.round(v * 1000) / 10).replace(".", ",") : dec(v));
-  return `${f(it.w)}×${f(it.h)} ${du}`;
-}
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const paidOf = (o) => (o.payments || []).filter((p) => !p.deletedAt).reduce((s, p) => s + (p.amount || 0), 0);
 const dueOf = (o) => Math.max(0, (o.agreementUzs || 0) - paidOf(o));
 class Bad extends Error { constructor(msg, code = 400, extra) { super(msg); this.status = code; this.extra = extra; } }
@@ -39,74 +35,17 @@ function localDate(d) {
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d).map((x) => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day}`;
 }
-
-function cleanPrices(list) {
-  if (!Array.isArray(list)) return [];
-  return list.slice(0, 200).map((p) => ({
-    id: str(p?.id, 40) || rid(),
-    material: str(p?.material, 60),
-    unit: p?.unit === "pcs" ? "pcs" : "m2",
-    cur: p?.cur === "usd" ? "usd" : "uzs",
-    price: p?.cur === "usd" ? Math.max(0, Math.min(1e6, round2(num(p?.price) || 0))) : Math.max(0, Math.min(1e10, Math.round(num(p?.price) || 0))),
-    minArea: Math.max(0, Math.min(100, round2(num(p?.minArea) || 0))),
-    inkUsd: Math.max(0, Math.min(1000, round2(num(p?.inkUsd) || 0))),
-  })).filter((p) => p.material);
+// Smeta hisobi (xato bo'lsa — 400)
+function calcOf(b) {
+  const r = QC.computeQuote(b?.items, b?.rate);
+  if (r.error) throw new Bad(r.error);
+  return r;
 }
-
-// Smeta pozitsiyasi — summa va maydon serverda qayta hisoblanadi (brauzerga ishonilmaydi)
-function cleanItem(raw, prices) {
-  if (!raw || typeof raw !== "object") throw new Bad("Pozitsiya noto'g'ri");
-  const title = str(raw.title, 80);
-  const material = str(raw.material, 60);
-  const p = prices.find((x) => x.id === raw.priceId) || prices.find((x) => x.material === material) || null;
-  // Birlik: m2 — o'lcham bo'yicha, pcs — dona × narx, lump — umumiy (erkin) summa
-  const unit = raw.unit === "lump" ? "lump" : raw.unit === "pcs" ? "pcs" : raw.unit === "m2" ? "m2" : p?.unit || "m2";
-  const w = unit === "lump" ? 0 : num(raw.w), h = unit === "lump" ? 0 : num(raw.h);
-  const qty = unit === "lump" ? 1 : Math.round(num(raw.qty) || 1);
-  const label = title || material || "Pozitsiya";
-  if (!(qty >= 1 && qty <= 100000)) throw new Bad(`«${label}»: dona soni noto'g'ri`);
-  const hasDims = w > 0 && h > 0;
-  if (unit === "m2" && !(hasDims && w <= 100 && h <= 100)) throw new Bad(`«${label}»: eni va bo'yini kiriting`);
-  if (hasDims && (w > 100 || h > 100)) throw new Bad(`«${label}»: o'lcham juda katta`);
-  // Narx dollarda kiritilgan bo'lsa: priceUsd × kurs (kurs pozitsiyada saqlanadi — keyin o'zgarmaydi)
-  const isUsd = raw.cur === "usd";
-  let price, priceUsd = 0, rate = 0;
-  if (isUsd) {
-    priceUsd = round2(num(raw.priceUsd));
-    rate = round2(num(raw.rate));
-    if (!(priceUsd > 0 && priceUsd <= 1e6)) throw new Bad(`«${label}»: dollar narxi noto'g'ri`);
-    if (!(rate >= 1000 && rate <= 1e6)) throw new Bad(`«${label}»: dollar kursi noto'g'ri`);
-    price = Math.round(priceUsd * rate);
-  } else {
-    price = Math.round(num(raw.price));
-  }
-  if (!(price >= 0 && price <= 1e10)) throw new Bad(`«${label}»: narx noto'g'ri`);
-  const ownMin = raw.minArea === undefined || raw.minArea === null || raw.minArea === "" ? NaN : num(raw.minArea);
-  const minArea = Math.max(0, Math.min(100, round2(Number.isFinite(ownMin) ? ownMin : (p?.minArea || 0))));
-  const rawArea = hasDims ? round2(w * h * qty) : 0;
-  const area = unit === "m2" ? Math.max(rawArea, minArea) : rawArea;
-  const units = unit === "m2" ? area : unit === "lump" ? 1 : qty;
-  const calcTotal = isUsd ? Math.round(units * priceUsd * rate) : Math.round(units * price);
-  // Summani qo'lda o'zgartirish (yaxlitlash, chegirma) — hisoblangan summa ham saqlanadi
-  const manual = !!raw.manualTotal && unit !== "lump" && num(raw.total) > 0;
-  const total = manual ? Math.round(num(raw.total)) : calcTotal;
-  if (manual && !(total <= 1e10)) throw new Bad(`«${label}»: summa noto'g'ri`);
-  if (!(total > 0)) throw new Bad(`«${label}»: summa 0 bo'lmasligi kerak`);
-  const out = {
-    id: str(raw.id, 40) || rid(), title, material, priceId: p?.id || null, unit,
-    w: hasDims ? round3(w) : 0, h: hasDims ? round3(h) : 0, du: DIM_UNITS.includes(raw.du) ? raw.du : "m", qty, price, minArea, rawArea, area, total,
-    inkUsd: p?.inkUsd || 0, note: str(raw.note, 200),
-  };
-  if (isUsd) Object.assign(out, { cur: "usd", priceUsd, rate, totalUsd: manual ? round2(total / rate) : round2(units * priceUsd) });
-  if (manual) Object.assign(out, { manualTotal: true, calcTotal });
-  return out;
-}
-function describeItem(it) {
-  const size = sizeText(it);
-  const kurs = it.cur === "usd" ? `kurs ${dec(it.rate).replace(/\B(?=(\d{3})+(?!\d))/, " ")}` : "";
-  if (it.unit === "lump") return [it.material, it.cur === "usd" ? `${dec(it.priceUsd)} $ (${kurs})` : ""].filter(Boolean).join(" · ");
-  const usd = it.cur === "usd" ? `${dec(it.priceUsd)} $/${it.unit === "pcs" ? "dona" : "m²"} (${kurs})` : "";
-  return [it.material, size, it.qty > 1 ? `${it.qty} dona` : "", it.area ? `${dec(it.area)} m²` : "", usd, it.manualTotal ? "summa qo'lda" : ""].filter(Boolean).join(" · ");
+// To'lov qatorlari: [{ amount, paymentType }]
+function payLines(b) {
+  return (Array.isArray(b?.payments) ? b.payments : []).slice(0, 10)
+    .map((l) => ({ amount: Math.round(num(l?.amount) || 0), paymentType: PAY_TYPES.includes(l?.paymentType) ? l.paymentType : "naqd" }))
+    .filter((l) => l.amount > 0);
 }
 
 // Bitta to'lov (bir nechta usulda bo'lishi mumkin) → buyurtmalar bo'yicha qatorlar
@@ -127,11 +66,11 @@ function spreadPayments(perOrder, orderIds, lines) {
   return rows;
 }
 
-module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrdersWritten = () => {}, onOrderReady = () => {}, now = () => new Date(), getFx = null, onSalesChanged = () => {} }) {
+module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmployees, requireAuth, requireAdmin, requireStaff, onOrdersWritten = () => {}, onOrderReady = () => {}, now = () => new Date(), getFx = null, onSalesChanged = () => {}, bot = null, emit = () => {} }) {
   const readJson = (k, fb) => { try { const r = getStmt.get(k); return r ? JSON.parse(r.value) : fb; } catch { return fb; } };
   const raw = (k) => { const r = getStmt.get(k); return r ? r.value : null; };
   const write = (k, v) => { const s = JSON.stringify(v); upsertStmt.run(k, s); return s; };
-  const salesConfig = () => { const c = readJson(KEY_CFG, {}) || {}; return { ...DEFAULT_SALES, ...c, prices: cleanPrices(c.prices) }; };
+  const salesConfig = () => { const c = readJson(KEY_CFG, {}) || {}; const p = Math.round(Number(c.advancePct)); return { advancePct: p >= 0 && p <= 100 ? p : DEFAULT_SALES.advancePct }; };
   const isAdmin = (u) => u?.role === "admin";
 
   function nextQuoteNo() {
@@ -162,16 +101,18 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
       createdBy: user.name, createdAt: at, stageAt: at, fromLeadId: lead.id,
     };
   }
-  function saveQuoteOn(lead, items, b, user, at) {
-    const total = items.reduce((s, i) => s + i.total, 0);
-    if (!items.length) { delete lead.quote; lead.updatedAt = at; return; }
+  // Smeta lidga yoziladi (v2). Bo'sh ro'yxat — smeta o'chiriladi.
+  function saveQuoteOn(lead, calc, b, user, at) {
+    if (!calc) { delete lead.quote; lead.updatedAt = at; return; }
     lead.quote = {
-      no: lead.quote?.no || nextQuoteNo(), items, total, status: "open",
-      subcategory: b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT",
-      createdAt: lead.quote?.createdAt || at, createdBy: lead.quote?.createdBy || user.name, updatedAt: at,
+      v: 2, no: lead.quote?.no || nextQuoteNo(), items: calc.items, total: calc.total, totalUsd: calc.totalUsd,
+      rate: calc.usd ? calc.rate : 0, rateSrc: calc.usd ? (b.rateSrc === "manual" ? "manual" : "cbu") : undefined, rateAt: calc.usd ? at : undefined,
+      status: "open", subcategory: b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT",
+      createdAt: lead.quote?.createdAt || at, createdBy: lead.quote?.createdBy || user.name, updatedAt: at, updatedBy: user.name,
+      ...(lead.quote?.request?.status === "pending" ? { request: lead.quote.request } : {}),
     };
-    lead.estimatedValue = total;
-    if (!lead.jobTitle) lead.jobTitle = items.map((i) => i.title || i.material).filter(Boolean).join(", ").slice(0, 80);
+    lead.estimatedValue = calc.total;
+    if (!lead.jobTitle) lead.jobTitle = calc.items.map((i) => i.name || QC.KIND_LABEL[i.kind]).filter(Boolean).join(", ").slice(0, 80);
     if (lead.stage === "new") { lead.stage = "negotiation"; lead.stageAt = at; }
     lead.updatedAt = at;
   }
@@ -199,8 +140,7 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     return lead || null;
   }
 
-  // ---------- Narxlar ro'yxati ----------
-  // Kurs (fx) — kalkulyatorda dollar narxini so'mga o'girish uchun
+  // ---------- Sozlama: avans foizi; dollar kursi (Markaziy bank yoki qo'lda) ----------
   const fxInfo = async () => {
     if (getFx) { try { return await getFx(); } catch (e) { /* pastdagi zaxira */ } }
     const s = readJson("uvix:settings", {}) || {};
@@ -209,73 +149,63 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
   };
   app.get("/api/sales/config", requireAuth, requireStaff, async (req, res) => res.json({ config: salesConfig(), fx: await fxInfo() }));
   app.put("/api/sales/config", requireAuth, requireAdmin, async (req, res) => {
-    const b = req.body || {};
     const cur = salesConfig();
-    const pct = Math.round(num(b.advancePct));
-    const next = { advancePct: pct >= 0 && pct <= 100 ? pct : cur.advancePct, prices: Array.isArray(b.prices) ? cleanPrices(b.prices) : cur.prices };
+    const pct = Math.round(num(req.body?.advancePct));
+    const next = { advancePct: pct >= 0 && pct <= 100 ? pct : cur.advancePct };
     write(KEY_CFG, next);
     onSalesChanged(req.user?.name, cur, next);
     res.json({ config: next, fx: await fxInfo() });
   });
 
   // ---------- Smetani saqlash ----------
-  // Mavjud lid (chat yoki CRM)
+  // Mavjud lid (CRM, chat). Bo'sh ro'yxat — smeta o'chadi.
   app.put("/api/quotes/:leadId", requireAuth, requireStaff, (req, res) => send(res, () => {
     const b = req.body || {};
-    const { prices } = salesConfig();
-    if (!Array.isArray(b.items) || b.items.length > 30) throw new Bad("Pozitsiyalar ro'yxati noto'g'ri");
-    const items = b.items.map((i) => cleanItem(i, prices));
+    const calc = Array.isArray(b.items) && b.items.length ? calcOf(b) : null;
     const leads = readJson("uvix:leads", []);
     let lead = Array.isArray(leads) ? leads.find((l) => l && l.id === req.params.leadId && !l.deletedAt) : null;
     if (!lead || !leadOk(req, lead)) throw new Bad("Lid topilmadi", 404);
+    if (lead.quote?.request?.status === "pending") throw new Bad("Smeta rahbar tasdig'ini kutmoqda — o'zgartirib bo'lmaydi", 409);
     const at = now().toISOString();
     let created = false;
     if (lead.quote?.status === "converted") {
-      if (!items.length) return res.json({ lead });
+      if (!calc) return res.json({ lead });
       lead = newDealFrom(lead, req.user, at);
       leads.unshift(lead);
       created = true;
     }
-    saveQuoteOn(lead, items, b, req.user, at);
+    saveQuoteOn(lead, calc, { ...b, subcategory: req.lineScope || b.subcategory }, req.user, at);
     write("uvix:leads", leads);
-    if (created) audit(req.user.name, `Yangi bitim (smeta ${lead.quote.no}): ${lead.customer}`, at);
+    audit(req.user.name, created ? `Yangi bitim (smeta ${lead.quote.no}): ${lead.customer}` : calc ? `Smeta ${lead.quote.no} saqlandi: ${lead.customer} (${money(calc.total)})` : `Smeta o'chirildi: ${lead.customer}`, at);
     res.json({ lead, created });
   }));
-  // Ustaxonaga kelgan / telefon qilgan mijoz — smeta yangi lid sifatida saqlanadi
+  // Lidsiz mijoz (ustaxonaga kelgan, telefon qilgan) — smeta yangi lid bo'lib saqlanadi
   app.post("/api/quotes", requireAuth, requireStaff, (req, res) => send(res, () => {
     const b = req.body || {};
-    const { prices } = salesConfig();
     const customer = str(b.customer, 120);
     if (!customer) throw new Bad("Mijoz nomini kiriting");
-    if (!Array.isArray(b.items) || !b.items.length || b.items.length > 30) throw new Bad("Smetaga kamida bitta pozitsiya qo'shing");
-    const items = b.items.map((i) => cleanItem(i, prices));
+    const calc = calcOf(b);
     const at = now().toISOString();
-    const lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager: str(b.manager, 80) || req.user.name, notes: str(b.notes, 500), stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at, line: req.lineScope || (b.line === "UVONYX" ? "UVONYX" : "UVIXPRINT") };
-    saveQuoteOn(lead, items, b, req.user, at);
+    const line = req.lineScope || (b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+    const lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager: str(b.manager, 80) || req.user.name, notes: "", stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at, line };
+    saveQuoteOn(lead, calc, { ...b, subcategory: line }, req.user, at);
     const leads = readJson("uvix:leads", []);
     write("uvix:leads", [lead, ...(Array.isArray(leads) ? leads : [])]);
-    audit(req.user.name, `Smeta ${lead.quote.no} saqlandi: ${customer} (${money(lead.quote.total)})`, at);
+    audit(req.user.name, `Smeta ${lead.quote.no} saqlandi: ${customer} (${money(calc.total)})`, at);
     res.json({ lead });
   }));
 
-  // ---------- Buyurtmaga aylantirish ----------
-  app.post("/api/quotes/convert", requireAuth, requireStaff, (req, res) => send(res, () => {
-    const b = req.body || {};
-    if (req.can && (!req.can("crm.edit") || !req.can("orders.create"))) { const e = new Bad("Buyurtma yaratish uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi"); e.status = 403; throw e; }
+  // ---------- Buyurtma yaratish (smeta → BITTA buyurtma) ----------
+  // user — kim yaratyapti (tasdiqlangan so'rovda — so'rov yuborgan xodim); scope — uning yo'nalishi
+  function createOrder(b, user, { scope = null, force = false, approvedBy = null } = {}) {
     const cfg = salesConfig();
-    if (!Array.isArray(b.items) || !b.items.length) throw new Bad("Smetaga kamida bitta pozitsiya qo'shing");
-    if (b.items.length > 30) throw new Bad("Bitta smetada ko'pi bilan 30 ta pozitsiya");
-    const items = b.items.map((i) => cleanItem(i, cfg.prices));
-    const total = items.reduce((s, i) => s + i.total, 0);
-
-    const lines = (Array.isArray(b.payments) ? b.payments : []).slice(0, 10)
-      .map((l) => ({ amount: Math.round(num(l?.amount) || 0), paymentType: PAY_TYPES.includes(l?.paymentType) ? l.paymentType : "naqd" }))
-      .filter((l) => l.amount > 0);
+    const calc = calcOf(b);
+    const total = calc.total;
+    const lines = payLines(b);
     const paid = lines.reduce((s, l) => s + l.amount, 0);
     if (paid > total) throw new Bad(`To'lov (${money(paid)}) smeta summasidan (${money(total)}) ko'p`);
     const need = Math.ceil((total * (cfg.advancePct || 0)) / 100);
-    const force = !!b.force && isAdmin(req.user);
-    if (paid < need && !force) throw new Bad(`Avans kamida ${money(need)} (${cfg.advancePct}%) bo'lishi kerak`, 409, { error: "advance_required", need });
+    if (paid < need && !force) throw new Bad(`Avans kamida ${money(need)} (${cfg.advancePct}%) bo'lishi kerak`, 409, { error: "advance_required", need, pct: cfg.advancePct });
 
     const leads = readJson("uvix:leads", []);
     const leadList = Array.isArray(leads) ? leads : [];
@@ -283,99 +213,175 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
     let lead = null;
     if (b.leadId) {
       lead = leadList.find((l) => l && l.id === b.leadId && !l.deletedAt);
-      if (!lead || !leadOk(req, lead)) throw new Bad("Lid topilmadi", 404);
-      if (lead.quote?.status === "converted") { lead = newDealFrom(lead, req.user, at); leadList.unshift(lead); }
+      if (!lead || (scope && lineOfLead(lead) !== scope)) throw new Bad("Lid topilmadi", 404);
+      if (lead.quote?.status === "converted") { lead = newDealFrom(lead, user, at); leadList.unshift(lead); }
     }
     const customer = str(lead?.customer || b.customer, 120);
     if (!customer) throw new Bad("Mijoz nomini kiriting");
-    const manager = str(b.manager, 80) || lead?.manager || req.user.name;
-    const subcategory = req.lineScope || (b.subcategory === "UVONYX" ? "UVONYX" : b.subcategory === "UVIXPRINT" ? "UVIXPRINT" : lead ? lineOfLead(lead) : "UVIXPRINT");
+    const manager = str(b.manager, 80) || lead?.manager || user.name;
+    const subcategory = scope || (b.subcategory === "UVONYX" ? "UVONYX" : b.subcategory === "UVIXPRINT" ? "UVIXPRINT" : lead ? lineOfLead(lead) : "UVIXPRINT");
     const date = /^\d{4}-\d{2}-\d{2}$/.test(b.date || "") ? b.date : localDate(now());
-
-    // Vazifalarni oldindan tekshiramiz (xato bo'lsa hech narsa yozilmaydi)
-    const emps = new Map(readEmployees().map((e) => [e.id, e]));
-    const taskOf = (it) => {
-      const t = (b.tasks && b.tasks[it.id]) || {};
-      const mode = ["design", "print", "none"].includes(t.mode) ? t.mode : "none";
-      const label = it.title || it.material;
-      if (mode === "design") {
-        const d = emps.get(t.assigneeId);
-        if (!d || d.role !== "designer") throw new Bad(`«${label}»: dizaynerni tanlang`);
-      }
-      const printer = t.printerId ? emps.get(t.printerId) : null;
-      if (t.printerId && (!printer || printer.role !== "printer")) throw new Bad(`«${label}»: pechatchi topilmadi`);
-      return { mode, designerId: mode === "design" ? t.assigneeId : null, printerId: printer?.id || null };
-    };
-    const tasks = items.map(taskOf);
-
     if (!lead) {
-      lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager, notes: "", stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at, line: subcategory };
+      lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager, notes: "", stage: "negotiation", orderId: null, createdBy: user.name, createdAt: at, stageAt: at, line: subcategory };
       leadList.unshift(lead);
     }
     const no = lead.quote?.status === "open" && lead.quote.no ? lead.quote.no : nextQuoteNo();
-    const groupId = `G-${no.slice(2)}`;
-
     const ordersRaw = raw("uvix:orders");
     const orders = (() => { try { const v = ordersRaw ? JSON.parse(ordersRaw) : []; return Array.isArray(v) ? v : []; } catch { return []; } })();
-    const settings = readJson("uvix:settings", {}) || {};
-    const rate = Math.round(Number(settings.usdRate) || 12700);
-    const prefix = `${linePrefix(subcategory)}-${date.replace(/-/g, "").slice(2)}-`; // yo'nalish: UV-… / ON-… (prefiks — Sozlamalar → Yo'nalishlar)
-    let seq = orders.reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0);
-
-    const created = items.map((it, i) => {
-      seq += 1;
-      const itemRate = it.cur === "usd" && it.rate > 0 ? it.rate : rate;
-      const usdTotal = round2(it.area * (it.inkUsd || 0));
-      const kraska = Math.round(usdTotal * itemRate);
-      const tk = tasks[i];
-      const o = {
-        id: rid(), orderNumber: prefix + String(seq).padStart(3, "0"), date, customer, subcategory,
-        title: it.title || it.material, materialType: it.material,
-        materialLines: [{ materialType: it.material, area: it.area, priceUsd: it.inkUsd || 0, totalUsd: usdTotal }],
-        manager, area: it.area, exchangeRate: itemRate, agreementUsd: usdTotal, agreementUzs: it.total,
-        kraskaLines: kraska > 0 ? [{ amount: kraska }] : [], kraskaSum: kraska, materialSum: 0, payments: [],
-        note: [describeItem(it), it.note].filter(Boolean).join(" · "),
-        createdBy: req.user.name, createdAt: at, photos: [], ...(str(b.place, 60) ? { place: str(b.place, 60) } : {}),
-        leadId: lead.id, groupId, groupIdx: i + 1, groupSize: items.length, quoteNo: no, quoteItemId: it.id,
-        prodStage: "new", prodAt: at,
-      };
-      const printBase = { quality: "1440 dpi", colorProfile: "CMYK", material: it.material, area: it.area, notes: it.note || "" };
-      if (tk.mode === "design") {
-        o.design = { assigneeId: tk.designerId, status: "new", statusAt: at, assignedAt: at, format: it.w && it.h ? `${sizeText(it)}${it.qty > 1 ? ` × ${it.qty}` : ""}` : "", fileType: "", notes: it.note || "" };
-        if (tk.printerId) o.print = { ...printBase, assigneeId: tk.printerId };
-        o.prodStage = "design";
-      } else if (tk.mode === "print") {
-        o.print = { ...printBase, assigneeId: tk.printerId, status: tk.printerId ? "new" : "unassigned", statusAt: at, assignedAt: tk.printerId ? at : null };
-        o.prodStage = "printing";
-      }
-      return o;
-    });
-
-    // To'lov — guruh buyurtmalariga taqsimlanadi
+    const prefix = `${linePrefix(subcategory)}-${date.replace(/-/g, "").slice(2)}-`; // UV-… / ON-… (prefiks — Sozlamalar → Yo'nalishlar)
+    const seq = orders.reduce((m, o) => { const s = String(o?.orderNumber || ""); return s.startsWith(prefix) ? Math.max(m, parseInt(s.slice(prefix.length), 10) || 0) : m; }, 0) + 1;
+    const firstMat = calc.items.find((i) => i.kind === "material");
+    const title = str(b.title, 100) || lead.jobTitle || calc.items.map((i) => i.name || QC.KIND_LABEL[i.kind]).join(", ").slice(0, 100);
+    const order = {
+      id: rid(), orderNumber: prefix + String(seq).padStart(3, "0"), date, customer, subcategory, title,
+      materialType: firstMat ? firstMat.name || "Material" : "",
+      items: calc.items, quoteV: 2,
+      // Maydon — bosilgan (pechat) m²: bo'yoq ombori sarfi shundan hisoblanadi
+      area: calc.area.pechat, materialArea: calc.area.material,
+      manager, exchangeRate: calc.usd ? calc.rate : 0, agreementUsd: calc.totalUsd, agreementUzs: total,
+      materialLines: [], kraskaLines: [], kraskaSum: 0, materialSum: 0, payments: [],
+      note: str(b.note, 500), // pozitsiyalar — order.items (buyurtma panelida ro'yxat)
+      createdBy: user.name, createdAt: at, photos: [],
+      leadId: lead.id, quoteNo: no, prodStage: "new", prodAt: at,
+      ...(approvedBy ? { approvedBy, approvedAt: at } : {}),
+    };
     const batchId = paid > 0 ? rid() : null;
-    if (paid > 0) {
-      const mode = b.distribute === "oldest" ? "oldest" : "prop";
-      const per = allocate(paid, created.map((o) => ({ id: o.id, due: o.agreementUzs })), mode);
-      const byId = new Map(created.map((o) => [o.id, o]));
-      for (const r of spreadPayments(per, created.map((o) => o.id), lines)) {
-        byId.get(r.orderId).payments.push({ id: rid(), amount: r.amount, date, paymentType: r.paymentType, comment: `Smeta ${no} avansi`, createdBy: req.user.name, createdAt: at, batchId });
-      }
-    }
+    for (const l of lines) order.payments.push({ id: rid(), amount: l.amount, date, paymentType: l.paymentType, comment: `Smeta ${no} avansi`, createdBy: user.name, createdAt: at, batchId });
 
-    lead.quote = { ...(lead.quote || {}), no, items, total, status: "converted", subcategory, convertedAt: at, convertedBy: req.user.name, groupId, orderIds: created.map((o) => o.id), createdAt: lead.quote?.createdAt || at, updatedAt: at, advanceForced: paid < need ? true : undefined };
-    lead.orderIds = created.map((o) => o.id);
-    if (!lead.orderId) lead.orderId = created[0].id;
+    lead.quote = { ...(lead.quote || {}), v: 2, no, items: calc.items, total, totalUsd: calc.totalUsd, rate: calc.usd ? calc.rate : 0, status: "converted", subcategory, convertedAt: at, convertedBy: user.name, orderIds: [order.id], createdAt: lead.quote?.createdAt || at, updatedAt: at, advanceForced: paid < need ? true : undefined, request: lead.quote?.request ? { ...lead.quote.request, status: approvedBy ? "approved" : lead.quote.request.status } : undefined };
+    lead.orderIds = [...new Set([...(lead.orderIds || []), order.id])];
+    if (!lead.orderId) lead.orderId = order.id;
     lead.estimatedValue = total;
     if (!lead.manager) lead.manager = manager;
-    if (!lead.jobTitle) lead.jobTitle = items.map((i) => i.title || i.material).filter(Boolean).join(", ").slice(0, 80);
-    syncLeadStage(lead, created, at);
+    if (!lead.jobTitle) lead.jobTitle = title.slice(0, 80);
+    syncLeadStage(lead, [order], at);
 
-    const nextOrders = write("uvix:orders", [...created, ...orders]);
+    const nextOrders = write("uvix:orders", [order, ...orders]);
     write("uvix:leads", leadList);
-    audit(req.user.name, `Smeta ${no} → ${created.length} ta buyurtma (${created.map((o) => o.orderNumber).join(", ")}): ${customer}, ${money(total)}${paid ? `, to'lov ${money(paid)}` : ""}${paid < need ? " — avanssiz (admin ruxsati)" : ""}`, at);
+    audit(user.name, `Smeta ${no} → buyurtma ${order.orderNumber}: ${customer}, ${money(total)}${paid ? `, avans ${money(paid)}` : ""}${paid < need ? (approvedBy ? ` — avans kam (${approvedBy} tasdiqladi)` : " — avans kam (rahbar)") : ""}`, at);
     try { onOrdersWritten(ordersRaw, nextOrders); } catch (e) { console.error("Buyurtma xabarnomasi:", e.message); }
-    res.json({ orders: created, lead });
+    return { order, lead };
+  }
+  app.post("/api/quotes/convert", requireAuth, requireStaff, (req, res) => send(res, () => {
+    if (req.can && (!req.can("crm.edit") || !req.can("orders.create"))) throw new Bad("Buyurtma yaratish uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi", 403);
+    const b = req.body || {};
+    try {
+      const r = createOrder(b, req.user, { scope: req.lineScope, force: !!b.force && isAdmin(req.user) });
+      res.json({ order: r.order, orders: [r.order], lead: r.lead });
+    } catch (e) {
+      if (e instanceof Bad && e.extra?.error === "advance_required") e.extra.canForce = isAdmin(req.user);
+      throw e;
+    }
   }));
+
+  // ---------- Avans kam — rahbar tasdig'i (Telegram tugmalari) ----------
+  const reqList = () => { const v = readJson(KEY_REQ, []); return Array.isArray(v) ? v : []; };
+  const reqText = (r) => `🧾 <b>Avanssiz buyurtma — tasdiqlaysizmi?</b>\n${esc(r.by.name)} · ${esc(r.customer)}\nSumma: <b>${money(r.total)}</b> · avans: ${r.paid ? money(r.paid) : "yo'q"} (kerak ${money(r.need)})\n${r.lines.map((l) => `• ${esc(l)}`).join("\n")}`;
+  const admins = () => readEmployees().filter((e) => e.role === "admin" && e.active !== false);
+  async function sendRequest(r) {
+    const markup = { reply_markup: { inline_keyboard: [[{ text: "✅ Tasdiqlash", callback_data: `oreq:a:${r.id}` }, { text: "❌ Rad etish", callback_data: `oreq:r:${r.id}` }]] } };
+    for (const a of admins()) {
+      try { await bot?.sendToEmployee(a.id, reqText(r), markup); } catch { /* bot ulanmagan */ }
+      try { emit("approvals", { title: "Avanssiz buyurtma", body: `${r.by.name}: ${r.customer} · ${money(r.total)}`, view: "crm", to: a.id }); } catch { /* ixtiyoriy */ }
+    }
+  }
+  function decide(id, approve, who) {
+    const list = reqList();
+    const r = list.find((x) => x.id === id);
+    if (!r) throw new Bad("So'rov topilmadi", 404);
+    if (r.status !== "pending") throw new Bad(r.status === "approved" ? "Allaqachon tasdiqlangan" : r.status === "rejected" ? "Allaqachon rad etilgan" : "So'rov bekor qilingan", 409);
+    const at = now().toISOString();
+    let result = null;
+    const leads = readJson("uvix:leads", []);
+    const lead = Array.isArray(leads) ? leads.find((l) => l && l.id === r.leadId) : null;
+    if (approve) {
+      const by = readEmployees().find((e) => e.id === r.by.id) || { id: r.by.id, name: r.by.name, role: "operator" };
+      // So'rovni avval yopamiz: createOrder lidni qayta o'qiydi
+      if (lead?.quote?.request) { lead.quote.request = { ...lead.quote.request, status: "approved" }; write("uvix:leads", leads); }
+      try { result = createOrder({ ...r.body, leadId: r.leadId }, by, { scope: r.scope, force: true, approvedBy: who.name }); }
+      catch (e) { if (lead?.quote?.request) { const l2 = readJson("uvix:leads", []); const x = l2.find((l) => l && l.id === r.leadId); if (x?.quote) { x.quote.request = { ...x.quote.request, status: "pending" }; write("uvix:leads", l2); } } throw e; }
+    } else if (lead?.quote) {
+      lead.quote.request = { ...lead.quote.request, status: "rejected", decidedBy: who.name, decidedAt: at };
+      write("uvix:leads", leads);
+    }
+    const l2 = reqList(); const x = l2.find((y) => y.id === id);
+    Object.assign(x, { status: approve ? "approved" : "rejected", decidedBy: who.name, decidedAt: at, orderId: result?.order?.id || null, orderNumber: result?.order?.orderNumber || null });
+    write(KEY_REQ, l2.slice(0, 300));
+    audit(who.name, `${approve ? "Tasdiqladi" : "Rad etdi"}: avanssiz buyurtma — ${r.customer} (${money(r.total)}), so'rovchi ${r.by.name}${result ? ` → ${result.order.orderNumber}` : ""}`, at);
+    try { bot?.sendToEmployee(r.by.id, approve ? `✅ ${esc(who.name)} tasdiqladi: ${esc(r.customer)} — buyurtma ${esc(result.order.orderNumber)} ochildi.` : `❌ ${esc(who.name)} rad etdi: ${esc(r.customer)} (${money(r.total)}). Avans oling yoki smetani o'zgartiring.`); } catch { /* ixtiyoriy */ }
+    try { emit("approvals", { title: approve ? "Buyurtma tasdiqlandi" : "Buyurtma rad etildi", body: `${r.customer} · ${money(r.total)}`, view: "crm", to: r.by.id }); } catch { /* ixtiyoriy */ }
+    return { request: x, ...(result || {}) };
+  }
+  // Xodim: rahbarga so'rov (smeta lidga saqlanadi va so'rov hal bo'lguncha qulflanadi)
+  app.post("/api/quotes/request", requireAuth, requireStaff, (req, res) => send(res, () => {
+    if (req.can && (!req.can("crm.edit") || !req.can("orders.create"))) throw new Bad("Buyurtma yaratish uchun ruxsat yo'q — rahbar «Rollar va huquqlar»da beradi", 403);
+    const b = req.body || {};
+    const calc = calcOf(b);
+    const lines = payLines(b);
+    const paid = lines.reduce((s, l) => s + l.amount, 0);
+    if (paid > calc.total) throw new Bad(`To'lov (${money(paid)}) smeta summasidan (${money(calc.total)}) ko'p`);
+    const need = Math.ceil((calc.total * (salesConfig().advancePct || 0)) / 100);
+    if (paid >= need) throw new Bad("Avans yetarli — tasdiq kerak emas, buyurtmani yarating");
+    const leads = readJson("uvix:leads", []);
+    const leadList = Array.isArray(leads) ? leads : [];
+    const at = now().toISOString();
+    let lead = b.leadId ? leadList.find((l) => l && l.id === b.leadId && !l.deletedAt) : null;
+    if (b.leadId && (!lead || !leadOk(req, lead))) throw new Bad("Lid topilmadi", 404);
+    if (lead?.quote?.request?.status === "pending") throw new Bad("So'rov allaqachon yuborilgan — rahbar javobini kuting", 409);
+    const scope = req.lineScope || null;
+    const line = scope || (b.subcategory === "UVONYX" ? "UVONYX" : "UVIXPRINT");
+    if (!lead) {
+      const customer = str(b.customer, 120);
+      if (!customer) throw new Bad("Mijoz nomini kiriting");
+      lead = { id: rid(), customer, phone: str(b.phone, 40), source: str(b.source, 40) || "Ustaxona", estimatedValue: 0, manager: str(b.manager, 80) || req.user.name, notes: "", stage: "negotiation", orderId: null, createdBy: req.user.name, createdAt: at, stageAt: at, line };
+      leadList.unshift(lead);
+    } else if (lead.quote?.status === "converted") { lead = newDealFrom(lead, req.user, at); leadList.unshift(lead); }
+    saveQuoteOn(lead, calc, { ...b, subcategory: line }, req.user, at);
+    const r = { id: rid(), at, status: "pending", by: { id: req.user.id, name: req.user.name }, scope, leadId: lead.id, customer: lead.customer, total: calc.total, paid, need,
+      lines: calc.items.map(QC.describeItem).slice(0, 12),
+      body: { items: b.items, rate: b.rate, rateSrc: b.rateSrc, payments: lines, subcategory: line, manager: str(b.manager, 80), title: str(b.title, 100) } };
+    lead.quote.request = { id: r.id, status: "pending", by: req.user.name, at };
+    write("uvix:leads", leadList);
+    write(KEY_REQ, [r, ...reqList()].slice(0, 300));
+    audit(req.user.name, `So'rov: avanssiz buyurtma — ${lead.customer} (${money(calc.total)}), avans ${money(paid)}`, at);
+    sendRequest(r).catch(() => {});
+    res.json({ request: r, lead });
+  }));
+  app.get("/api/quotes/requests", requireAuth, requireStaff, (req, res) => {
+    const list = reqList().filter((r) => isAdmin(req.user) || r.by.id === req.user.id);
+    res.json({ requests: list.slice(0, 100), pending: list.filter((r) => r.status === "pending").length });
+  });
+  app.post("/api/quotes/requests/:id/:action(approve|reject|cancel)", requireAuth, requireStaff, (req, res) => send(res, () => {
+    const act = req.params.action;
+    if (act === "cancel") {
+      const list = reqList(); const r = list.find((x) => x.id === req.params.id);
+      if (!r) throw new Bad("So'rov topilmadi", 404);
+      if (r.by.id !== req.user.id && !isAdmin(req.user)) throw new Bad("Faqat o'z so'rovingizni bekor qila olasiz", 403);
+      if (r.status !== "pending") throw new Bad("So'rov allaqachon hal qilingan", 409);
+      r.status = "cancelled"; r.decidedAt = now().toISOString(); r.decidedBy = req.user.name;
+      write(KEY_REQ, list);
+      const leads = readJson("uvix:leads", []); const l = Array.isArray(leads) ? leads.find((x) => x && x.id === r.leadId) : null;
+      if (l?.quote?.request) { delete l.quote.request; write("uvix:leads", leads); }
+      return res.json({ request: r, lead: l || null });
+    }
+    if (!isAdmin(req.user)) throw new Bad("Faqat rahbar tasdiqlaydi", 403);
+    res.json(decide(req.params.id, act === "approve", req.user));
+  }));
+  // Telegram tugmasi: «oreq:a:<id>» / «oreq:r:<id>» — faqat rahbarning bog'langan akkauntidan
+  if (bot?.onMessage) bot.onMessage(async ({ empId, chatId, callback }) => {
+    const m = /^oreq:([ar]):([\w-]+)$/.exec(String(callback?.data || ""));
+    if (!m) return false;
+    const who = readEmployees().find((e) => e.id === empId);
+    const answer = (text) => bot.api("answerCallbackQuery", { callback_query_id: callback.id, text, show_alert: false }).catch(() => {});
+    if (!who || who.role !== "admin") { await answer("Faqat rahbar tasdiqlaydi"); return true; }
+    let note;
+    try { const r = decide(m[2], m[1] === "a", who); note = m[1] === "a" ? `✅ Tasdiqlandi — buyurtma ${r.order.orderNumber}` : "❌ Rad etildi"; }
+    catch (e) { note = `ℹ️ ${e.message}`; }
+    await answer(note.replace(/<[^>]+>/g, ""));
+    const msgId = callback.message?.message_id;
+    if (msgId) await bot.api("editMessageText", { chat_id: chatId, message_id: msgId, text: `${callback.message.text || ""}\n\n${note}`.slice(0, 4000) }).catch(() => {});
+    return true;
+  }, true); // ovozli ish jurnalidan oldin — u barcha tugmalarni o'ziga oladi
 
   // ---------- Umumiy to'lov (bir nechta buyurtmaga) ----------
   app.post("/api/orders/pay-batch", requireAuth, requireStaff, (req, res) => send(res, () => {
@@ -476,5 +482,4 @@ module.exports = function registerQuotes(app, { getStmt, upsertStmt, readEmploye
 
   return { salesConfig };
 };
-module.exports.cleanItem = cleanItem;
 module.exports.spreadPayments = spreadPayments;

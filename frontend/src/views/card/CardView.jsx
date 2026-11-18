@@ -2,10 +2,11 @@
 // Chiqimni rasxodga yozish, kirimni buyurtma to'loviga bog'lash yoki «shaxsiy» deb belgilash mumkin.
 // Faqat rahbar ko'radi (server ham tekshiradi).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, Check, CreditCard, Download, Link2, RefreshCw, Search, Send, User, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Check, CreditCard, Download, Link2, Package, RefreshCw, Search, Send, User, X } from "lucide-react";
 import { Button, Card, Modal, getInputStyle, useIsMobile } from "../../components/ui.jsx";
 import { THEME } from "../../theme.js";
 import { cardAccountLogin, disconnectCardAccount, fetchCardAccount, fetchCardTx, markCardTx, syncCardTx } from "../../storage.js";
+import { LINE_META } from "../../lib/lines.js";
 import { TelegramLoginModal } from "../settings/TelegramAccountSection.jsx";
 import { fmt, localDateStr, money, uid } from "../../lib/format.js";
 import { orderDebt } from "../../lib/finance.js";
@@ -73,7 +74,7 @@ function StatusTag({ t }) {
   return t.dir === "in" ? tag("Buyurtmaga bog'lash", THEME.blueText, THEME.blueBg) : tag("Rasxodga yozish", THEME.amberText, THEME.amberBg);
 }
 
-export function CardView({ currentUser, settings, orders, categories, employees, onAddCategory, onAddSubcategory, onSaveTx, onAddPayment }) {
+export function CardView({ currentUser, settings, orders, categories, employees, onAddCategory, onAddSubcategory, onSaveTx, onAddPayment, onNewOrder, action = null }) {
   const isMobile = useIsMobile();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
@@ -82,7 +83,8 @@ export function CardView({ currentUser, settings, orders, categories, employees,
   const [filter, setFilter] = useState("all");
   const [card, setCard] = useState("all");
   const [sel, setSel] = useState(null); // tanlangan yozuv (amallar oynasi)
-  const [mode, setMode] = useState(null); // "expense" | "order"
+  const [mode, setMode] = useState(null); // "expense" | "order" | "new"
+  const [qIdx, setQIdx] = useState(0); // 137-eskiz, B: tepadagi navbat — nechanchi belgilanmagan yozuv
   const [sheet, setSheet] = useState(false); // amallar oynasi ochiqmi
   // Amallar oynasidan rasxod/buyurtma oynasiga o'tish: avval birinchisi yopilib, «orqaga» yozuvi olib tashlanadi,
   // keyingisi shundan keyin ochiladi — aks holda kechikib kelgan «orqaga» hodisasi yangi oynani ham yopib yuboradi
@@ -118,6 +120,19 @@ export function CardView({ currentUser, settings, orders, categories, employees,
   }
 
   const items = data?.items || [];
+  // Ilova bo'ylab chiqadigan «Kartaga pul tushdi» oynasidan kelgan amal: shu yozuvni tegishli oynada ochamiz
+  useEffect(() => {
+    if (action?.refresh) { load(); return; }
+    if (!action?.id || !data) return;
+    const t = (data.items || []).find((x) => x.id === action.id);
+    if (t) { setSel(t); setSheet(false); setMode(action.mode); }
+  }, [action?.n, !!data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // «Yangi buyurtma (shu to'lovdan)» — umumiy «Smeta / Buyurtma» oynasi, karta summasi avans bo'lib qulflanadi
+  useEffect(() => {
+    if (!sel || mode !== "new") return;
+    onNewOrder?.(sel);
+    setSel(null); setMode(null); setSheet(false);
+  }, [sel, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   const cards = useMemo(() => [...new Set(items.map((t) => t.card).filter(Boolean))], [items]);
   const inPeriod = useMemo(() => {
     const from = periodStart(period);
@@ -128,6 +143,15 @@ export function CardView({ currentUser, settings, orders, categories, employees,
   const totOut = inPeriod.filter((t) => t.dir === "out").reduce((s, t) => s + t.amount, 0);
   const latest = items.find((t) => (card === "all" || t.card === card) && t.balance != null);
   const openCount = inPeriod.filter(isOpen).length;
+  const queue = useMemo(() => items.filter((t) => isOpen(t) && (card === "all" || t.card === card)), [items, card]);
+  const qItem = queue.length ? queue[qIdx % queue.length] : null;
+  // Shu joyga (merchant) oxirgi marta qaysi kategoriya yozilgan — rasxod oynasida o'sha tanlangan turadi
+  const lastCatOf = (t) => {
+    const prev = items.find((x) => x.id !== t.id && x.txId && x.label && x.merchant && x.merchant === t.merchant);
+    if (!prev) return null;
+    const [category, subcategory] = String(prev.label).replace(/ · \d+ buyurtma$/, "").split(" / ");
+    return { category, subcategory };
+  };
 
   const status = data?.status || [];
   const found = status.find((s) => s.found);
@@ -203,6 +227,33 @@ export function CardView({ currentUser, settings, orders, categories, employees,
             </div>
           )}
 
+          {qItem && (
+            <div data-testid="card-queue" style={{ background: THEME.card, border: `2px solid ${THEME.blue}`, borderRadius: 14, padding: isMobile ? 14 : 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <b style={{ fontSize: 14 }}>Belgilash kerak · {(qIdx % queue.length) + 1} / {queue.length}</b>
+                {queue.length > 1 && <button type="button" onClick={() => setQIdx((i) => i + 1)} data-testid="card-queue-next" style={{ border: 0, background: "none", color: THEME.muted, fontFamily: "inherit", fontSize: 12.5, cursor: "pointer" }}>Keyingisi ›</button>}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ width: 40, height: 40, borderRadius: 11, flexShrink: 0, display: "grid", placeItems: "center", background: qItem.dir === "in" ? THEME.greenBg : THEME.roseBg, color: qItem.dir === "in" ? THEME.greenText : THEME.roseText }}>
+                  {qItem.dir === "in" ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: THEME.fontNum, color: qItem.dir === "in" ? THEME.greenText : THEME.roseText }}>{qItem.dir === "in" ? "+" : "−"}{sum(qItem.amount)} so'm</div>
+                  <div style={{ fontSize: 13, color: THEME.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titleOf(qItem)} · {dayTitle(dayKey(qItem.at)).toLowerCase()} {hm(qItem.at)}{qItem.card ? ` · ••${qItem.card}` : ""}</div>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0,1fr))", gap: 8, marginTop: 14 }}>
+                {qItem.dir === "in"
+                  ? <>
+                      <Button onClick={() => { setSel(qItem); setMode("order"); }} data-testid="q-link" style={{ justifyContent: "center", display: "inline-flex", alignItems: "center", gap: 6 }}><Link2 size={15} />Buyurtmaga bog'lash</Button>
+                      <Button variant="ghost" onClick={() => { setSel(qItem); setMode("new"); }} data-testid="q-new" style={{ justifyContent: "center", display: "inline-flex", alignItems: "center", gap: 6 }}><Package size={15} />Yangi buyurtma</Button>
+                    </>
+                  : <Button onClick={() => { setSel(qItem); setMode("expense"); }} data-testid="q-expense" style={{ justifyContent: "center", gridColumn: isMobile ? undefined : "span 2" }}>Rasxodga yozish</Button>}
+                <Button variant="ghost" onClick={() => mark(qItem, { personal: true }).catch((e) => setErr(e.message))} data-testid="q-personal" style={{ justifyContent: "center", display: "inline-flex", alignItems: "center", gap: 6 }}><User size={15} />Shaxsiy</Button>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             {FILTERS.map(([k, l]) => <Chip key={k} active={filter === k} onClick={() => setFilter(k)}>{l}{k === "open" && openCount ? ` · ${openCount}` : ""}</Chip>)}
           </div>
@@ -257,14 +308,18 @@ export function CardView({ currentUser, settings, orders, categories, employees,
 
       {sel && sheet && <ActionSheet t={sel} onClose={closeAll} onMode={chooseMode} onMark={async (p) => { await mark(sel, p); closeAll(); }} />}
       {sel && mode === "expense" && (
-        <TransactionForm currentUser={currentUser} categories={categories} orders={orders} employees={employees}
-          preset={{ amount: Math.round(sel.amount), date: dayKey(sel.at), paymentType: "karta", note: `${titleOf(sel)}${sel.card ? ` · karta ••${sel.card}` : ""}` }}
+        <TransactionForm currentUser={currentUser} categories={categories} orders={orders} employees={employees} allowSplit
+          preset={{ amount: Math.round(sel.amount), date: dayKey(sel.at), paymentType: "karta", note: `${titleOf(sel)}${sel.card ? ` · karta ••${sel.card}` : ""}`, ...(lastCatOf(sel) || {}) }}
           onAddCategory={onAddCategory} onAddSubcategory={onAddSubcategory} onClose={closeAll}
-          onSave={async (tx) => {
-            onSaveTx(tx, false);
+          onSave={async (txs) => {
+            // Material bir nechta buyurtmaga bo'linsa — bir nechta rasxod keladi
+            const list = Array.isArray(txs) ? txs : [txs];
+            onSaveTx(Array.isArray(txs) ? txs : txs, false);
             const t = sel;
             closeAll();
-            await mark(t, { txId: tx.id, label: [tx.category, tx.subcategory].filter(Boolean).join(" / "), personal: false }).catch((e) => setErr(e.message));
+            const tx = list[0];
+            const nOrd = list.filter((x) => x.relatedOrderId).length;
+            await mark(t, { txId: tx.id, txIds: list.map((x) => x.id), label: [tx.category, tx.subcategory].filter(Boolean).join(" / ") + (nOrd ? ` · ${nOrd} buyurtma` : ""), personal: false }).catch((e) => setErr(e.message));
           }} />
       )}
       {sel && mode === "order" && (
@@ -302,13 +357,14 @@ function ActionSheet({ t, onClose, onMode, onMark }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {!linked && !t.personal && t.dir === "out" && <Button onClick={() => onMode("expense")} disabled={busy}>Rasxodga yozish</Button>}
         {!linked && !t.personal && t.dir === "in" && <Button onClick={() => onMode("order")} disabled={busy}>Buyurtmaga bog'lash</Button>}
+        {!linked && !t.personal && t.dir === "in" && <Button variant="ghost" onClick={() => onMode("new")} disabled={busy} data-testid="sheet-new">Yangi buyurtma (shu to'lovdan)</Button>}
         {!linked && <Button variant="ghost" disabled={busy} onClick={() => run({ personal: !t.personal })}>{t.personal ? "Shaxsiy emas" : "Shaxsiy (biznesga aloqasi yo'q)"}</Button>}
         {linked && (
           <>
             <div style={{ fontSize: 12.5, color: THEME.muted, lineHeight: 1.5 }}>
               Bog'lanishni olib tashlash {t.txId ? "rasxodni" : "to'lovni"} o'chirmaydi — kerak bo'lsa {t.txId ? "Rasxod" : "Buyurtmalar"} bo'limidan o'chiring.
             </div>
-            <Button variant="ghost" disabled={busy} onClick={() => run({ txId: null, orderId: null, paymentId: null, label: null })}>Bog'lanishni olib tashlash</Button>
+            <Button variant="ghost" disabled={busy} onClick={() => run({ txId: null, txIds: null, orderId: null, paymentId: null, label: null })}>Bog'lanishni olib tashlash</Button>
           </>
         )}
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -327,9 +383,9 @@ function OrderPicker({ t, orders, onClose, onPick }) {
     const s = q.trim().toLowerCase();
     const base = (orders || []).filter((o) => !o.deletedAt);
     const hits = s ? base.filter((o) => `${o.customer || ""} ${o.orderNumber || ""} ${o.phone || ""}`.toLowerCase().includes(s)) : base.filter((o) => orderDebt(o) > 0);
-    // Qarzi summaga teng yoki yaqin buyurtmalar — tepada
-    return hits.map((o) => ({ o, debt: orderDebt(o) })).sort((a, b) => (Math.abs(a.debt - amt) - Math.abs(b.debt - amt))).slice(0, 30);
-  }, [orders, q, amt]);
+    // Eng yangi buyurtmalar tepada
+    return hits.map((o) => ({ o, debt: orderDebt(o) })).sort((a, b) => String(b.o.date || "").localeCompare(String(a.o.date || ""))).slice(0, 30);
+  }, [orders, q]);
   return (
     <Modal title={`Buyurtmaga bog'lash · +${fmt(amt)}`} onClose={onClose} width={460}>
       <div style={{ position: "relative", marginBottom: 10 }}>
@@ -337,7 +393,7 @@ function OrderPicker({ t, orders, onClose, onPick }) {
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Mijoz yoki buyurtma raqami" style={{ ...getInputStyle(), paddingLeft: 32, width: "100%" }} />
         {q && <button type="button" aria-label="Tozalash" onClick={() => setQ("")} style={{ position: "absolute", right: 8, top: 8, border: 0, background: "transparent", cursor: "pointer", color: THEME.muted }}><X size={15} /></button>}
       </div>
-      {!q && <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 6 }}>Qarzi bor buyurtmalar (summaga yaqini tepada)</div>}
+      {!q && <div style={{ fontSize: 12, color: THEME.muted, marginBottom: 6 }}>Qarzi bor buyurtmalar (eng yangisi tepada)</div>}
       <div style={{ display: "flex", flexDirection: "column", maxHeight: 360, overflowY: "auto", border: `1px solid ${THEME.border}`, borderRadius: 10 }}>
         {list.length === 0 && <div style={{ padding: 16, fontSize: 13, color: THEME.muted, textAlign: "center" }}>Buyurtma topilmadi</div>}
         {list.map(({ o, debt }) => (
@@ -347,7 +403,7 @@ function OrderPicker({ t, orders, onClose, onPick }) {
               <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.customer || "—"}</span>
               <span style={{ fontSize: 12, color: THEME.muted }}>{o.orderNumber} · {o.date}</span>
             </span>
-            <span style={{ fontSize: 12.5, whiteSpace: "nowrap", color: debt > 0 ? (debt === amt ? THEME.greenText : THEME.amberText) : THEME.muted, fontWeight: 600 }}>
+            <span style={{ fontSize: 12.5, whiteSpace: "nowrap", color: debt > 0 ? THEME.roseText : THEME.muted, fontWeight: 600 }}>
               {debt > 0 ? `qarz ${money(debt)}` : "to'langan"}
             </span>
           </button>
@@ -356,3 +412,4 @@ function OrderPicker({ t, orders, onClose, onPick }) {
     </Modal>
   );
 }
+

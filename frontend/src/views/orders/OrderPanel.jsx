@@ -10,6 +10,7 @@ import { fmt, money, paymentTypeLabel, shortDateUz, usd } from "../../lib/format
 import { THEME } from "../../theme.js";
 import { PROD_LABEL, PROD_STAGES, prodColors, prodLabel, stageHint, stagesFor } from "../../lib/production.js";
 import { useBackToClose } from "../../lib/history.js";
+import { KIND_LABEL } from "../../lib/quoteCalc.js";
 import { PENDING_LABEL } from "../../lib/approvals.jsx";
 import { useSheetDrag } from "../../lib/sheetDrag.js";
 
@@ -173,12 +174,26 @@ export function OrderPanel({ order, transactions, phone, canDelete, onClose, onP
           </div>
         )}
 
+        {order.quoteV === 2 && Array.isArray(order.items) && order.items.length > 0 && (
+          <div data-testid="order-items" style={{ marginTop: 14, border: `1px solid ${THEME.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".05em", color: THEME.muted, padding: "8px 10px", background: THEME.surface }}>POZITSIYALAR{order.quoteNo ? ` · SMETA ${order.quoteNo}` : ""}</div>
+            {order.items.map((it) => (
+              <div key={it.id} style={{ display: "flex", gap: 8, padding: "7px 10px", borderTop: `1px solid ${THEME.border}`, fontSize: 12.5 }}>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontWeight: 600 }}>{it.name || KIND_LABEL[it.kind]}</b> <span style={{ color: THEME.muted }}>· {KIND_LABEL[it.kind]}</span>
+                  <div style={{ color: THEME.muted }}>{it.calc === "m2" ? `${String(it.area).replace(".", ",")} m² × ${it.cur === "usd" ? `$${it.price}` : fmt(it.price)}` : it.calc === "pcs" ? `${it.qty} dona × ${it.cur === "usd" ? `$${it.price}` : fmt(it.price)}` : "kelishilgan summa"}{it.calc === "m2" && it.parts?.length ? ` · ${it.parts.map((p) => `${p.w}×${p.h}${p.n > 1 ? `×${p.n}` : ""}`).join(", ")} mm` : ""}</div>
+                </span>
+                <b style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(it.total)}</b>
+              </div>
+            ))}
+            {order.exchangeRate > 0 && order.items.some((it) => it.cur === "usd") && <div style={{ fontSize: 11.5, color: THEME.muted, padding: "6px 10px", borderTop: `1px solid ${THEME.border}` }}>Kurs: 1 $ = {fmt(order.exchangeRate)} so'm</div>}
+          </div>
+        )}
         <div style={{ marginTop: 14 }}>
           {row("Menejer", order.manager)}
           {order.agreementUsd ? row("Kelishuv ($)", usd(order.agreementUsd)) : null}
           {brak > 0 && row("Asl summa", money(order.agreementUzs || 0))}
           {brak > 0 && row("Brak", `−${money(brak)}`)}
-          {order.kraskaSum ? row("Kraska", money(order.kraskaSum)) : null}
           {orderMaterialSum(order, transactions) ? row("Material", money(orderMaterialSum(order, transactions))) : null}
           {row("Qo'shilgan qiymat", money(added), true)}
           {row("Kiritgan", order.createdBy)}

@@ -31,7 +31,8 @@ export function orderMaterialSum(order, transactions) {
 }
 export function orderAddedValue(order, transactions) {
   const brak = orderBrakSum(order, transactions);
-  return (order.agreementUzs || 0) - (order.kraskaSum || 0) - orderMaterialSum(order, transactions) - brak;
+  // Bo'yoq buyurtmaga bog'lanmaydi (qatlamlar har xil) — davr hisobotida «Kraska» rasxodlari sifatida ayiriladi
+  return (order.agreementUzs || 0) - orderMaterialSum(order, transactions) - brak;
 }
 // To'lov turi: eski «perechisleniye» — bank
 export const payTypeOf = (v) => (v === "karta" ? "karta" : v === "bank" || v === "perechisleniye" ? "bank" : "naqd");
@@ -71,9 +72,10 @@ export function computeFinanceStats(orders, expenses, opts = {}) {
   const totalPaid = sum(orders, (o) => orderTotalPaid(o));
   const totalDebt = sum(orders, (o) => orderDebt(o));
   const totalOverpaid = sum(orders, (o) => orderOverpaid(o));
-  const totalKraska = sum(orders, (o) => o.kraskaSum || 0);
+  // Bo'yoq — davrdagi «Kraska» rasxodlari (buyurtmaga yozilmaydi)
+  const totalKraska = sum(exp, (t) => (t.category === "Kraska" && t.type !== "kirim" ? t.amount : 0));
   const totalMaterialInOrders = sum(orders, (o) => orderMaterialSum(o, exp));
-  const totalAddedValue = sum(orders, (o) => orderAddedValue(o, exp));
+  const totalAddedValue = sum(orders, (o) => orderAddedValue(o, exp)) - totalKraska;
   const totalArea = sum(orders, (o) => o.area || 0);
   const totalAgreementUsd = sum(orders, (o) => o.agreementUsd || 0);
 

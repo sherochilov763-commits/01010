@@ -1,7 +1,7 @@
 // ChatToolRail.jsx — chat yon paneli (E varianti, 108-eskiz): o'ng chekkada ikonalar qatori,
 // bir vaqtda bitta vosita ochiladi, qayta bosilsa yopiladi. Telefonda — pastdan varaqning yorliqlari.
 // Belgi (nuqta) — e'tibor kerak: CRM'da yo'q, smeta to'lov kutmoqda, qarz bor.
-import { Calculator, FileText, Package, Sparkles, UserRound } from "lucide-react";
+import { FileText, Package, Sparkles, UserRound } from "lucide-react";
 import { C } from "./chatPalette.js";
 import { orderDebt } from "../../lib/finance.js";
 import { fmt, shortDateUz } from "../../lib/format.js";
@@ -10,7 +10,6 @@ import { PROD_LABEL, prodColors } from "../../lib/production.js";
 export const CHAT_TOOLS = [
   { key: "client", label: "Mijoz", Icon: UserRound },
   { key: "quote", label: "Smeta", Icon: FileText },
-  { key: "calc", label: "Kalkulyator", short: "Hisob", Icon: Calculator },
   { key: "orders", label: "Buyurtmalar", short: "Buyurtma", Icon: Package },
   { key: "ai", label: "AI yordamchi", short: "AI", Icon: Sparkles },
 ];

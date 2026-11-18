@@ -257,6 +257,8 @@ module.exports = function registerCardFeed(app, { getStmt, upsertStmt, deleteKey
     const str = (v, n = 80) => (v == null || v === "" ? null : String(v).slice(0, n));
     if ("personal" in b) it.personal = !!b.personal;
     if ("txId" in b) it.txId = str(b.txId);
+    // Material bir nechta buyurtmaga bo'lib yozilganda — barcha rasxod id'lari
+    if ("txIds" in b) it.txIds = Array.isArray(b.txIds) ? b.txIds.slice(0, 20).map((x) => String(x).slice(0, 80)) : null;
     if ("orderId" in b) it.orderId = str(b.orderId);
     if ("paymentId" in b) it.paymentId = str(b.paymentId);
     if ("label" in b) it.label = str(b.label, 120);
