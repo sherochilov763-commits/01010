@@ -6,12 +6,14 @@
 //   3. Bot karta qaytaradi: ✅ Saqlash · ✏️ Tuzatish · ❌ Bekor. Faqat «Saqlash»dan keyin jurnalga yoziladi.
 //   4. Savol berilsa («bugun nima qildim?», «qaysi ishlar qoldi?») — jurnaldan javob; «Excel qil» — fayl.
 //   5. Muddatli ish: vaqti bo'lsa 1 soat oldin (yoki aytilgan vaqtda) eslatma; har kuni 09:00 da ochiq ishlar ro'yxati.
+//   6. Har kuni 22:00 (WORKLOG_REPORT_TIME) — kunlik otchyot: bugun nima bo'ldi, ertangi ishlar va oy boshidan Excel fayl.
 //
 // Saqlash (ichki kalitlar, KV orqali ochilmaydi):
 //   uvix:worklog        — [{ id, empId, at, date, source, transcript, work, customer, qty, unit, amount, currency,
 //                            status: "done"|"todo", due, dueTime, remindAt, note, doneAt, remindedAt, snoozeUntil, deletedAt }]
 //   uvix:worklogDrafts  — { [draftId]: { empId, chatId, msgId, transcript, source, entries, awaitingEdit, at } }
 //   uvix:worklogDigest  — { [empId]: "YYYY-MM-DD" } — kunlik ro'yxat yuborilgan sana
+//   uvix:worklogEvening — { [empId]: "YYYY-MM-DD" } — kechki kunlik otchyot (22:00, xulosa + oy boshidan Excel) yuborilgan sana
 //
 // Kim ishlatadi: faqat rahbar (role = admin). VOICE_LOG_OWNERS=<id1,id2> bilan aniq hisoblarni ko'rsatish mumkin.
 const crypto = require("crypto");
@@ -23,6 +25,8 @@ const MAX_LOG = 20000;
 const DRAFT_TTL = 48 * 3600e3;
 const LATE_LIMIT = 6 * 3600e3; // shundan eski eslatma yuborilmaydi (server o'chib qolgan bo'lsa spam bo'lmasin)
 const DIGEST_HM = "09:00";
+const EVENING = "uvix:worklogEvening";
+const EVENING_HM = "22:00"; // Railway Variables: WORKLOG_REPORT_TIME=21:30 kabi o'zgartirish mumkin
 const WEEKDAYS = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
 
 const rid = () => crypto.randomBytes(6).toString("hex");
@@ -405,6 +409,39 @@ function registerVoiceLog(app, { getStmt, upsertStmt, readEmployees, requireAuth
         await bot.sendToEmployee(id, `☀️ <b>Bugungi ishlar</b>${late ? ` · ${late} tasi kechikkan` : ""}\n\n${open.slice(0, 30).map((e) => entryLine(e)).join("\n")}\n\nHammasi: /ishlar`);
       }
     }
+    // Har kuni kechqurun (sukut 22:00) — kunlik otchyot: xulosa + oy boshidan Excel
+    if (t.hm >= eveningHm()) {
+      const sent = read(EVENING, {}) || {};
+      for (const id of ownerIds) {
+        if (sent[id] === t.date) continue;
+        sent[id] = t.date; write(EVENING, sent);
+        await eveningReport(id, t.date).catch((e) => console.error("Kunlik otchyot:", e.message));
+      }
+    }
+  }
+
+  function eveningHm() { return timeOk(env.WORKLOG_REPORT_TIME) || EVENING_HM; }
+  async function eveningReport(empId, date) {
+    const all = log().filter((e) => e.empId === empId && !e.deletedAt);
+    const localDay = (iso) => (iso ? tashkent(new Date(iso)).date : null);
+    const today = all.filter((e) => e.date === date || localDay(e.doneAt) === date);
+    const done = today.filter((e) => e.status === "done");
+    const open = today.filter((e) => e.status === "todo");
+    const tomorrow = all.filter((e) => e.status === "todo" && e.due === addDays(date, 1));
+    const late = all.filter((e) => e.status === "todo" && e.due && e.due < date).length;
+    const out = [`🌙 <b>Kunlik otchyot · ${dm(date)}</b>`, ""];
+    if (!today.length) out.push("Bugun jurnalga hech narsa yozilmadi.", "Nima bo'ldi? Ovoz yoki matn bilan yozib qo'ying — ertaga otchyotda chiqadi.");
+    else {
+      out.push(`✅ Bajarildi: ${done.length} · ⏳ Ochiq: ${open.length}${late ? ` · ⚠️ Kechikkan: ${late}` : ""}`);
+      const sum = totals(today); if (sum) out.push(`💰 ${sum}`);
+      out.push("", ...today.slice(0, 25).map((e) => entryLine(e)));
+      if (today.length > 25) out.push(`… yana ${today.length - 25} ta (Excel faylda)`);
+    }
+    if (tomorrow.length) out.push("", "📌 <b>Ertaga</b>", ...tomorrow.slice(0, 15).map((e) => entryLine(e)));
+    await bot.sendToEmployee(empId, out.join("\n"));
+    const from = `${date.slice(0, 8)}01`;
+    const f = await exportFile({ from, to: date, empId });
+    if (f.count) await bot.sendDocumentToEmployee(empId, f.buf, `kunlik-otchyot_${date.slice(0, 7)}.xlsx`, `📊 Oy boshidan · ${dm(from)}–${dm(date)} · ${f.count} ta yozuv`);
   }
   if (interval > 0) { setTimeout(() => tick().catch((e) => console.error("Ish jurnali eslatma:", e.message)), 5000).unref?.(); setInterval(() => tick().catch((e) => console.error("Ish jurnali eslatma:", e.message)), interval).unref?.(); }
 
