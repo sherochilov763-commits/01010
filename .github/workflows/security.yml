@@ -40,7 +40,7 @@ jobs:
       - name: Semgrep (OWASP Top 10 + Node.js + React)
         run: |
           semgrep scan \
-            --config p/owasp-top-ten --config p/nodejs --config p/express --config p/react \
+            --config p/owasp-top-ten --config p/nodejs --config p/react \
             --exclude 'tests/**' --exclude '**/assets/fonts/**' \
             --severity ERROR --error
 

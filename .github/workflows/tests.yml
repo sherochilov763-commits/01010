@@ -11,7 +11,7 @@ on:
 jobs:
   test:
     name: Unit + E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # Playwright 1.56 ubuntu-26.04 ni qo'llamaydi
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
